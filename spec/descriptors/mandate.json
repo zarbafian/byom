@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Mandate",
   "states": [
     "prepared",
@@ -15,6 +16,19 @@
       "to": "prepared",
       "via": "mandate_prepare",
       "authority": "participant (R15): proposed grantee or authorized issuer in its scope",
+      "guards": [
+        "server-prepared from an exact proposal — a caller cannot obtain approval for an arbitrary digest and later attach a different action (§10.1)",
+        "proposed grantee or authorized issuer in its scope; preparation trace and parent revisions fenced (R15)"
+      ],
+      "locks": [
+        "preparation trace",
+        "parent revisions"
+      ],
+      "fences": [],
+      "events": [
+        "mandate.prepared"
+      ],
+      "crash_result": "no bearer authority escapes commit (§14.8 Mandate row)",
       "notes": "Server-prepared from an exact proposal (§10.1: a caller cannot obtain approval for an arbitrary digest and later attach a different action); R15 fence: preparation trace and parent revisions. §10.1's state enum has no prepared state — 'prepared' is the folded pre-issue state of the §14.8 Mandate row, gap note G30. Stage-capable."
     },
     {
@@ -22,6 +36,21 @@
       "to": "prepared",
       "via": "mandate_derive",
       "authority": "participant (R15): proposed grantee or authorized issuer in its scope",
+      "guards": [
+        "mechanical subset of every parent — no widening on any axis; a widening attempt fails authority_widening (§10.2, G33)",
+        "incomparable classification or policy domains block derivation; human non-delegable powers never appear in a child"
+      ],
+      "locks": [
+        "complete parent closure",
+        "parent budgets"
+      ],
+      "fences": [
+        "budget reserved from the parent atomically"
+      ],
+      "events": [
+        "mandate.prepared"
+      ],
+      "crash_result": "child delegated quantity conserved (§14.8 Mandate row)",
       "notes": "Child Mandate as a mechanical subset of every parent (§10.2): no new operation, resource, data class, destination, participant class, or manifestation; no later deadline or expiry; no larger budget, concurrency, use count, output size, disclosure, or retention ceiling; no greater delegation depth or fanout; no weaker security, evidence, review, or classification requirement; purpose restricted to the parent purpose and current Pledge lineage. Budget is reserved from the parent atomically; incomparable classification or policy domains block derivation; human non-delegable powers never appear in a child; a widening attempt fails authority_widening — gap note G33."
     },
     {
@@ -29,6 +58,19 @@
       "to": "prepared",
       "via": "mandate_position",
       "authority": "participant (R16) or governance (R17): Participant for its exact prepared participant/resource-owner seat, or human principal for its exact prepared human-authority seat with a fresh challenge as required",
+      "guards": [
+        "actor fills only its exact prepared participant/resource-owner or human-authority seat; fresh challenge as required (R16/R17)"
+      ],
+      "locks": [
+        "exact prepared seat"
+      ],
+      "fences": [
+        "one current seat head (§14.8 Position/Decision row)"
+      ],
+      "events": [
+        "mandate.prepared"
+      ],
+      "crash_result": "prior Position inputs remain (§14.8 Position/Decision row)",
       "notes": "Seat Position record lifecycle under the §14.8 Position/Decision row, folded as a proposal-stage self-transition — gap note G19. Dual-surface operation: one schema pair, surface is a registry key — gap note G35."
     },
     {
@@ -36,6 +78,20 @@
       "to": "active",
       "via": "mandate_issue",
       "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact issuer/human-authority actor under decided rule; fresh challenge for root issue (R18)"
+      ],
+      "locks": [
+        "exact decision",
+        "complete parent closure",
+        "budgets"
+      ],
+      "fences": [],
+      "events": [
+        "mandate.active"
+      ],
+      "crash_result": "no bearer authority escapes commit; child delegated quantity conserved (§14.8 Mandate row)",
       "notes": "§14.8: prepared/positions → active / issue. Locks the exact decision, the complete parent closure, and budgets; fresh challenge for root issue (R18); no bearer authority escapes commit; crash result: child delegated quantity conserved."
     },
     {
@@ -43,6 +99,22 @@
       "to": "superseded",
       "via": "mandate_issue",
       "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "prepared subject names the prior active revision; issuing the successor atomically supersedes it (G32)"
+      ],
+      "locks": [
+        "exact decision",
+        "complete parent closure",
+        "budgets"
+      ],
+      "fences": [
+        "successor issuance supersedes the prior active revision atomically"
+      ],
+      "events": [
+        "mandate.superseded"
+      ],
+      "crash_result": "no bearer authority escapes commit (§14.8 Mandate row)",
       "notes": "Successor issuance: when the prepared subject names a prior active revision, issuing the successor atomically supersedes it (§14.8 active → superseded / matching operation) — gap note G32."
     },
     {
@@ -50,6 +122,22 @@
       "to": "held",
       "via": "mandate_hold",
       "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact issuer/human-authority actor under decided rule (R18)"
+      ],
+      "locks": [
+        "exact decision",
+        "complete parent closure",
+        "budgets"
+      ],
+      "fences": [
+        "hold fences new uses"
+      ],
+      "events": [
+        "mandate.held"
+      ],
+      "crash_result": "no bearer authority escapes commit (§14.8 Mandate row)",
       "notes": "A hold fences new uses. The catalog has no mandate un-hold operation and §14.8's Mandate row lists no held → nonterminal transition; none is derived (G25 precedent) — gap note G32."
     },
     {
@@ -57,6 +145,22 @@
       "to": "exhausted",
       "via": "execution_permit_consume",
       "authority": "runtime (R34): trusted host effect service bound to exact prepared host Effect",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the ActIntent machine's owning consume: the use consuming the last MandateUse ordinal slot moves the Mandate to exhausted (G32)"
+      ],
+      "locks": [
+        "exact decision",
+        "complete parent closure",
+        "budgets"
+      ],
+      "fences": [
+        "MandateUse ordinal slots created on consumption"
+      ],
+      "events": [
+        "mandate.exhausted"
+      ],
+      "crash_result": "child delegated quantity conserved (§14.8 Mandate row)",
       "cascade": true,
       "notes": "Consumption cascade of the ActIntent machine's owning consume: MandateUse ordinal slots are created on consumption (§14.8); the use consuming the last slot moves the Mandate to exhausted — gap note G32."
     },
@@ -65,6 +169,22 @@
       "to": "revoked",
       "via": "mandate_revoke",
       "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "revocation blocks new uses and cannot un-send prior effects (R18)"
+      ],
+      "locks": [
+        "exact decision",
+        "complete parent closure",
+        "budgets"
+      ],
+      "fences": [
+        "revocation fences new uses"
+      ],
+      "events": [
+        "mandate.revoked"
+      ],
+      "crash_result": "child delegated quantity conserved (§14.8 Mandate row)",
       "notes": "Revocation blocks new uses and cannot un-send prior effects; child delegated quantity stays conserved (§14.8); derived field names revoked_by_decision_ref/revocation_reason_ref — gap note G32."
     },
     {
@@ -72,6 +192,15 @@
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [],
+      "fences": [],
+      "events": [
+        "mandate.expired"
+      ],
+      "crash_result": "no bearer authority escapes commit (§14.8 Mandate row)",
       "notes": "§14.8: active → expired / matching operation; deadlines and expiry use authoritative server time (§10.5)."
     }
   ]

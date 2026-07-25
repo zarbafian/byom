@@ -15,8 +15,9 @@
       "pledge_id": "pledge-7",
       "pledge_revision": 1,
       "terms_digest": {
-        "class": "structural_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:terms_digest",
         "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "output_refs": [
@@ -26,8 +27,9 @@
         "evidence-9"
       ],
       "usage_digest": {
-        "class": "structural_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:usage_digest",
         "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "activity_stream_ref": "stream-21",

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/bpp/v0/ops/pledge-amend-result.schema.json",
   "title": "BPP pledge_amend result (DESIGN.md §9.5, §14.6; registry R5 participant)",
-  "description": "Success.result for pledge_amend: the amendment PledgeProposal occupying the one successor slot (§9.5; gap notes G4, G20, G23).",
+  "description": "Success.result for pledge_amend: the SEPARATE proposed successor PledgeProposal (D-RT-3). pledge_amend only creates this proposal — in state proposed, occupying the one CAS successor slot and naming its predecessor — and returns its fresh concrete slot/seat records (§9.5: 'It needs all currently required seats again'). The predecessor Pledge is NOT superseded here: supersession commits atomically only when pledge_finalize accepts the complete fresh seat set under the successor CAS (§9.5 'Acceptance atomically supersedes the old revision'; gap notes G4, G20, G23 as amended by RT-03).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +10,10 @@
     "proposal_revision",
     "terms_digest",
     "required_slots",
-    "state"
+    "state",
+    "amendment_predecessor_ref",
+    "amendment_predecessor_revision",
+    "preparation_trace"
   ],
   "properties": {
     "proposal_id": {
@@ -20,27 +23,31 @@
       "$ref": "#/$defs/safeNonNegativeInteger"
     },
     "terms_digest": {
-      "$ref": "#/$defs/digestRef"
+      "$ref": "#/$defs/localErasureSafeDigest"
     },
     "required_slots": {
       "type": "array",
       "minItems": 1,
       "maxItems": 5,
-      "uniqueItems": true,
       "items": {
-        "enum": [
-          "pledgor_assent",
-          "beneficiary_acceptance",
-          "human_authority",
-          "resource_owner",
-          "reviewer_independence"
-        ]
+        "$ref": "#/$defs/slotRecord"
       },
-      "description": "Server-prepared required seats (§9.3, §14.6)."
+      "description": "Server-prepared required slots as concrete slot/seat records (§9.3, §14.6; RT-03). At most one record per §9.3 slot kind (runner-checked uniqueness on kind)."
     },
     "state": {
       "const": "proposed",
       "description": "§9.3 leaves PledgeProposal.state unspecified; 'proposed' is the folded pre-formation state — gap note G20."
+    },
+    "amendment_predecessor_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "The prior Pledge this successor proposal names (amendment_of.pledge_ref echoed; §9.3 amendment_predecessor_ref)."
+    },
+    "amendment_predecessor_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger",
+      "description": "The exact prior Pledge revision the successor CAS pins; pledge_finalize supersedes exactly this revision or fails stale_revision (D-RT-3)."
+    },
+    "preparation_trace": {
+      "$ref": "#/$defs/preparationTrace"
     }
   },
   "$defs": {
@@ -62,13 +69,17 @@
     },
     "timestamp": {
       "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
-      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset, semantically valid in the proleptic Gregorian calendar: the pattern pins the lexical ranges and implementations MUST additionally reject impossible calendar instants (e.g. 2026-02-30) — the conformance runner enforces this on every vector; leap seconds are not accepted. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3, amended per RT-17)."
     },
     "digestRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["class", "algorithm", "value_hex"],
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
       "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
       "properties": {
         "class": {
@@ -82,7 +93,12 @@
           ],
           "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
         },
-        "algorithm": { "enum": ["sha-256", "hmac-sha-256"] },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
         "key_ref": {
           "type": "string",
           "pattern": "^[\\x21-\\x7e]{1,128}$",
@@ -105,19 +121,180 @@
                 "ciphertext_public"
               ]
             },
-            "algorithm": { "const": "sha-256" }
+            "algorithm": {
+              "const": "sha-256"
+            }
           },
-          "not": { "required": ["key_ref"] }
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
         },
         {
           "properties": {
-            "class": { "enum": ["local_erasure_safe", "scope_erasure_safe"] },
-            "algorithm": { "const": "hmac-sha-256" }
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
           },
-          "required": ["key_ref"]
+          "required": [
+            "key_ref"
+          ]
         }
       ],
       "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "localErasureSafeDigest": {
+      "$ref": "#/$defs/digestRef",
+      "properties": {
+        "class": {
+          "const": "local_erasure_safe"
+        }
+      },
+      "description": "Contextual digest-class binding (PROFILE.md §6.2, D-R0-1; RT-02): this field commits to an authority subject or other erasable per-object content, so exactly class local_erasure_safe (per-object secret, keyed HMAC) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — never a silent substitution."
+    },
+    "slotRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot_ref",
+        "kind",
+        "multiplicity",
+        "seat_refs",
+        "subject_digest"
+      ],
+      "properties": {
+        "slot_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "pledgor_assent",
+            "beneficiary_acceptance",
+            "human_authority",
+            "resource_owner",
+            "reviewer_independence"
+          ],
+          "description": "The §9.3 required-slot kind."
+        },
+        "multiplicity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "How many separately attributable receipts this slot needs; seat_refs carries exactly this many concrete seats (runner-checked — JSON Schema cannot compare a member to an array length)."
+        },
+        "seat_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "description": "The concrete, repeatable seat records prepared for this slot: pledge_position's seat_ref MUST name one of these exact seats (RT-03; §14.6 'the server prepares canonical subjects and required seats')."
+        },
+        "subject_digest": {
+          "$ref": "#/$defs/localErasureSafeDigest",
+          "description": "Binds every seat of this slot to the exact prepared proposal subject; a Position naming a different subject digest is ineligible (§10.3 'Changed ... subject digest ... invalidates pending positions')."
+        }
+      },
+      "description": "Concrete slot/seat record (RT-03, D-RT-3): prepare returns the exact repeatable seat records — not bare slot-kind enums — with multiplicity and subject bindings, so the position stage and deterministic finalization consume the same closed seat set."
+    },
+    "preparationTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trace_id",
+        "operation",
+        "actor_binding_ref",
+        "input_ref",
+        "input_digest",
+        "output_subject_digest",
+        "field_sources",
+        "policy_algebra_version",
+        "dependency_set_ref",
+        "created_at",
+        "digest"
+      ],
+      "properties": {
+        "trace_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "operation": {
+          "const": "pledge_amend",
+          "description": "Const-bound to this exact operation (RT-04): a trace minted for any other operation cannot validate here."
+        },
+        "actor_binding_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "input_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "input_digest": {
+          "$ref": "#/$defs/localErasureSafeDigest"
+        },
+        "output_subject_digest": {
+          "$ref": "#/$defs/localErasureSafeDigest",
+          "description": "Must equal the prepared subject digest this result projects (runner-checked equality; RT-04 subject binding)."
+        },
+        "field_sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "output_pointer",
+              "source_ref",
+              "source_pointer",
+              "transform_id"
+            ],
+            "properties": {
+              "output_pointer": {
+                "$ref": "#/$defs/jsonPointer"
+              },
+              "source_ref": {
+                "$ref": "#/$defs/identifier"
+              },
+              "source_pointer": {
+                "$ref": "#/$defs/jsonPointer"
+              },
+              "transform_id": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          "description": "Complete output-pointer provenance (§10.5; RT-04): every projected member of the prepared subject has at least one source row, and every output_pointer targets a projected member — the runner checks both directions mechanically. Every mechanical normalization, intersection, pinned-collection expansion, or derived total names its transform id and source fields."
+        },
+        "policy_algebra_version": {
+          "$ref": "#/$defs/identifier"
+        },
+        "dependency_set_ref": {
+          "$ref": "#/$defs/identifier",
+          "description": "The authorization dependency set the preparation locked (§10.5)."
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "digest": {
+          "$ref": "#/$defs/localErasureSafeDigest"
+        }
+      },
+      "description": "The one reusable closed PreparationTrace, verbatim §10.5 (R19; RT-04), embedded on every prepared result. Preparation is a field-complete deterministic compilation: it never supplies a semantic default, guesses a recipient, chooses a reviewer, decomposes a goal, or uses a model."
+    },
+    "jsonPointer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^/",
+      "description": "JSON pointer into the prepared subject or its source (§10.5 field_sources)."
     }
   }
 }

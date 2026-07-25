@@ -1,0 +1,28 @@
+{
+  "name": "ops/society-bootstrap-request-missing-expected-revision-invalid",
+  "description": "RT-01: society_bootstrap is update-classed (current-head CAS) — its closed update meta REQUIRES meta.expected_revision, so omitting the last observed revision fails structurally, never as an optional runtime nicety (§14.2 'Updates require the last observed revision').",
+  "input": {
+    "schema": "society-bootstrap-request",
+    "value": {
+      "version": "0.2",
+      "op": "society_bootstrap",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1
+      },
+      "society_id": "society-id-1",
+      "preparation_ref": "preparation-ref-1",
+      "subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:subject_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

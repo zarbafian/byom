@@ -1,0 +1,54 @@
+{
+  "name": "ops/candidate-self-policy-propose-request-v2-valid",
+  "description": "RT-06: the v2 successor schema binds proposed_policy_body to the closed BPA-1 AST (byte-identical nested copy of bpa1-policy) — a real policy value validates on the candidate MCP self-policy path.",
+  "input": {
+    "schema": "candidate-self-policy-propose-request-v2",
+    "value": {
+      "version": "0.2",
+      "op": "candidate_self_policy_propose",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1
+      },
+      "onboarding_ref": "onboarding-ref-1",
+      "proposed_policy_kind": "assent",
+      "proposed_policy_body": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "operation": {
+                "ids": [
+                  "events_read"
+                ]
+              }
+            }
+          },
+          {
+            "effect": "deny",
+            "atoms": {
+              "binding": {
+                "ids": [
+                  "prov:acme"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "proposed_policy_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:proposed_policy_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "adoption_mode": "direct_candidate",
+      "adoption_control_domain_ref": "adoption-control-domain-ref-1"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

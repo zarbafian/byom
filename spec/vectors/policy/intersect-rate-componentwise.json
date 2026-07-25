@@ -1,6 +1,6 @@
 {
   "name": "policy/intersect-rate-componentwise",
-  "description": "RateCeiling meet: minimum capacity and max_burst, and the refill pair of the slower side by exact integer cross-multiplication (100/20000 ms is slower than 10/1000 ms)",
+  "description": "RateCeiling meet under D-RT-4: equal window boundaries (1000 ms, same epoch), componentwise minimum of capacity, refill_amount, and max_burst",
   "input": {
     "policy_op": "intersect",
     "a": {
@@ -31,8 +31,8 @@
               "dimension": "compute",
               "canonical_unit": "token",
               "capacity": 50,
-              "refill_amount": 100,
-              "refill_period_milliseconds": 20000,
+              "refill_amount": 7,
+              "refill_period_milliseconds": 1000,
               "max_burst": 30,
               "epoch": "ep-1",
               "clock": "authority_server"
@@ -54,8 +54,8 @@
                 "dimension": "compute",
                 "canonical_unit": "token",
                 "capacity": 50,
-                "refill_amount": 100,
-                "refill_period_milliseconds": 20000,
+                "refill_amount": 7,
+                "refill_period_milliseconds": 1000,
                 "max_burst": 20,
                 "epoch": "ep-1",
                 "clock": "authority_server"
@@ -64,7 +64,7 @@
           }
         ]
       },
-      "canonical": "{\"rules\":[{\"atoms\":{\"rate\":{\"canonical_unit\":\"token\",\"capacity\":50,\"clock\":\"authority_server\",\"dimension\":\"compute\",\"epoch\":\"ep-1\",\"max_burst\":20,\"refill_amount\":100,\"refill_period_milliseconds\":20000}},\"effect\":\"allow\"}]}"
+      "canonical": "{\"rules\":[{\"atoms\":{\"rate\":{\"canonical_unit\":\"token\",\"capacity\":50,\"clock\":\"authority_server\",\"dimension\":\"compute\",\"epoch\":\"ep-1\",\"max_burst\":20,\"refill_amount\":7,\"refill_period_milliseconds\":1000}},\"effect\":\"allow\"}]}"
     }
   }
 }

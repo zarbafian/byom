@@ -15,8 +15,9 @@
       "host_kind": "kovee_deployment",
       "host_binding_ref": "host-1",
       "package_or_adapter_digest": {
-        "class": "structural_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:package_or_adapter_digest",
         "value_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "supported_protocol_versions": [

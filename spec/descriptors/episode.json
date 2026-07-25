@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Episode/EpisodeLease",
   "states": [
     "prepared",
@@ -13,6 +14,7 @@
     "canceled",
     "ambiguous",
     "lease_leased",
+    "lease_expired",
     "lease_running",
     "lease_yielding",
     "lease_completing",
@@ -24,6 +26,18 @@
       "to": "prepared",
       "via": "episode_request",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "owner intent plus activation admission; arrival, Kovee Attention, ranking, a host cron, or a model score cannot skip a stage (§11.1)"
+      ],
+      "locks": [
+        "owner intent",
+        "activation admission"
+      ],
+      "fences": [],
+      "events": [
+        "episode.prepared"
+      ],
+      "crash_result": "uncertain bridge stays unqueued/held (§14.8 Episode request row; creation derived, gap note G27)",
       "notes": "Owner intent plus activation admission; §14.8's Episode row begins at prepared — creation transition derived, gap note G27. Arrival, Kovee Attention, ranking, a host cron, or a model score cannot skip a stage (§11.1)."
     },
     {
@@ -31,6 +45,18 @@
       "to": "eligible",
       "via": "episode_request",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "deterministic eligibility: participant pull, admitted event, dependency outcome, decided proposal, manual request, or bounded schedule (§11.2)"
+      ],
+      "locks": [
+        "owner intent",
+        "activation admission"
+      ],
+      "fences": [],
+      "events": [
+        "episode.eligible"
+      ],
+      "crash_result": "uncertain bridge stays unqueued/held (§14.8 Episode request row)",
       "notes": "Deterministic eligibility: participant pull, admitted event, dependency outcome, decided proposal, manual request, or bounded schedule; no raw message or Kovee attention candidate starts an Episode (§11.2, §14.8: prepared → eligible / request)."
     },
     {
@@ -38,6 +64,19 @@
       "to": "queued",
       "via": "resource_allocate",
       "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "queue only after both Byom and Kovee reservations; no lease yet (§14.8)"
+      ],
+      "locks": [
+        "owner intent",
+        "activation admission",
+        "Byom then Kovee reservation"
+      ],
+      "fences": [],
+      "events": [
+        "episode.queued"
+      ],
+      "crash_result": "uncertain bridge stays unqueued/held (§14.8 Episode request row)",
       "notes": "Queue only after both Byom and Kovee reservations; no lease yet; an uncertain bridge stays unqueued/held (§14.8)."
     },
     {
@@ -45,6 +84,18 @@
       "to": "running",
       "via": "episode_start",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current lease attempt and fence; workload identity bound to the exact Episode/Manifestation (R30)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [],
+      "events": [
+        "episode.running"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "cascade": true
     },
     {
@@ -52,6 +103,19 @@
       "to": "yielded",
       "via": "episode_yield",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and dependencies (R30)"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "EpisodeCompletion/event and conservative settlement; Delivery remains separate"
+      ],
+      "events": [
+        "episode.yielded"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "cascade": true
     },
     {
@@ -59,6 +123,19 @@
       "to": "waiting",
       "via": "episode_yield",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and dependencies (R30)"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "EpisodeCompletion/event and conservative settlement; Delivery remains separate"
+      ],
+      "events": [
+        "episode.waiting"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "notes": "Cascade: yield awaiting an admitted event or dependency (§11.2).",
       "cascade": true
     },
@@ -67,6 +144,19 @@
       "to": "completed",
       "via": "episode_complete",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and dependencies (R30); a completion is evidence only — Delivery remains separate and pledgor-authored"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "EpisodeCompletion/event and conservative settlement; Delivery remains separate"
+      ],
+      "events": [
+        "episode.completed"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "notes": "Cascade: EpisodeCompletion and conservative settlement; a completion is evidence only — Delivery remains separate and pledgor-authored (§11.2, §14.8).",
       "cascade": true
     },
@@ -75,6 +165,19 @@
       "to": "failed",
       "via": "episode_fail",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and dependencies (R30)"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "EpisodeCompletion/event and conservative settlement; Delivery remains separate"
+      ],
+      "events": [
+        "episode.failed"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "cascade": true
     },
     {
@@ -82,6 +185,20 @@
       "to": "interrupted",
       "via": "activity_hold",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the ActivityStream machine's owning hold: hold fences the running Episode"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "hold fences the running Episode"
+      ],
+      "events": [
+        "episode.interrupted"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "notes": "Cascade of the ActivityStream machine's owning hold: hold fences the running Episode (§14.8: running → interrupted / hold).",
       "cascade": true
     },
@@ -90,6 +207,20 @@
       "to": "canceled",
       "via": "activity_close",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the ActivityStream machine's owning close: cancellation honesty — fence advance revokes permits"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "fence advance revokes permits; settlement is conservative"
+      ],
+      "events": [
+        "episode.canceled"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "notes": "Cascade of the ActivityStream machine's owning close: cancellation honesty — fence advance revokes permits and settlement is conservative (§14.8).",
       "cascade": true
     },
@@ -98,6 +229,19 @@
       "to": "ambiguous",
       "via": "server_time",
       "authority": "server: lease/deadline expiry with unknown external use (server time)",
+      "guards": [
+        "authoritative server time past lease/deadline with unknown external use"
+      ],
+      "locks": [
+        "current attempt/fence/dependencies"
+      ],
+      "fences": [
+        "conservative settlement"
+      ],
+      "events": [
+        "episode.ambiguous"
+      ],
+      "crash_result": "unknown external use is ambiguous (§14.8 Episode running row)",
       "notes": "Unknown external use is ambiguous; never blindly repeated (§14.8)."
     },
     {
@@ -105,15 +249,65 @@
       "to": "lease_leased",
       "via": "episode_claim",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "fresh fence: CAS on the one EpisodeLeaseHead (UNIQUE(episode_id, generation))",
+        "runtime binding, current Episode/generation and both host fences (R30)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "claim increments Byom fence and appends immutable attempt; CAS head"
+      ],
+      "events": [
+        "episode.lease_leased"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "notes": "Cascade: claim uses compare-and-swap on the one EpisodeLeaseHead (UNIQUE(episode_id, generation)), increments the Byom fence, and creates an immutable EpisodeAttempt (§11.2). Lease head folded into this descriptor — gap note G29.",
       "cascade": true
     },
     {
       "from": "lease_leased",
+      "to": "lease_expired",
+      "via": "server_time",
+      "authority": "server: authoritative server time strictly past the lease deadline (D-RT-6; §11.2 deadlines and expiry use authoritative server time)",
+      "guards": [
+        "authoritative server time strictly past the lease deadline (D-RT-6) — a worker crash or silence alone never moves the head"
+      ],
+      "locks": [
+        "current EpisodeLeaseHead"
+      ],
+      "fences": [
+        "expiry never deletes the head or reuses a fence (§11.2)"
+      ],
+      "events": [
+        "episode.lease_expired"
+      ],
+      "crash_result": "old worker is stale; lease expiry never deletes the head or reuses a fence (§14.8 Episode lease row, §11.2)",
+      "notes": "D-RT-6 (RT-10): expiry is an explicit, authoritative-time-guarded transition — a worker crash or silence alone NEVER moves the head and never enables reclaim; only the server's clock passing the lease deadline does. Expiry never deletes the head or reuses a fence (§11.2)."
+    },
+    {
+      "from": "lease_expired",
       "to": "lease_leased",
       "via": "episode_claim",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
-      "notes": "Cascade: expired-head re-claim under a fresh fence and new immutable attempt; lease expiry never deletes the head or reuses a fence; the old worker is stale and cannot submit a Delivery, consume a mandate, create child work, append a continuation, or settle usage (§11.2).",
+      "guards": [
+        "head in authoritative lease_expired state — worker crash or silence alone never enables reclaim",
+        "fresh fence: CAS on the one EpisodeLeaseHead"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "claim increments Byom fence and appends new immutable attempt; the old worker is stale and cannot submit a Delivery, consume a mandate, create child work, append a continuation, or settle usage (§11.2)"
+      ],
+      "events": [
+        "episode.lease_leased"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
+      "notes": "Cascade: expired-head re-claim under a fresh fence and new immutable attempt — enabled ONLY from the authoritative lease_expired state (D-RT-6; a live leased head is not stealable, the negative vector pins it). Lease expiry never deletes the head or reuses a fence; the old worker is stale and cannot submit a Delivery, consume a mandate, create child work, append a continuation, or settle usage (§11.2).",
       "cascade": true
     },
     {
@@ -121,6 +315,20 @@
       "to": "lease_running",
       "via": "episode_start",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current lease revision: head updates append immutable EpisodeAttemptEvents with expected_lease_revision (§11.2)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "head update with immutable EpisodeAttemptEvent"
+      ],
+      "events": [
+        "episode.lease_running"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "cascade": true
     },
     {
@@ -128,6 +336,20 @@
       "to": "lease_yielding",
       "via": "episode_yield",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current lease revision: head updates append immutable EpisodeAttemptEvents with expected_lease_revision (§11.2)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "head update with immutable EpisodeAttemptEvent"
+      ],
+      "events": [
+        "episode.lease_yielding"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "notes": "Cascade: renewals and transitions update the head and append immutable EpisodeAttemptEvents with expected_lease_revision (§11.2).",
       "cascade": true
     },
@@ -136,6 +358,20 @@
       "to": "lease_leased",
       "via": "episode_claim",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "re-claim after yield: fresh fence CAS on the one EpisodeLeaseHead; prior attempts remain historical (§11.2)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "claim increments Byom fence and appends new immutable attempt; CAS head"
+      ],
+      "events": [
+        "episode.lease_leased"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "notes": "Cascade: re-claim after yield under a fresh fence; prior attempts remain historical (§11.2).",
       "cascade": true
     },
@@ -144,6 +380,20 @@
       "to": "lease_completing",
       "via": "episode_complete",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and expected lease revision (§11.2)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "head update with immutable EpisodeAttemptEvent"
+      ],
+      "events": [
+        "episode.lease_completing"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "cascade": true
     },
     {
@@ -151,6 +401,20 @@
       "to": "lease_terminal",
       "via": "episode_complete",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and expected lease revision (§11.2)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "head update with immutable EpisodeAttemptEvent"
+      ],
+      "events": [
+        "episode.lease_terminal"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "cascade": true
     },
     {
@@ -158,6 +422,20 @@
       "to": "lease_terminal",
       "via": "episode_fail",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "current attempt, fence, and expected lease revision (§11.2)"
+      ],
+      "locks": [
+        "runtime binding",
+        "current Episode/generation and both host fences"
+      ],
+      "fences": [
+        "head update with immutable EpisodeAttemptEvent"
+      ],
+      "events": [
+        "episode.lease_terminal"
+      ],
+      "crash_result": "old worker is stale (§14.8 Episode lease row)",
       "cascade": true
     }
   ]

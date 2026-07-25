@@ -1,0 +1,39 @@
+{
+  "name": "machines/pledge-amend-successor",
+  "description": "D-RT-3 (RT-03): the amendment successor is a SEPARATE PledgeProposal instance of the Pledge machine — pledge_amend creates it at proposed, it collects all currently required seats again, and pledge_finalize forms it like any proposal (the same finalize atomically supersedes the predecessor instance — machines/pledge-amend-cas).",
+  "input": {
+    "machine": "pledge",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "pledge_amend",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_position",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_finalize",
+        "to": "active",
+        "expect": "accepted"
+      },
+      {
+        "from": "active",
+        "via": "activity_open",
+        "to": "underway",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "underway"
+  }
+}

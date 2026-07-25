@@ -1,0 +1,43 @@
+{
+  "name": "policy/canonical-rule-order-utf8-bytes",
+  "description": "D-RT-5 (RT-08) adversarial Unicode ordering: the U+FF61 path segment (UTF-8 ef bd a1) sorts BEFORE the U+10000 astral segment (UTF-8 f0 90 80 80) in JCS UTF-8 byte order, while UTF-16 string comparison would order them the other way (d800 < ff61) — the digest pins the byte order",
+  "input": {
+    "policy_op": "canonical",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:r1",
+              "segments": [
+                "𐀀"
+              ],
+              "match": "exact"
+            }
+          }
+        },
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:r1",
+              "segments": [
+                "｡"
+              ],
+              "match": "exact"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "canonical": "{\"rules\":[{\"atoms\":{\"path\":{\"match\":\"exact\",\"root\":\"ws:r1\",\"segments\":[\"｡\"]}},\"effect\":\"allow\"},{\"atoms\":{\"path\":{\"match\":\"exact\",\"root\":\"ws:r1\",\"segments\":[\"𐀀\"]}},\"effect\":\"allow\"}]}",
+      "tagged_canonical": "{\"$domain\":\"bpa1-policy-v1\",\"rules\":[{\"atoms\":{\"path\":{\"match\":\"exact\",\"root\":\"ws:r1\",\"segments\":[\"｡\"]}},\"effect\":\"allow\"},{\"atoms\":{\"path\":{\"match\":\"exact\",\"root\":\"ws:r1\",\"segments\":[\"𐀀\"]}},\"effect\":\"allow\"}]}",
+      "sha256_hex": "c09be4224208ba77e0995fe6e418ea00c8bad4664cbc497d7876c56805720c32"
+    }
+  }
+}

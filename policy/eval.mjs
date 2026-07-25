@@ -7,7 +7,8 @@
 // same closed twelve-domain AST, same fixed validation order and JSON
 // pointers, same comparability pre-pass, same deny-wins decide, same
 // canonical form (set members sorted by UTF-16 code units, rules sorted by
-// JCS bytes, duplicates removed), same bpa1-policy-v1 tagged digest.
+// JCS UTF-8 BYTES, duplicate rules rejected as malformed — D-RT-5), same
+// bpa1-policy-v1 tagged digest.
 // It shares no code with eval.py; conformance/run.py and run-checks.sh hold
 // both to every golden vector and to a seeded differential run.
 //
@@ -15,8 +16,7 @@
 // rejection {ok: false, error: {kind: "malformed"|"overflow"|"incomparable",
 // where: <JSON pointer or domain>}}. No exception escapes on any I-JSON
 // input; a malformed AST fails closed at the first offending location in
-// the fixed validation order. Exact integer arithmetic uses BigInt where a
-// product could exceed 2^53 (rate refill cross-multiplication).
+// the fixed validation order.
 //
 // CLI:
 //   node policy/eval.mjs check spec/vectors/policy   # self-check vs vectors
@@ -475,6 +475,16 @@ function validatePolicy(p, base = "") {
     }
     return { effect: r.effect, atoms };
   });
+  // D-RT-5 (RT-08): duplicate rules REJECT (malformed) at the second
+  // occurrence in input order — never a silent dedupe. Duplicates compare
+  // in per-rule canonical form (set members sorted), the same form the
+  // canonical ordering uses.
+  const seen = new Set();
+  rules.forEach((r, i) => {
+    const key = jcs(canonicalRule(r));
+    if (seen.has(key)) throw new PolicyErr("malformed", `${base}/rules/${i}`);
+    seen.add(key);
+  });
   return { rules };
 }
 
@@ -594,8 +604,13 @@ function comparableAtoms(domain, a, b) {
         || (a.currency === b.currency
             && a.pricing_revision === b.pricing_revision);
     case "rate":
+      // D-RT-4 (RT-07): rate claims are decidable from the encoding alone
+      // only under EQUAL window boundaries (same refill period, same
+      // epoch); differing periods are incomparable (fail closed) — the
+      // finer semantics are consume-time behavior, never an algebra claim.
       return a.dimension === b.dimension
-        && a.canonical_unit === b.canonical_unit && a.epoch === b.epoch;
+        && a.canonical_unit === b.canonical_unit && a.epoch === b.epoch
+        && a.refill_period_milliseconds === b.refill_period_milliseconds;
     case "network_destination":
       return hostKind(a.host) === hostKind(b.host);
     default:
@@ -628,11 +643,13 @@ function hostSubset(c, p) {
   return false; // ip4 vs ip6: decidably disjoint
 }
 
-// 10.5 rate containment; BigInt keeps the cross-multiplication exact.
+// 10.5 rate containment under D-RT-4 (RT-07): comparableAtoms already
+// required equal window boundaries, so containment is componentwise —
+// the ratio cross-multiplication is deliberately gone (it blessed a child
+// that refills before the parent boundary).
 const rateContained = (c, p) =>
   c.capacity <= p.capacity && c.max_burst <= p.max_burst
-  && BigInt(c.refill_amount) * BigInt(p.refill_period_milliseconds)
-     <= BigInt(p.refill_amount) * BigInt(c.refill_period_milliseconds);
+  && c.refill_amount <= p.refill_amount;
 
 const setLe = (c, p) => {
   const ps = new Set(p);
@@ -721,29 +738,19 @@ function atomIntersect(domain, a, b) {
     }
     case "quantity":
       return { ...a, max: Math.min(a.max, b.max) };
-    case "rate": {
-      const ra = BigInt(a.refill_amount)
-        * BigInt(b.refill_period_milliseconds);
-      const rb = BigInt(b.refill_amount)
-        * BigInt(a.refill_period_milliseconds);
-      let refill;
-      if (ra < rb) refill = a;
-      else if (rb < ra) refill = b;
-      else {
-        refill = a.refill_period_milliseconds
-          >= b.refill_period_milliseconds ? a : b;
-      }
+    case "rate":
+      // D-RT-4: comparability already pinned equal window boundaries, so
+      // the meet is componentwise on the shared period.
       return {
         dimension: a.dimension,
         canonical_unit: a.canonical_unit,
         capacity: Math.min(a.capacity, b.capacity),
-        refill_amount: refill.refill_amount,
-        refill_period_milliseconds: refill.refill_period_milliseconds,
+        refill_amount: Math.min(a.refill_amount, b.refill_amount),
+        refill_period_milliseconds: a.refill_period_milliseconds,
         max_burst: Math.min(a.max_burst, b.max_burst),
         epoch: a.epoch,
         clock: "authority_server",
       };
-    }
     case "assurance": {
       const bs = new Set(b.admitted);
       const admitted = sortedSet(a.admitted.filter((x) => bs.has(x)));
@@ -800,23 +807,36 @@ function memberOf(domain, point, atom) {
 
 // ------------------------------------------------------- canonical form ----
 
-function canonicalize(policy) {
-  const rules = policy.rules.map((r) => {
-    const atoms = {};
-    for (const d of Object.keys(r.atoms)) {
-      const atom = { ...r.atoms[d] };
-      for (const key of ["ids", "allowed", "admitted"]) {
-        if (key in atom) atom[key] = [...atom[key]].sort();
-      }
-      atoms[d] = atom;
+// Per-rule canonical form: set members sorted (UTF-16 code units — plain
+// sort() compares UTF-16 code units, which is the JCS member-order key).
+function canonicalRule(r) {
+  const atoms = {};
+  for (const d of Object.keys(r.atoms)) {
+    const atom = { ...r.atoms[d] };
+    for (const key of ["ids", "allowed", "admitted"]) {
+      if (key in atom) atom[key] = [...atom[key]].sort();
     }
-    return { effect: r.effect, atoms };
+    atoms[d] = atom;
+  }
+  return { effect: r.effect, atoms };
+}
+
+function canonicalize(policy) {
+  // Canonical form: rules sorted by their JCS UTF-8 BYTES (D-RT-5 /
+  // RT-08 — plain string comparison is UTF-16 code-unit order, which
+  // disagrees on astral vs U+E000..U+FFFF code points). Duplicate INPUT
+  // rules were already rejected by validatePolicy; the dedupe below only
+  // folds identical DERIVED rules an intersection legitimately produces
+  // (e.g. one deny rule shared by both factors).
+  const rules = policy.rules.map(canonicalRule);
+  const keyed = rules.map((r) => {
+    const k = jcs(r);
+    return [k, Buffer.from(k, "utf8"), r];
   });
-  const keyed = rules.map((r) => [jcs(r), r]);
-  keyed.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+  keyed.sort((x, y) => Buffer.compare(x[1], y[1]));
   const out = [];
   let seen = null;
-  for (const [k, r] of keyed) {
+  for (const [k, , r] of keyed) {
     if (k !== seen) { out.push(r); seen = k; }
   }
   return { rules: out };

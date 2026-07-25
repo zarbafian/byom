@@ -43,4 +43,4 @@ file numbers and plan ids diverge after 0002):
 |---|---|---|---|
 | [0001](0001-bpa1-encoding.md) | B-ADR-1 | BPA-1 policy algebra encoding | accepted |
 | [0002](0002-bdpl-serialization.md) | B-ADR-2 | BDPL serialization | proposed |
-| [0003](0003-model-checking.md) | B-ADR-4 | Model checking and conformance oracle | proposed |
+| [0003](0003-model-checking.md) | B-ADR-4 | Model checking and conformance oracle | accepted |

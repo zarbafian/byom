@@ -11,14 +11,24 @@ Checks, in order:
    remote $ref, resolvable internal $refs, compilable patterns), and
    compiles — with `jsonschema` when installed, otherwise against this
    file's minimal structural validator;
-2. the complete B0.1 bundle op list — transcribed from the
-   plan/sheets/B0.1.md family lists (the interim freeze source until
-   spec/registry/ lands) and cross-checked against the §14.6 catalog — is
-   schema-covered: every op has a closed <op>-request and <op>-result
-   schema, the request pins the exact op const, mutations require meta and
-   reads carry none;
-3. every descriptor in spec/descriptors/ is structurally valid
-   ({machine, states, transitions}), every via references a real catalog
+2. the machine-readable (operation,surface) registry spec/registry.json
+   (RT-12) is exact: every B0.1 sheet op appears with exactly its expected
+   surface rows (the G35 dual-surface ops with exactly two), classes
+   read/create/update match the sheet transcription, and the named
+   request/result schemas exist — bundle, meta-class, and MCP checks
+   derive from these rows, so an extra or missing surface binding fails;
+   the complete bundle is schema-covered: every op has a closed
+   <op>-request and <op>-result schema, the request pins the exact op
+   const, mutations require meta and reads carry none; update-classed ops
+   REQUIRE meta.expected_revision and create-classed ops carry no
+   expected_revision member at all (closed update/create metas — RT-01);
+   the RT-06 G10/G31 successor (-v2) schemas exist where the registry
+   names them and their nested bpa1Policy $defs are byte-identical (JCS,
+   modulo the documented nesting prefix) to bpa1-policy.schema.json;
+3. every descriptor in spec/descriptors/ is a structurally valid v2
+   descriptor ({format: byom-descriptor/v2, machine, states, transitions}
+   with per-row structured guards/locks/fences/events/crash_result —
+   §14.8's mandated columns, RT-09), every via references a real catalog
    operation or a named kernel/server transition, and descriptor parity
    holds: every mutating operation in the slice appears in exactly one
    descriptor's owning (non-cascade) transitions (§14.8 one-to-one rule);
@@ -31,7 +41,15 @@ Checks, in order:
    65 536-node caps, `$domain` reservation at every depth, surrogate and
    float rules — R0/BYOM-03); digest vectors re-derive $domain-tagged JCS
    canonical bytes and the keyed scope_erasure_safe HMAC DigestRef
-   (PROFILE.md sections 2/5/6, normative; D-R0-1 — R0/BYOM-01);
+   (PROFILE.md sections 2/5/6, normative; D-R0-1 — R0/BYOM-01). Schema
+   vectors additionally pass the cross-member checks JSON Schema cannot
+   express: semantic RFC 3339 (every timestamp-shaped string must be a
+   real proleptic-Gregorian instant — RT-17); prepared results carry a
+   field-complete PreparationTrace whose output_subject_digest equals the
+   projected subject digest, whose dependency_set_ref matches the
+   result's, and whose field_sources give COMPLETE output-pointer
+   provenance in both directions (RT-04); pledge slot records are unique
+   per kind with multiplicity equal to the concrete seat count (RT-03);
 5. machine state-walk vectors (spec/vectors/machines/) replay crash/replay
    transition sequences through a small interpreter over the committed
    descriptor JSON: accepted steps must be exact descriptor rows, rejected
@@ -49,17 +67,27 @@ Checks, in order:
    Python result — the B0.1 "two independent policy evaluators" gate;
    without node, run-checks.sh's dedicated eval.mjs and differential steps
    still enforce it;
-7. the C3a MCP tool bundle (mcp/byom-mcp.tools.json) validates against the
-   closed meta-schema spec/schemas/mcp-tools.schema.json; each profile's op
-   list EXACTLY equals the C3a sheet list transcribed below
-   (plan/sheets/C3a.md; candidate binding normative via byom amendment A4);
-   every tool's input-schema fields are a subset of its committed op request
-   schema's args (envelope {version, op, meta} excluded — the byom-mcp
-   bridge derives them from the channel) with no invented and no
-   channel-derived (G16) fields; reads are safe_to_allow and mutations
-   gated (the akson-mcp marking); and zero governance, runtime, or admin
-   operations are bound. Tool-call vectors (spec/vectors/mcp/) replay
-   call shapes against the committed document.
+7. the C3a MCP tool bundle (mcp/byom-mcp.tools.json, v0.1.1) validates
+   against the closed meta-schema spec/schemas/mcp-tools.schema.json; each
+   profile's op list EXACTLY equals the C3a sheet list transcribed below
+   (plan/sheets/C3a.md) minus the four null-bound tools REMOVED by D-RT-2
+   (RT-14: engram_propose/read/search, budget_show — they return with
+   their owning bundles via a new tools-document version; no callable
+   placeholder with a null contract is ever advertised); every tool's
+   input schema is a VERBATIM derivation of its committed op request
+   schema (RT-16, the kovee discipline): property bodies byte-identical
+   (JCS), required set exact, any top-level oneOf copied exactly, the
+   exact transitive $defs closure copied verbatim, and every $ref
+   resolving — with the envelope {version, op, meta} excluded (the
+   byom-mcp bridge derives them from the channel), no invented and no
+   channel-derived (G16) fields; the C3a-bound G10/G31 ops are frozen to
+   their -v2 successor schemas (RT-06); reads are safe_to_allow and
+   mutations gated (the akson-mcp marking); zero governance, runtime, or
+   admin operations are bound; and a widening-mutation self-test proves
+   the checker catches enum/constraint/defs widening, dropped required
+   args, smuggled fields, ungated mutations, and null-bound placeholders.
+   Tool-call vectors (spec/vectors/mcp/) replay call shapes against the
+   committed document.
 8. the C2 governed-work family (spec/governed-work/, byom §16.3/§16.6 plus
    the slice-2 sources §7.4/§11.4/§12.1/§14.3/§17.2; family contract
    §2.A-2.F/2.J, Δ4/Δ5): the closed record-schema inventory (slice 1 + the
@@ -412,23 +440,25 @@ C3A_PARTICIPANT_OPS = (
     "pledge_position", "pledge_finalize", "pledge_amend", "pledge_resume",
     "pledge_relinquish", "delivery_submit", "delivery_withdraw",
     "mandate_prepare", "mandate_position", "act_intent_prepare",
-    "act_intent_position", "act_intent_cancel", "engram_propose",
-    "engram_read", "engram_search", "participant_show", "activity_show",
-    "society_show", "budget_show", "snapshot_get", "events_read",
+    "act_intent_position", "act_intent_cancel", "participant_show",
+    "activity_show", "society_show", "snapshot_get", "events_read",
     "events_wait", "event_payload", "idempotency_result", "cursor_recover",
 )
 # The sheet lists activity_show twice (once among the activity ops, once
 # among the projection reads); one tool binds each unique op, in
-# first-occurrence sheet order.
+# first-occurrence sheet order. D-RT-2 (RT-14): the sheet's four
+# null-bound tools — engram_propose, engram_read, engram_search,
+# budget_show — are REMOVED from the advertised profile until their owning
+# bundles (B0.4 knowledge, budgets) freeze; they return via a new
+# tools-document version, never as callable placeholders.
+C3A_REMOVED_NULL_BOUND = ("engram_propose", "engram_read", "engram_search",
+                          "budget_show")
 C3A_PARTICIPANT_UNIQUE = tuple(dict.fromkeys(C3A_PARTICIPANT_OPS))
-# Reads (safe_to_allow) within the participant list: SLICE_READS members
-# plus the knowledge/budget projection reads whose op schemas land with
-# their own bundles (engram_read/engram_search are R4/R37 reads per
-# amendment A5; budget_show is a projection read).
+# Reads (safe_to_allow) within the participant list (SLICE_READS members).
 C3A_PARTICIPANT_READS = frozenset({
-    "activity_show", "participant_show", "society_show", "budget_show",
+    "activity_show", "participant_show", "society_show",
     "snapshot_get", "events_read", "events_wait", "event_payload",
-    "idempotency_result", "cursor_recover", "engram_read", "engram_search",
+    "idempotency_result", "cursor_recover",
 })
 # The channel/bridge envelope the byom-mcp bridge derives (protocol version
 # from negotiation, MutationMeta from channel state): never tool args.
@@ -445,6 +475,150 @@ MCP_CHANNEL_DERIVED = frozenset({
     "actor_ref", "participant_binding_epoch", "endpoint_incarnation",
     "recovery_epoch", "delivered_by_participant", "requested_by_participant",
 })
+
+# RT-16: verbatim $defs discipline (the kovee pattern) — the first path
+# segment after #/$defs/ names the def a fragment depends on (nested
+# bpa1Policy/$defs/... refs resolve inside the copied bpa1Policy def).
+RE_DEFS_REF = re.compile(r'"#/\$defs/([A-Za-z0-9]+)')
+
+
+def _defs_closure(fragment, all_defs):
+    seen = set()
+    frontier = set(RE_DEFS_REF.findall(json.dumps(fragment)))
+    while frontier:
+        name = frontier.pop()
+        if name in seen or name not in all_defs:
+            continue
+        seen.add(name)
+        frontier |= set(RE_DEFS_REF.findall(json.dumps(all_defs[name])))
+    return seen
+
+
+# --------------------------------------------- registry-derived classes ----
+# G35: the four dual-surface operations — exactly two registry rows each
+# (participant + governance); every other op exactly one (RT-12).
+G35_DUAL = frozenset({"mandate_position", "act_intent_position",
+                      "act_intent_finalize", "act_intent_cancel"})
+REGISTRY_SURFACES = frozenset({"participant", "governance", "candidate",
+                               "projection", "originating", "runtime",
+                               "pre_auth"})
+
+# RT-04: prepared results carrying the one reusable closed PreparationTrace:
+# schema name -> (const-bound operation, projected subject-digest field,
+# result dependency-set field bound to trace.dependency_set_ref or None).
+PREPARED_RESULTS = {
+    "act-intent-prepare-result": ("act_intent_prepare", "subject_digest",
+                                  "authorization_dependency_set_ref"),
+    "society-prepare-result": ("society_prepare", "subject_digest", None),
+    "charter-propose-result": ("charter_propose", "subject_digest", None),
+    "endeavor-propose-result": ("endeavor_propose", "subject_digest", None),
+    "pledge-propose-result": ("pledge_propose", "terms_digest", None),
+    "pledge-amend-result": ("pledge_amend", "terms_digest", None),
+    "mandate-prepare-result": ("mandate_prepare", "subject_digest",
+                               "dependency_set_ref"),
+    "mandate-derive-result": ("mandate_derive", "subject_digest",
+                              "dependency_set_ref"),
+}
+
+# RT-17 (G3 as amended): a string that LOOKS like a bundle timestamp must be
+# a real proleptic-Gregorian instant; the shared def's pattern pins lexical
+# ranges and this semantic check rejects impossible calendar dates.
+RE_TS_SHAPE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$")
+
+
+def _real_instant(s: str) -> bool:
+    from datetime import datetime
+    try:
+        datetime.strptime(s[:19], "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return False
+    return True
+
+
+def _timestamps_ok(value) -> bool:
+    """RT-17: every timestamp-shaped string anywhere in the instance must
+    be a real calendar instant (2026-02-30 passes the lexical pattern but
+    is rejected here — and MUST be rejected by every implementation)."""
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, str):
+            if RE_TS_SHAPE.match(node) and not _real_instant(node):
+                return False
+        elif isinstance(node, dict):
+            stack.extend(node.keys())
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return True
+
+
+def _preparation_trace_ok(value, subject_field, dep_field) -> bool:
+    """RT-04 cross-member checks on a prepared result (applied only where
+    the members carry their schema-checked shapes): the trace's
+    output_subject_digest equals the projected subject digest, its
+    dependency_set_ref matches the result's dependency field, and its
+    field_sources give complete output-pointer provenance — every
+    projected member has at least one source row and every output_pointer
+    targets a projected member."""
+    if not isinstance(value, dict):
+        return True
+    trace = value.get("preparation_trace")
+    if not isinstance(trace, dict):
+        return True
+    subject = value.get(subject_field)
+    out_subject = trace.get("output_subject_digest")
+    if isinstance(subject, dict) and isinstance(out_subject, dict):
+        if json.dumps(subject, sort_keys=True) != \
+                json.dumps(out_subject, sort_keys=True):
+            return False
+    if dep_field is not None:
+        dep = value.get(dep_field)
+        trace_dep = trace.get("dependency_set_ref")
+        if isinstance(dep, str) and isinstance(trace_dep, str) \
+                and dep != trace_dep:
+            return False
+    sources = trace.get("field_sources")
+    if isinstance(sources, list) and all(isinstance(s, dict)
+                                         for s in sources):
+        firsts = set()
+        for s in sources:
+            ptr = s.get("output_pointer")
+            if isinstance(ptr, str) and ptr.startswith("/"):
+                firsts.add(ptr.split("/")[1])
+        members = set(value) - {"preparation_trace"}
+        if members - firsts:      # a projected member without provenance
+            return False
+        if firsts - members:      # a pointer targeting nothing projected
+            return False
+    return True
+
+
+def _slot_records_ok(value) -> bool:
+    """RT-03 cross-member checks on concrete slot/seat records: at most one
+    slot per §9.3 kind, and multiplicity equals the number of concrete
+    prepared seats (JSON Schema cannot compare a member to a length)."""
+    if not isinstance(value, dict):
+        return True
+    slots = value.get("required_slots")
+    if not isinstance(slots, list):
+        return True
+    kinds = []
+    for slot in slots:
+        if not isinstance(slot, dict):
+            continue
+        kind = slot.get("kind")
+        if isinstance(kind, str):
+            if kind in kinds:
+                return False
+            kinds.append(kind)
+        mult = slot.get("multiplicity")
+        seats = slot.get("seat_refs")
+        if isinstance(mult, int) and not isinstance(mult, bool) \
+                and isinstance(seats, list) and mult != len(seats):
+            return False
+    return True
 
 
 # ---------------------------------------------------------------- I-JSON ----
@@ -1184,15 +1358,137 @@ class Runner:
             return mini_valid(schema, schema, value)
         return mini_valid(schema, _resolve_pointer(schema, ref), value)
 
+    # -- registry (RT-12) --
+
+    def check_registry(self) -> dict:
+        """RT-12: spec/registry.json is the machine-readable
+        (operation,surface) registry for the whole B0.1 bundle. The runner
+        derives its bundle, meta-class, and MCP checks from its exact rows
+        and fails on any extra/missing surface binding: registry ops must
+        equal the sheet transcription both ways, the G35 dual-surface ops
+        carry exactly the participant+governance row pair, every other op
+        exactly one row, classes agree with the read set, and the named
+        request/result schemas (successor -v2 versions included) exist."""
+        info = {"rows": 0, "dual": 0}
+        self.op_class = {}
+        self.op_surfaces = {}
+        self.op_req_schema = {}
+        path = self.spec_dir / "registry.json"
+        if not path.is_file():
+            self.fail("registry: spec/registry.json is missing (RT-12: the "
+                      "(operation,surface) registry must exist)")
+            return info
+        try:
+            reg = strict_parse(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            self.fail(f"registry: not strict I-JSON: {exc}")
+            return info
+        rows = reg.get("operations")
+        if not isinstance(rows, list) or not rows:
+            self.fail("registry: operations must be a non-empty list")
+            return info
+        seen = set()
+        for i, row in enumerate(rows):
+            where = f"registry: operations[{i}]"
+            if not isinstance(row, dict):
+                self.fail(f"{where}: not an object")
+                continue
+            missing = {"operation", "surface", "binding", "family", "class",
+                       "request_schema", "result_schema"} - set(row)
+            if missing:
+                self.fail(f"{where}: missing {sorted(missing)}")
+                continue
+            op, surface = row["operation"], row["surface"]
+            if surface not in REGISTRY_SURFACES:
+                self.fail(f"{where}: unknown surface {surface!r}")
+            if row["class"] not in ("read", "create", "update"):
+                self.fail(f"{where}: unknown class {row['class']!r}")
+            key = (op, surface)
+            if key in seen:
+                self.fail(f"{where}: duplicate (operation,surface) row "
+                          f"{key}")
+                continue
+            seen.add(key)
+            prev = self.op_class.setdefault(op, row["class"])
+            if prev != row["class"]:
+                self.fail(f"{where}: {op} rows disagree on class")
+            self.op_surfaces.setdefault(op, set()).add(surface)
+            prev_req = self.op_req_schema.setdefault(op,
+                                                     row["request_schema"])
+            if prev_req != row["request_schema"]:
+                self.fail(f"{where}: {op} rows disagree on request_schema")
+            info["rows"] += 1
+        reg_ops = set(self.op_class)
+        sheet_ops = set(SLICE_OPS)
+        for op in sorted(sheet_ops - reg_ops):
+            self.fail(f"registry: sheet op {op} has no registry row "
+                      "(missing surface binding)")
+        for op in sorted(reg_ops - sheet_ops):
+            self.fail(f"registry: row for {op} is not a B0.1 sheet op "
+                      "(extra surface binding)")
+        for op in sorted(reg_ops & sheet_ops):
+            surfaces = self.op_surfaces[op]
+            if op in G35_DUAL:
+                if surfaces != {"participant", "governance"}:
+                    self.fail(f"registry: G35 dual-surface op {op} must "
+                              "carry exactly the participant+governance "
+                              f"row pair, got {sorted(surfaces)}")
+                else:
+                    info["dual"] += 1
+            elif len(surfaces) != 1:
+                self.fail(f"registry: op {op} must carry exactly one "
+                          f"surface row, got {sorted(surfaces)}")
+            want_read = op in SLICE_READS
+            if (self.op_class[op] == "read") != want_read:
+                self.fail(f"registry: {op} class {self.op_class[op]!r} "
+                          "disagrees with the read set")
+        return info
+
     # -- bundle op list vs schemas --
+
+    def _meta_class_ok(self, op, cls, request, name):
+        """RT-01: closed update/create metas. Reads carry no meta;
+        mutations require it; update-classed ops REQUIRE
+        meta.expected_revision; create-classed ops have NO
+        expected_revision member at all."""
+        ok = True
+        required = request.get("required", [])
+        has_meta = "meta" in request.get("properties", {})
+        if cls == "read":
+            if has_meta:
+                self.fail(f"bundle: read {op} declares meta "
+                          "(reads never mutate, §14.2)")
+                ok = False
+            return ok
+        if not has_meta or "meta" not in required:
+            self.fail(f"bundle: mutation {op} does not require meta "
+                      "(§14.2: every mutation requires request id "
+                      "and idempotency key)")
+            return False
+        mm = request.get("$defs", {}).get("mutationMeta", {})
+        mm_required = mm.get("required", [])
+        mm_props = mm.get("properties", {})
+        if cls == "update":
+            if "expected_revision" not in mm_required:
+                self.fail(f"bundle: update-classed {op} ({name}) does not "
+                          "REQUIRE meta.expected_revision (RT-01: the "
+                          "closed update meta makes the current-head CAS "
+                          "structural)")
+                ok = False
+        elif cls == "create":
+            if "expected_revision" in mm_props:
+                self.fail(f"bundle: create-classed {op} ({name}) carries an "
+                          "expected_revision member (RT-01: the closed "
+                          "create meta has none - there is no head to CAS)")
+                ok = False
+        return ok
 
     def check_bundle(self) -> int:
         """B0.1 registry-derived rule (spec/README.md bundle-freeze): the
-        bundle op list, not prose, decides schema membership. The list is the
-        B0.1 sheet transcription above — completeness assertion: every op in
-        every sheet family must be a §14.6 catalog operation and must have a
-        closed request/result schema pair; the request pins the exact op
-        const; mutations require meta; reads carry none."""
+        registry rows, not prose, decide schema membership. Every op must
+        have its closed v1 request/result pair (published, immutable) AND,
+        where the registry names a -v2 successor (RT-06), that successor
+        must exist and satisfy the same const and RT-01 meta-class rules."""
         for family, ops in B01_SHEET.items():
             for op in ops:
                 if op not in ALL_CATALOG_OPS:
@@ -1202,37 +1498,69 @@ class Runner:
         covered = 0
         for op in SLICE_OPS:
             base = op.replace("_", "-")
-            request = self.schemas.get(f"{base}-request")
+            cls = self.op_class.get(
+                op, "read" if op in SLICE_READS else "create")
+            names = [f"{base}-request"]
+            reg_name = self.op_req_schema.get(op, f"{base}-request")
+            if reg_name != f"{base}-request":
+                names.append(reg_name)   # the RT-06 successor version
             result = self.schemas.get(f"{base}-result")
             ok = True
-            if request is None:
-                self.fail(f"bundle: op {op} has no {base}-request schema")
-                ok = False
             if result is None:
                 self.fail(f"bundle: op {op} has no {base}-result schema")
                 ok = False
-            if request is not None:
+            for name in names:
+                request = self.schemas.get(name)
+                if request is None:
+                    self.fail(f"bundle: op {op} has no {name} schema")
+                    ok = False
+                    continue
                 op_const = (request.get("properties", {})
                             .get("op", {}).get("const"))
                 if op_const != op:
-                    self.fail(f"bundle: {base}-request op const is "
+                    self.fail(f"bundle: {name} op const is "
                               f"{op_const!r}, expected {op!r}")
                     ok = False
-                required = request.get("required", [])
-                has_meta = "meta" in request.get("properties", {})
-                if op in SLICE_READS:
-                    if has_meta:
-                        self.fail(f"bundle: read {op} declares meta "
-                                  "(reads never mutate, §14.2)")
-                        ok = False
-                elif not has_meta or "meta" not in required:
-                    self.fail(f"bundle: mutation {op} does not require meta "
-                              "(§14.2: every mutation requires request id "
-                              "and idempotency key)")
-                    ok = False
+                ok = self._meta_class_ok(op, cls, request, name) and ok
             if ok:
                 covered += 1
         return covered
+
+    # -- RT-06 successor schemas --
+
+    def check_successor_schemas(self) -> int:
+        """RT-06: every published -v2 successor schema that embeds the
+        BPA-1 AST must carry it byte-identically - $defs/bpa1Policy equals
+        bpa1-policy.schema.json's body (JCS) after normalizing the
+        documented nesting prefix, so the bound wire IS the BPA-1 wire,
+        not a fork of it (the act-class-subject precedent)."""
+        bpa1 = self.schemas.get("bpa1-policy")
+        if bpa1 is None:
+            self.fail("rt06: bpa1-policy schema missing")
+            return 0
+        keys = ("type", "additionalProperties", "required", "properties",
+                "$defs", "description")
+        source = {k: bpa1[k] for k in keys if k in bpa1}
+        source_jcs = json.dumps(source, sort_keys=True,
+                                separators=(",", ":"))
+        checked = 0
+        for name in sorted(self.schemas):
+            if not name.endswith("-v2"):
+                continue
+            nested = self.schemas[name].get("$defs", {}).get("bpa1Policy")
+            if nested is None:
+                continue
+            text = json.dumps(nested, sort_keys=True,
+                              separators=(",", ":"))
+            normalized = text.replace("#/$defs/bpa1Policy/$defs/",
+                                      "#/$defs/")
+            if normalized != source_jcs:
+                self.fail(f"rt06: {name} $defs/bpa1Policy diverges from "
+                          "bpa1-policy.schema.json (byte-identical copy "
+                          "required, modulo the nesting prefix)")
+            else:
+                checked += 1
+        return checked
 
     # -- C2 governed-work family --
 
@@ -1349,65 +1677,168 @@ class Runner:
 
     # -- C3a MCP tool bundle --
 
-    def _check_mcp_tool(self, profile: str, tool: dict, info: dict):
-        """Per-tool C3a rules: name = byom_<op>; reads safe_to_allow and
-        mutations gated (the akson-mcp marking); input-schema fields a
-        subset of the committed op request schema's args (envelope
-        excluded) — no invented, no channel-derived (G16) fields; required
-        args carried faithfully. A tool whose op has no committed request
-        schema must declare op_request_schema null and expose zero args."""
+    def _tool_errors(self, profile, tool, requests):
+        """Per-tool C3a rules (RT-16, the kovee verbatim discipline): name
+        = byom_<op>; reads safe_to_allow and mutations gated; the input
+        schema is a VERBATIM derivation of the committed (registry-frozen,
+        successor-aware) op request schema - property bodies byte-identical
+        (JCS), required set exact (envelope excluded), any top-level oneOf
+        copied exactly, the exact transitive $defs closure copied verbatim,
+        every $ref resolving; no invented, no channel-derived (G16), no
+        envelope fields. op_request_schema is never null (D-RT-2)."""
+        errs = []
+        jcs_d = lambda v: json.dumps(v, sort_keys=True,
+                                     separators=(",", ":"))
         op = tool["op"]
         name = tool["name"]
         if name != f"byom_{op}":
-            self.fail(f"c3a: {profile} tool {name} does not equal "
-                      f"byom_{op}")
+            errs.append(f"{profile} tool {name} does not equal byom_{op}")
         want_access = ("safe_to_allow" if op in C3A_PARTICIPANT_READS
                        and profile == "participant" else "gated")
         if tool["access"] != want_access:
-            self.fail(f"c3a: {name} access is {tool['access']!r}, expected "
-                      f"{want_access!r} (reads safe_to_allow, mutations "
-                      "gated)")
-        input_schema = tool["input_schema"]
-        props = set(input_schema.get("properties", {}))
-        required = set(input_schema.get("required", []))
-        derived = props & MCP_CHANNEL_DERIVED
-        if derived:
-            self.fail(f"c3a: {name} input schema carries channel-derived "
-                      f"field(s) {sorted(derived)} (G16: the credential "
-                      "supplies them, never the caller)")
-        base = op.replace("_", "-")
-        request = self.schemas.get(f"{base}-request")
+            errs.append(f"{name} access is {tool['access']!r}, expected "
+                        f"{want_access!r} (reads safe_to_allow, mutations "
+                        "gated)")
+        want_schema = self.op_req_schema.get(
+            op, f"{op.replace('_', '-')}-request")
+        if tool["op_request_schema"] is None:
+            errs.append(f"{name} has op_request_schema null - a tool "
+                        "without a committed contract is not advertised "
+                        "at all (D-RT-2, RT-14)")
+            return errs
+        if tool["op_request_schema"] != want_schema:
+            errs.append(f"{name} op_request_schema is "
+                        f"{tool['op_request_schema']!r}, expected "
+                        f"{want_schema!r} (registry freeze; RT-06 "
+                        "successors for the G10/G31 ops)")
+        request = requests.get(want_schema)
         if request is None:
-            info["pending"].append(op)
-            if tool["op_request_schema"] is not None:
-                self.fail(f"c3a: {name} names op_request_schema "
-                          f"{tool['op_request_schema']!r} but no {base}-"
-                          "request schema is committed")
-            if props or required:
-                self.fail(f"c3a: {name} has no committed {base}-request "
-                          "schema — a pending tool must expose zero args")
-            return
-        if tool["op_request_schema"] != f"{base}-request":
-            self.fail(f"c3a: {name} op_request_schema is "
-                      f"{tool['op_request_schema']!r}, expected "
-                      f"'{base}-request'")
-        args = set(request.get("properties", {})) - MCP_ENVELOPE_FIELDS
-        invented = props - args
+            errs.append(f"{name}: committed schema {want_schema} did not "
+                        "load")
+            return errs
+        input_schema = tool["input_schema"]
+        props = input_schema.get("properties", {})
+        required = set(input_schema.get("required", []))
+        derived = set(props) & MCP_CHANNEL_DERIVED
+        if derived:
+            errs.append(f"{name} input schema carries channel-derived "
+                        f"field(s) {sorted(derived)} (G16: the credential "
+                        "supplies them, never the caller)")
+        smuggled = set(props) & MCP_ENVELOPE_FIELDS
+        if smuggled:
+            errs.append(f"{name} input schema carries envelope field(s) "
+                        f"{sorted(smuggled)} (the bridge derives them)")
+        args = {k: v for k, v in request.get("properties", {}).items()
+                if k not in MCP_ENVELOPE_FIELDS}
+        invented = set(props) - set(args)
         if invented:
-            self.fail(f"c3a: {name} input schema invents field(s) "
-                      f"{sorted(invented)} not in {base}-request args")
+            errs.append(f"{name} input schema invents field(s) "
+                        f"{sorted(invented)} not in {want_schema} args")
         req_args = set(request.get("required", [])) - MCP_ENVELOPE_FIELDS
         if required != req_args:
-            self.fail(f"c3a: {name} required {sorted(required)} != "
-                      f"{base}-request required args {sorted(req_args)}")
+            errs.append(f"{name} required {sorted(required)} != "
+                        f"{want_schema} required args {sorted(req_args)}")
+        missing = set(args) - set(props)
+        if missing:
+            errs.append(f"{name} input schema omits arg field(s) "
+                        f"{sorted(missing)} of {want_schema}")
+        # RT-16: verbatim property bodies - a widened enum/constraint or a
+        # {} replacement fails byte comparison, not just name comparison.
+        for key, body in props.items():
+            if key in args and jcs_d(body) != jcs_d(args[key]):
+                errs.append(f"{name} property {key!r} differs from the "
+                            f"{want_schema} body (verbatim copy required, "
+                            "RT-16)")
+        # top-level oneOf (both-or-neither pairs, conditional receipts)
+        want_oneof = request.get("oneOf")
+        got_oneof = input_schema.get("oneOf")
+        if want_oneof is not None and jcs_d(got_oneof) != jcs_d(want_oneof):
+            errs.append(f"{name} top-level oneOf differs from "
+                        f"{want_schema}'s (verbatim copy required, RT-16)")
+        if want_oneof is None and got_oneof is not None:
+            errs.append(f"{name} invents a top-level oneOf absent from "
+                        f"{want_schema}")
+        # RT-16: exact transitive $defs closure, copied verbatim, resolving
+        req_defs = request.get("$defs", {})
+        fragment = {"properties": props}
+        if got_oneof is not None:
+            fragment["oneOf"] = got_oneof
+        want_defs = _defs_closure(fragment, req_defs)
+        got_defs = input_schema.get("$defs", {})
+        if set(got_defs) != want_defs:
+            errs.append(f"{name} $defs {sorted(got_defs)} != transitive "
+                        f"closure {sorted(want_defs)} (RT-16)")
+        for dname, body in got_defs.items():
+            if dname in req_defs and jcs_d(body) != jcs_d(req_defs[dname]):
+                errs.append(f"{name} $defs/{dname} differs from "
+                            f"{want_schema}'s (verbatim copy required, "
+                            "RT-16)")
+        for ref in RE_DEFS_REF.findall(json.dumps(input_schema)):
+            if ref not in got_defs:
+                errs.append(f"{name} unresolved $ref #/$defs/{ref}")
+        return errs
+
+    def _mcp_document_errors(self, doc):
+        """All document-level C3a assertions as a failure list (shared by
+        the live check and the RT-16 widening-mutation self-test)."""
+        errs = []
+        if not self._validate("mcp-tools", None, doc):
+            errs.append("byom-mcp.tools.json does not validate against "
+                        "the mcp-tools meta-schema")
+            return errs
+        requests = self.schemas
+        expected = {"candidate": C3A_CANDIDATE_OPS,
+                    "participant": C3A_PARTICIPANT_UNIQUE}
+        for profile, want in expected.items():
+            tools = doc["profiles"][profile]["tools"]
+            got = tuple(x["op"] for x in tools)
+            if got != want:
+                errs.append(f"{profile} profile op list != C3a advertised "
+                            f"list (sheet minus D-RT-2 removals)\n"
+                            f"      bound: {got}\n      list:  {want}")
+                continue
+            for tool in tools:
+                errs.extend(self._tool_errors(profile, tool, requests))
+        bound = {x["op"] for env in doc["profiles"].values()
+                 for x in env["tools"]}
+        removed = bound & set(C3A_REMOVED_NULL_BOUND)
+        if removed:
+            errs.append(f"D-RT-2-removed op(s) bound as tools: "
+                        f"{sorted(removed)} - they return only with their "
+                        "owning bundles via a new tools-document version")
+        allowed = set(C3A_CANDIDATE_OPS) | set(C3A_PARTICIPANT_OPS)
+        for surface, ops in (("admin", CATALOG["administration"]),
+                             ("runtime", CATALOG["runtime"]
+                              + CATALOG["host_integration"])):
+            hits = bound & set(ops)
+            if hits:
+                errs.append(f"{surface} operation(s) bound as tools: "
+                            f"{sorted(hits)} - 'no governance, runtime, or "
+                            "admin operation, ever'")
+        stray = bound - allowed
+        if stray:
+            errs.append("op(s) outside the closed C3a lists (governance "
+                        f"or other surface): {sorted(stray)}")
+        # registry surface rule (RT-12): every bound op must be reachable
+        # from its profile's surfaces.
+        for profile, surfaces in (("candidate", {"candidate"}),
+                                  ("participant", {"participant",
+                                                   "projection",
+                                                   "originating"})):
+            for x in doc["profiles"][profile]["tools"]:
+                have = self.op_surfaces.get(x["op"], set())
+                if have and not (have & surfaces):
+                    errs.append(f"{x['name']}: registry surfaces "
+                                f"{sorted(have)} do not reach the "
+                                f"{profile} binding {sorted(surfaces)}")
+        return errs
 
     def check_mcp_tools(self) -> dict:
-        """C3a check: mcp/byom-mcp.tools.json validates against the closed
-        meta-schema; each profile's op list EXACTLY equals the transcribed
-        C3a sheet list; per-tool rules via _check_mcp_tool; zero
-        governance, runtime, or admin operations bound (deny-by-absence
-        made explicit)."""
-        info = {"candidate": 0, "participant": 0, "pending": []}
+        """C3a check: mcp/byom-mcp.tools.json (v0.1.1, D-RT-2) validates
+        against the closed meta-schema; profiles bind exactly the
+        advertised lists; per-tool verbatim-derivation rules (RT-16); zero
+        governance/runtime/admin ops; registry-surface agreement."""
+        info = {"candidate": 0, "participant": 0}
         self._mcp_doc = None
         for op in C3A_CANDIDATE_OPS + C3A_PARTICIPANT_OPS:
             if op not in ALL_CATALOG_OPS:
@@ -1427,50 +1858,119 @@ class Runner:
         except ValueError as exc:
             self.fail(f"c3a: byom-mcp.tools.json is not strict I-JSON: {exc}")
             return info
-        if not self._validate("mcp-tools", None, doc):
-            self.fail("c3a: byom-mcp.tools.json does not validate against "
-                      "the mcp-tools meta-schema")
+        errs = self._mcp_document_errors(doc)
+        for err in errs:
+            self.fail(f"c3a: {err}")
+        if errs:
             return info
         self._mcp_doc = doc
-        expected = {"candidate": C3A_CANDIDATE_OPS,
-                    "participant": C3A_PARTICIPANT_UNIQUE}
-        for profile, want in expected.items():
-            tools = doc["profiles"][profile]["tools"]
-            got = tuple(t["op"] for t in tools)
-            if got != want:
-                self.fail(f"c3a: {profile} profile op list != C3a sheet "
-                          f"list\n      bound: {got}\n      sheet: {want}")
-                continue
-            for tool in tools:
-                self._check_mcp_tool(profile, tool, info)
-            info[profile] = len(tools)
-        bound = {t["op"] for env in doc["profiles"].values()
-                 for t in env["tools"]}
-        allowed = set(C3A_CANDIDATE_OPS) | set(C3A_PARTICIPANT_OPS)
-        for surface, ops in (("admin", CATALOG["administration"]),
-                             ("runtime", CATALOG["runtime"]
-                              + CATALOG["host_integration"])):
-            hits = bound & set(ops)
-            if hits:
-                self.fail(f"c3a: {surface} operation(s) bound as tools: "
-                          f"{sorted(hits)} — 'no governance, runtime, or "
-                          "admin operation, ever'")
-        stray = bound - allowed
-        if stray:
-            self.fail("c3a: op(s) outside the closed C3a lists (governance "
-                      f"or other surface): {sorted(stray)}")
+        for profile in ("candidate", "participant"):
+            info[profile] = len(doc["profiles"][profile]["tools"])
         return info
+
+    def _mcp_mutations(self, doc):
+        """RT-16 widening mutations: every one must be caught by
+        _mcp_document_errors. Each yields (label, mutated deep copy)."""
+        import copy as _copy
+
+        def clone():
+            return _copy.deepcopy(doc)
+
+        def tool(d, name):
+            return next(x for x in d["profiles"]["participant"]["tools"]
+                        if x["name"] == name)
+
+        m = clone()
+        tool(m, "byom_pledge_finalize")["input_schema"]["properties"][
+            "subject_digest"] = {}
+        yield "property body widened to {} (subject_digest)", m
+
+        m = clone()
+        tool(m, "byom_pledge_finalize")["input_schema"]["$defs"][
+            "digestRef"] = {"type": "object"}
+        yield "$defs constraint widened (digestRef -> open object)", m
+
+        m = clone()
+        x = tool(m, "byom_activity_open")
+        x["input_schema"]["$defs"]["identifier"]["pattern"] = ".*"
+        yield "identifier pattern widened", m
+
+        m = clone()
+        tool(m, "byom_pledge_position")["input_schema"]["required"].remove(
+            "seat_ref")
+        yield "required arg dropped (seat_ref)", m
+
+        m = clone()
+        tool(m, "byom_activity_open")["input_schema"]["properties"][
+            "extra_field"] = {"type": "string"}
+        yield "invented field added", m
+
+        m = clone()
+        tool(m, "byom_activity_open")["input_schema"]["properties"][
+            "actor_ref"] = {"type": "string"}
+        yield "channel-derived field added (actor_ref)", m
+
+        m = clone()
+        tool(m, "byom_pledge_propose")["access"] = "safe_to_allow"
+        yield "mutation ungated (pledge_propose safe_to_allow)", m
+
+        m = clone()
+        tool(m, "byom_pledge_finalize")["input_schema"].pop("oneOf")
+        yield "conditional oneOf dropped (pledge_finalize successor CAS)", m
+
+        m = clone()
+        tool(m, "byom_pledge_propose")["op_request_schema"] = \
+            "pledge-propose-request"
+        yield "successor freeze reverted (pledge_propose v1 binding)", m
+
+        m = clone()
+        show = _copy.deepcopy(tool(m, "byom_society_show"))
+        show.update(name="byom_budget_show", op="budget_show",
+                    op_request_schema=None,
+                    input_schema={"type": "object",
+                                  "additionalProperties": False,
+                                  "properties": {}})
+        m["profiles"]["participant"]["tools"].append(show)
+        yield "null-bound placeholder re-added (budget_show)", m
+
+    def check_mcp_mutations(self) -> int:
+        """RT-16: the checker must not be name-only - run the widening
+        mutation suite against the committed document and require every
+        mutant to be caught."""
+        doc = getattr(self, "_mcp_doc", None)
+        if doc is None:
+            self.fail("c3a-mutations: committed document unavailable")
+            return 0
+        caught = 0
+        for label, mutant in self._mcp_mutations(doc):
+            if self._mcp_document_errors(mutant):
+                caught += 1
+            else:
+                self.fail(f"c3a-mutations: NOT caught: {label} (the "
+                          "checker would accept a widened document)")
+        return caught
 
     # -- transition descriptors --
 
     def _descriptor_shape_errors(self, body) -> list[str]:
+        """Descriptor format v2 (RT-09): §14.8 mandates machine-readable
+        descriptors carrying, per transition, the actor/registry key,
+        locks, guards, fence effects, emitted event types, and crash
+        outcome — 'Specification CI fails on a missing operation, state,
+        actor/surface registry key, lock, closure category, reservation
+        action, fence effect, journal behavior, event, or crash result'.
+        v2 makes these structured row members, not prose."""
         errs = []
         keys = set(body) if isinstance(body, dict) else set()
         if not isinstance(body, dict) or not (
-                {"machine", "states", "transitions"} <= keys
-                and keys <= {"machine", "states", "transitions", "owner"}):
+                {"format", "machine", "states", "transitions"} <= keys
+                and keys <= {"format", "machine", "states", "transitions",
+                             "owner"}):
             return ["top-level keys must be exactly "
-                    "{machine, states, transitions} plus optional owner"]
+                    "{format, machine, states, transitions} plus optional "
+                    "owner (descriptor format v2, RT-09)"]
+        if body.get("format") != "byom-descriptor/v2":
+            errs.append("format must be 'byom-descriptor/v2' (RT-09)")
         if "owner" in body and not (isinstance(body["owner"], str)
                                     and body["owner"]):
             errs.append("owner, when present, must be a non-empty string")
@@ -1495,11 +1995,14 @@ class Runner:
             if not isinstance(row, dict):
                 errs.append(f"{where}: not an object")
                 continue
-            missing = {"from", "to", "via", "authority"} - set(row)
-            extra = set(row) - {"from", "to", "via", "authority", "notes",
-                                "cascade"}
+            missing = {"from", "to", "via", "authority", "guards", "locks",
+                       "fences", "events", "crash_result"} - set(row)
+            extra = set(row) - {"from", "to", "via", "authority", "guards",
+                                "locks", "fences", "events", "crash_result",
+                                "notes", "cascade"}
             if missing:
-                errs.append(f"{where}: missing {sorted(missing)}")
+                errs.append(f"{where}: missing {sorted(missing)} "
+                            "(descriptor format v2, RT-09)")
             if extra:
                 errs.append(f"{where}: unknown keys {sorted(extra)}")
             if row.get("from") not in allowed_from:
@@ -1511,6 +2014,22 @@ class Runner:
             for key in ("via", "authority"):
                 if not (isinstance(row.get(key), str) and row.get(key)):
                     errs.append(f"{where}: {key} must be a non-empty string")
+            # v2 structured columns (RT-09): guards and events must name at
+            # least one entry; locks/fences may be empty lists where the
+            # design row genuinely has none; crash_result is mandatory.
+            for key, min_items in (("guards", 1), ("locks", 0),
+                                   ("fences", 0), ("events", 1)):
+                val = row.get(key)
+                if not (isinstance(val, list) and len(val) >= min_items
+                        and all(isinstance(s, str) and s for s in val)):
+                    errs.append(f"{where}: {key} must be a list of "
+                                f"non-empty strings"
+                                + (" with at least one entry"
+                                   if min_items else "") + " (RT-09)")
+            if not (isinstance(row.get("crash_result"), str)
+                    and row.get("crash_result")):
+                errs.append(f"{where}: crash_result must be a non-empty "
+                            "string (§14.8 crash-outcome column, RT-09)")
             if "notes" in row and not (isinstance(row["notes"], str)
                                        and row["notes"]):
                 errs.append(f"{where}: notes must be a non-empty string")
@@ -1664,6 +2183,22 @@ class Runner:
                 and inp.get("ref") is None:
             # §11.4: never above (or reshaping) the parent dimension.
             verdict = _subordinate_reservation_ok(inp["value"])
+        if verdict and inp.get("ref") is None:
+            # RT-17: semantic RFC 3339 — a timestamp-shaped string that is
+            # not a real calendar instant fails, whatever the schema.
+            verdict = _timestamps_ok(inp["value"])
+        if verdict and schema_name in PREPARED_RESULTS \
+                and inp.get("ref") is None:
+            # RT-04: subject/dependency binding + complete output-pointer
+            # provenance on the embedded PreparationTrace.
+            _op, subject_field, dep_field = PREPARED_RESULTS[schema_name]
+            verdict = _preparation_trace_ok(inp["value"], subject_field,
+                                            dep_field)
+        if verdict and schema_name in ("pledge-propose-result",
+                                       "pledge-amend-result") \
+                and inp.get("ref") is None:
+            # RT-03: unique slot kinds; multiplicity == concrete seat count.
+            verdict = _slot_records_ok(inp["value"])
         if schema_name == "act-class-subject" and inp.get("ref") is None:
             # Dynamic taxonomy<->BPA-1 cross-validation (Δ4): the subject
             # atoms must decide through the BPA-1 reference evaluator
@@ -1980,9 +2515,12 @@ class Runner:
         else:
             backend = "minimal structural validator (jsonschema not installed)"
         n_schemas = self.load_schemas()
+        registry = self.check_registry()
         covered = self.check_bundle()
+        successors = self.check_successor_schemas()
         gw = self.check_governed_work()
         mcp = self.check_mcp_tools()
+        mutations = self.check_mcp_mutations()
         desc = self.run_descriptors()
         counts = self.run_vectors()
         policy_note = self.cross_check_policy()
@@ -1991,10 +2529,14 @@ class Runner:
         total = sum(v for k, v in counts.items() if k != "taxonomy-bpa1")
         print()
         print(f"schemas:  {len(self.schemas)}/{n_schemas} compiled ({backend})")
+        print(f"registry: {registry['rows']} (operation,surface) rows "
+              f"({registry['dual']}/4 G35 dual-surface ops with both rows; "
+              "classes read/create/update registry-derived)")
         print(f"bundle:   {covered}/{len(SLICE_OPS)} B0.1 sheet ops "
               f"schema-covered ({len(SLICE_MUTATING)} mutating, "
               f"{len(SLICE_READS)} reads; complete sheet, "
-              f"{len(B01_SHEET)} families)")
+              f"{len(B01_SHEET)} families; {successors} RT-06 successor "
+              "schemas byte-checked against bpa1-policy)")
         print(f"descriptors: {desc['files']} machines "
               f"({desc['kovee']} kovee-owned), {desc['states']} "
               f"states, {desc['transitions']} transitions — "
@@ -2008,11 +2550,11 @@ class Runner:
               f"{len(ACT_CLASS_MANDATORY)} Δ4 class arms "
               f"({counts['taxonomy-bpa1']} subjects cross-checked through "
               "policy/eval.py)")
-        pending = (f"; pending op schemas: {', '.join(mcp['pending'])}"
-                   if mcp["pending"] else "; all ops schema-backed")
         print(f"mcp:      c3a — {mcp['candidate']} candidate + "
-              f"{mcp['participant']} participant tools, sheet-exact; "
-              f"0 governance/runtime/admin{pending}")
+              f"{mcp['participant']} participant tools (v0.1.1, D-RT-2: "
+              "no null-bound placeholders), verbatim-derived (RT-16); "
+              f"0 governance/runtime/admin; {mutations} widening "
+              "mutations caught")
         print(f"vectors:  {total} passed — "
               f"{counts['schema-valid']} schema-valid, "
               f"{counts['schema-invalid']} schema-invalid, "

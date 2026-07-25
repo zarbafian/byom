@@ -37,9 +37,15 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   dissolved completion is read as a later `society_dissolve` call once the
   disposition ledger completes (§14.8: "terminal record after disposition
   ledger"; "never auto-completes").
-- **G3 — timestamp encoding.** DESIGN.md fixes no wire encoding for
-  `created_at`/`expires_at`/`effective_at`; these schemas use RFC 3339 UTC
-  with a `Z` offset.
+- **G3 — timestamp encoding (amended, RT-17).** DESIGN.md fixes no wire
+  encoding for `created_at`/`expires_at`/`effective_at`; these schemas
+  use RFC 3339 UTC with a `Z` offset — SEMANTICALLY valid: the shared
+  def's pattern pins lexical ranges (months 01-12, days 01-31, hours
+  00-23, minutes/seconds 00-59; leap seconds not accepted) and
+  implementations MUST additionally reject impossible proleptic-
+  Gregorian instants such as `2026-02-30T12:00:00Z`. The conformance
+  runner enforces the calendar check on every vector; the
+  invalid-calendar vectors pin it.
 - **G4 — result payloads generally.** Every result is a minimal projection
   of the §6/§7 record the operation creates or moves; DESIGN.md does not
   enumerate result fields for any of these ops. The onboarding_offer result
@@ -77,11 +83,15 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   `compatibility_selector`, and `proposed_policy_body` are open objects
   pending the BPA-1 policy-algebra slice (ADR-0001); selector lists
   (`endeavor_selectors`, `mandate_selectors`, …) are identifier arrays
-  referencing selector definitions. The encoding has since landed —
-  `../bpa1-policy.schema.json`, ADR-0001 accepted — but published schemas
-  are immutable, so these bodies stay open objects until their next schema
-  version binds them to `bpa1-policy` at the registry freeze (ADR-0001
-  open item).
+  referencing selector definitions. LANDED (RT-06): the immutable
+  successor versions `<op>-…-v2.schema.json` are published now — every
+  G10 body is bound to the BPA-1 AST (a byte-identical nested
+  `bpa1Policy` def, runner-verified against `../bpa1-policy.schema.json`),
+  a closed DecisionRule/terms reference (`{rule_ref, rule_digest}` /
+  `{terms_ref, terms_digest}`, exact digest-pinned), the closed §10.1
+  delegation shape, or a quantity-atom budget set. The v1 publications
+  stay unchanged (immutability); B1 and the C3a tool document freeze to
+  the v2 versions (`spec/registry.json` names them per op).
 - **G11 — continuity_root_update discriminator.** §14.8 drives the whole
   ContinuityRoot lifecycle through this one op; `target_status`
   (`active | sealed | retired`) plus optional `continuity_root_ref` (absent
@@ -134,6 +144,11 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   only the authenticated actor's eligible seat, §14.6). Pre-finalization
   withdraw/supersede is seat-head CAS via `prior_position_digest` plus a
   derived `target_status` (`active | withdrawn`) discriminator.
+  Amended (RT-03): a `*_policy_derived` assent_mode REQUIRES its
+  `derived_assent_receipt_ref` (closed oneOf; a direct mode forbids it),
+  the result's Position `digest` is REQUIRED (it is the seat-head CAS
+  token), and `seat_ref` must name one of the prepared slot records'
+  concrete `seat_refs` (gap note G44).
 - **G19 — Position/Decision row folding.** §14.8's generic Position/Decision
   machine gets no descriptor of its own in this slice: each family's
   position operation is owned by its subject's descriptor as a
@@ -155,10 +170,14 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   (§9.5: the remaining obligation becomes canceled, novated, disputed,
   failed, or unresolved under its own procedure); the descriptor records it
   as the named transition `pledge_disposition_decision` pending the
-  registry freeze (G12 precedent). The same row lists "amend" against
-  → superseded: the descriptor records `pledge_amend` as the driving
-  operation, with supersession committing at the amendment's acceptance
-  (one CAS successor slot).
+  registry freeze (G12 precedent). AMENDED by D-RT-3 (RT-03): the same
+  row's "amend" against → superseded is re-cut — `pledge_amend` only
+  creates the separate proposed successor (absent → proposed), and the
+  descriptor records `pledge_finalize` as the superseding operation:
+  supersession commits exactly when finalization accepts the successor's
+  complete fresh seat set under the successor CAS (one CAS successor
+  slot; `supersedes_pledge_ref`/`supersedes_pledge_revision` pin the
+  predecessor).
 - **G23 — pledge_amend payload.** `amendment_of`
   `{pledge_ref, pledge_revision, prior_terms_digest}` is verbatim §9.3; the
   amendment restates the full terms ("needs all currently required seats
@@ -221,9 +240,8 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
 - **G31 — mandate selector encoding.** Following the G10 split exactly:
   `resource_selectors`, `data_class_selectors`, `destination_selectors`, and
   `delegation.grantee_selectors` are identifier arrays referencing selector
-  definitions; `manifestation_selector` is an opaque BPA-1 body pending
-  ADR-0001 — now concretely `../bpa1-policy.schema.json` (ADR-0001
-  accepted), bound at the next schema version per G10's landing note. The
+  definitions; `manifestation_selector` is bound to the BPA-1 AST in the
+  published v2 successor schemas (RT-06; G10's landing note). The
   `delegation` object is verbatim §10.1
   (`{allowed, max_depth, max_children, grantee_selectors}`).
 - **G32 — mandate issue/hold/revoke derivations.** `held_by_decision_ref`,
@@ -252,8 +270,13 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   `preconditions`, `stable_execution_key`, `budget_reservation_set_ref`,
   the authorization dependency set, and `expires_at` are server-derived
   (§10.5: preparation never supplies a semantic default). The result embeds
-  the field-complete PreparationTrace verbatim (§10.5, R19 fence) plus the
-  derived `required_seat_refs`; `kind` and `preconditions` items stay open
+  the field-complete PreparationTrace verbatim (§10.5, R19 fence) plus
+  the derived `required_seat_refs`. Amended (RT-04): the trace is the
+  ONE reusable closed shape on EVERY prepared result (society/charter/
+  endeavor/pledge/mandate/act-intent), its `operation` is const-bound
+  per schema, `field_sources` is non-empty, and the runner mechanically
+  verifies subject/dependency digest binding plus COMPLETE
+  output-pointer provenance in both directions; `kind` and `preconditions` items stay open
   pending the Δ4 closed act-class taxonomy (C2).
 - **G35 — dual-surface operations.** `mandate_position` (R16/R17),
   `act_intent_position` (R20/R21), `act_intent_finalize` (R22/R23), and
@@ -277,10 +300,15 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   intent/host-effect/subject/disclosure/budget/driver-audience bindings, and
   both current fences — `byom_fence_epoch` + `host_fence_epoch` are the
   derived dual-fence names (R34; G24 precedent). The result is the verbatim
-  ExecutionConsumptionReceipt with `max_uses` pinned const 1. Same canonical
-  request and key → same receipt; a changed request →
-  `idempotency_mismatch`; a different key cannot consume the spent one-shot
-  decision (→ `stale_revision`) — vectors.
+  ExecutionConsumptionReceipt with `max_uses` pinned const 1. Amended
+  (RT-05): `meta.expected_revision` (the exact authorized intent
+  revision) is REQUIRED — the one-shot decision consumes against a
+  pinned head; disclosure and Episode bindings are both-or-neither
+  pairs (closed oneOf). Same canonical request and key → same receipt;
+  a changed request → `idempotency_mismatch`; a different key cannot
+  consume the spent one-shot decision (→ `stale_revision`); a stale
+  fence → `stale_revision`; a dangling disclosure ref fails the closed
+  schema — vectors for all four negative classes.
 - **G38 — cursor and page encoding.** Continuation tokens are one opaque
   scope- and audience-bound string (§14.4: authenticated cursor, endpoint
   incarnation, recovery epoch, filter digest, retention semantics), bounded
@@ -322,3 +350,44 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   carries no assent-mode fields: R6 seats are human/governance seats and a
   human-authority requirement is never satisfied by an agent position
   (§10.3). `charter_history` is an R4 projection read with G38 paging.
+- **G42 — closed update/create metas (RT-01).** Every mutation is
+  registry-classed `create` or `update` (`spec/registry.json`). An
+  update-classed op's embedded `mutationMeta` REQUIRES
+  `expected_revision` (the current-head CAS is structural — §14.2
+  "Updates require the last observed revision"); a create-classed op's
+  meta has NO `expected_revision` member at all, so supplying one fails
+  the closed schema. The runner derives the per-op class from the
+  registry and checks every request schema; the
+  `*-missing-expected-revision-invalid` vectors pin one negative per
+  update op.
+- **G43 — contextual digest classes (RT-02).** Every digest field is
+  bound to its contextual class via a pinned wrapper def
+  (`localErasureSafeDigest` / `scopeErasureSafeDigest` /
+  `ciphertextPublicDigest` refining the closed family `digestRef`):
+  authority subjects and per-object erasable content are
+  `local_erasure_safe` (PROFILE.md §6.2 — never a public hash, never a
+  scope-keyed digest); idempotency-index and checkpoint/journal-chain
+  digests (`result_digest`, the recovery-checkpoint chain fields) are
+  `scope_erasure_safe`; the sealed ContinuityRoot state blob is
+  `ciphertext_public`. A well-constructed digest of the wrong class is
+  `digest_class_mismatch`.
+- **G44 — concrete slot/seat records (RT-03, D-RT-3).** `pledge_propose`
+  and `pledge_amend` results return `required_slots` as closed records
+  `{slot_ref, kind, multiplicity, seat_refs[], subject_digest}` — the
+  exact repeatable seats the position stage fills — with at most one
+  record per §9.3 kind and `multiplicity == len(seat_refs)`
+  (runner-enforced). `pledge_amend` creates a SEPARATE proposed successor
+  (`amendment_predecessor_ref`/`_revision` echoed on its result);
+  `pledge_finalize` supersedes the predecessor under the successor CAS
+  (`meta.expected_revision` + the both-or-neither
+  `supersedes_pledge_ref`/`supersedes_pledge_revision` pair).
+- **G45 — registry and descriptor format v2 (RT-12, RT-09).**
+  `spec/registry.json` is the machine-readable `(operation,surface)`
+  registry for the whole bundle (one row per pair; the G35 dual-surface
+  ops carry exactly two); the runner derives bundle, meta-class, and MCP
+  checks from it and fails on any extra/missing surface binding.
+  `spec/descriptors/` is format `byom-descriptor/v2`: every transition
+  row carries structured `guards`, `locks`, `fences`, `events`, and
+  `crash_result` (§14.8's mandated columns), validated by the runner and
+  by `proof/check-descriptors.py`, with the negative mutation suite
+  proving neither validator is vacuous.

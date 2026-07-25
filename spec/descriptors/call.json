@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Call",
   "states": [
     "open",
@@ -13,6 +14,18 @@
       "to": "open",
       "via": "call_open",
       "authority": "participant (R5): current Participant acting only as itself",
+      "guards": [
+        "current Participant acting only as itself (R5)",
+        "visible only to authorized participants; creates no notification, activation, resource reservation, or obligation (§9.2)"
+      ],
+      "locks": [],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.open"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)",
       "notes": "Visible only to authorized participants; creates no notification, activation, resource reservation, or obligation by itself (§9.2); no obligation or budget is created by Call state (§14.8)."
     },
     {
@@ -20,6 +33,19 @@
       "to": "forming",
       "via": "pledge_propose",
       "authority": "participant (R5): current Participant acting only as itself",
+      "guards": [
+        "cascade of the Pledge machine's owning proposal: a PledgeProposal citing call_ref (§14.8 Call row: exact linked proposal)"
+      ],
+      "locks": [
+        "exact linked proposal"
+      ],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.forming"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)",
       "notes": "Cascade of the Pledge machine's owning proposal: a PledgeProposal citing call_ref moves the Call to forming (§14.8 Call row: exact linked proposal).",
       "cascade": true
     },
@@ -28,6 +54,19 @@
       "to": "open",
       "via": "server_time",
       "authority": "server: deterministic lapse of the exact linked proposal (server time)",
+      "guards": [
+        "authoritative server time: deterministic lapse of the exact linked proposal (G20)"
+      ],
+      "locks": [
+        "exact linked proposal"
+      ],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.open"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)",
       "notes": "§14.8 'open ↔ forming' driven by 'exact linked proposal/outcome/server time'; the return to open on linked-proposal lapse is read as server time — gap note G20."
     },
     {
@@ -35,6 +74,20 @@
       "to": "satisfied",
       "via": "pledge_finalize",
       "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the Pledge machine's owning finalization: the exact linked outcome satisfies the Call"
+      ],
+      "locks": [
+        "exact linked outcome"
+      ],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.satisfied"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)",
       "notes": "Cascade of the Pledge machine's owning finalization: the exact linked outcome satisfies the Call (§14.8).",
       "cascade": true
     },
@@ -43,6 +96,20 @@
       "to": "satisfied",
       "via": "pledge_finalize",
       "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the Pledge machine's owning finalization: the exact linked outcome satisfies the Call"
+      ],
+      "locks": [
+        "exact linked outcome"
+      ],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.satisfied"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)",
       "cascade": true
     },
     {
@@ -50,25 +117,71 @@
       "to": "withdrawn",
       "via": "call_withdraw",
       "authority": "participant (R14): the opening Participant only (§14.8 Call row: opener for withdraw)",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "opening Participant only (§14.8 Call row: opener for withdraw)"
+      ],
+      "locks": [],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.withdrawn"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)",
       "notes": "Retry returns the same state (§14.8)."
     },
     {
       "from": "forming",
       "to": "withdrawn",
       "via": "call_withdraw",
-      "authority": "participant (R14): the opening Participant only (§14.8 Call row: opener for withdraw)"
+      "authority": "participant (R14): the opening Participant only (§14.8 Call row: opener for withdraw)",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "opening Participant only (§14.8 Call row: opener for withdraw)"
+      ],
+      "locks": [],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.withdrawn"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)"
     },
     {
       "from": "open",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.expired"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)"
     },
     {
       "from": "forming",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "no obligation or budget is created by Call state"
+      ],
+      "events": [
+        "call.expired"
+      ],
+      "crash_result": "retry returns same state (§14.8 Call row)"
     }
   ]
 }

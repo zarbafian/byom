@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "ActivityStream",
   "states": [
     "ready",
@@ -16,6 +17,24 @@
       "to": "ready",
       "via": "activity_open",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "owning Participant/Manifestation, or collective channel inside executive policy (R29)",
+        "exact purpose, classification, Mandate, budget, rate, and retention boundaries recorded; a non-pledged stream may not claim a beneficiary or completion (§11.1)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "generation CAS"
+      ],
+      "events": [
+        "activity-stream.ready"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "ActivityStream belongs to the Participant, not Byom's scheduler; a non-pledged stream still has exact purpose, classification, Mandate, budget, rate, and retention boundaries and may not claim a beneficiary or completion (§11.1). Stage only for the activity proposal (R29)."
     },
     {
@@ -23,6 +42,23 @@
       "to": "active",
       "via": "episode_request",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "cascade of the Episode machine's owning request (generation CAS current)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "generation CAS"
+      ],
+      "events": [
+        "activity-stream.active"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "cascade": true,
       "notes": "Cascade of the Episode machine's owning request (§14.8 ActivityStream row: ready ↔ active; generation fence)."
     },
@@ -31,6 +67,23 @@
       "to": "active",
       "via": "episode_request",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "cascade of the Episode machine's owning request (generation CAS current)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "generation CAS"
+      ],
+      "events": [
+        "activity-stream.active"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "cascade": true
     },
     {
@@ -38,6 +91,23 @@
       "to": "ready",
       "via": "episode_complete",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "cascade of the Episode machine's owning completion (generation CAS current)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "generation CAS"
+      ],
+      "events": [
+        "activity-stream.ready"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "Cascade: episode completion returns the stream to ready; prior outputs remain evidence (§14.8).",
       "cascade": true
     },
@@ -46,6 +116,23 @@
       "to": "waiting",
       "via": "episode_yield",
       "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "guards": [
+        "cascade of the Episode machine's owning yield awaiting an admitted event or dependency outcome (§11.2)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "generation CAS"
+      ],
+      "events": [
+        "activity-stream.waiting"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "Cascade: yield awaiting an admitted event or dependency outcome (§11.2, §14.8: ready ↔ waiting).",
       "cascade": true
     },
@@ -54,6 +141,23 @@
       "to": "reviewing",
       "via": "delivery_submit",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "cascade of the Delivery/Review machine's owning submission over the pledgor channel (§9.5)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "generation CAS"
+      ],
+      "events": [
+        "activity-stream.reviewing"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "Cascade of the Delivery/Review machine's owning submission: the PledgeWorkstream enters review with the submitted Delivery (§14.8 Pledge row).",
       "cascade": true
     },
@@ -62,6 +166,24 @@
       "to": "ready",
       "via": "pledge_resume",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the Pledge machine's owning resume: each resume starts a new Activity generation under unchanged terms (§14.8 Pledge activity row)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "new Activity generation under unchanged terms; generation CAS"
+      ],
+      "events": [
+        "activity-stream.ready"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "Cascade of the Pledge machine's owning resume: each resume starts a new Activity generation under unchanged terms (§14.8).",
       "cascade": true
     },
@@ -70,116 +192,454 @@
       "to": "held",
       "via": "activity_hold",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "hold fences new Episodes; generation CAS"
+      ],
+      "events": [
+        "activity-stream.held"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "§14.8: any nonterminal → held; hold fences new Episodes; generation CAS."
     },
     {
       "from": "active",
       "to": "held",
       "via": "activity_hold",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "hold fences new Episodes; generation CAS"
+      ],
+      "events": [
+        "activity-stream.held"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "waiting",
       "to": "held",
       "via": "activity_hold",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "hold fences new Episodes; generation CAS"
+      ],
+      "events": [
+        "activity-stream.held"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "reviewing",
       "to": "held",
       "via": "activity_hold",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "hold fences new Episodes; generation CAS"
+      ],
+      "events": [
+        "activity-stream.held"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "ready",
       "to": "completed",
       "via": "activity_close",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.completed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)",
       "notes": "§14.8: any nonterminal → completed, failed, or canceled; activity_close is discriminated by target_state — gap note G25; cancel fences new Episodes and in-flight work settles conservatively; prior outputs remain evidence."
     },
     {
       "from": "ready",
       "to": "failed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.failed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "ready",
       "to": "canceled",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.canceled"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "active",
       "to": "completed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.completed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "active",
       "to": "failed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.failed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "active",
       "to": "canceled",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.canceled"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "waiting",
       "to": "completed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.completed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "waiting",
       "to": "failed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.failed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "waiting",
       "to": "canceled",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.canceled"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "reviewing",
       "to": "completed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.completed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "reviewing",
       "to": "failed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.failed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "reviewing",
       "to": "canceled",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.canceled"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "held",
       "to": "completed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.completed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "held",
       "to": "failed",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.failed"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     },
     {
       "from": "held",
       "to": "canceled",
       "via": "activity_close",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "activity_close discriminated by target_state (G25)"
+      ],
+      "locks": [
+        "owning Participant",
+        "self-policy",
+        "Mandate",
+        "budgets",
+        "optional Pledge"
+      ],
+      "fences": [
+        "cancel fences new Episodes; in-flight work settles conservatively; generation CAS"
+      ],
+      "events": [
+        "activity-stream.canceled"
+      ],
+      "crash_result": "prior outputs remain evidence (§14.8 ActivityStream row)"
     }
   ]
 }

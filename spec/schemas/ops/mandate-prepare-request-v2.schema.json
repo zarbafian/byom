@@ -1,0 +1,1166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/mandate-prepare-request-v2.schema.json",
+  "title": "BPP mandate_prepare request (DESIGN.md §10.1, §14.8; registry R15 participant) — v2 (G10/G31 rebound)",
+  "description": "Mutation (meta required). Server-prepares one exact Mandate proposal from the caller's typed scope (§10.1: Mandates are server-prepared from exact proposals — a caller cannot obtain approval for an arbitrary digest and later attach a different action). Actor: proposed grantee or authorized issuer in its scope (R15); issuer_ref is channel-derived when the authorized issuer prepares and is named only when the proposed grantee prepares — gap note G30. mandate_id, revision, decision_refs, root_authority_trace_digest, dependency_set_ref, and issued_at are server-derived. Selector arrays are identifier arrays referencing selector definitions and manifestation_selector is an opaque BPA-1 body pending ADR-0001 — gap notes G10/G31. 'prepared' is the folded pre-issue state of the §14.8 Mandate row — gap note G30. Stage-capable (R15). V2 SUCCESSOR (RT-06): the G10/G31 opaque bodies of the immutable v1 publication are rebound here — every authority-bearing field is a canonical BPA-1 expression, a closed protocol shape, or an exact digest-pinned reference (DESIGN.md §14.7; ADR-0001 landing note). Executable-looking members (callback, regex, ...) fail the closed AST. B1 and C3a freeze to this version; v1 stays published and unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "op",
+    "meta",
+    "grantee_participant_ref",
+    "purpose_ref",
+    "allowed_operations",
+    "resource_selectors",
+    "data_class_selectors",
+    "destination_selectors",
+    "budget_ceiling_set_ref",
+    "concurrency_ceiling",
+    "delegation",
+    "expires_at"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "#/$defs/protocolVersion"
+    },
+    "op": {
+      "const": "mandate_prepare"
+    },
+    "meta": {
+      "$ref": "#/$defs/mutationMeta"
+    },
+    "grantee_participant_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "issuer_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "Named only when the proposed grantee prepares; the channel-derived actor can never be overridden (§14.3) — gap note G30."
+    },
+    "purpose_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "allowed_operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "description": "Versioned BPP operation ids (§10.5 operation atoms)."
+    },
+    "resource_selectors": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "description": "Identifier array referencing selector definitions (gap notes G10/G31)."
+    },
+    "data_class_selectors": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "description": "Identifier array referencing selector definitions (gap notes G10/G31)."
+    },
+    "destination_selectors": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "description": "Identifier array referencing selector definitions (gap notes G10/G31)."
+    },
+    "context_ceiling_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "budget_ceiling_set_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "concurrency_ceiling": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "manifestation_selector": {
+      "$ref": "#/$defs/bpa1Policy",
+      "description": "Canonical BPA-1 policy value (ADR-0001; RT-06 G10/G31 rebinding): the manifestation selector (G31)."
+    },
+    "delegation": {
+      "$ref": "#/$defs/delegation"
+    },
+    "pledge_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "Optional Pledge lineage the purpose binds to (§10.2)."
+    },
+    "expires_at": {
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset, semantically valid in the proleptic Gregorian calendar: the pattern pins the lexical ranges and implementations MUST additionally reject impossible calendar instants (e.g. 2026-02-30) — the conformance runner enforces this on every vector; leap seconds are not accepted. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3, amended per RT-17)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "mutationMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "idempotency_key",
+        "expected_endpoint_incarnation",
+        "expected_recovery_epoch"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_endpoint_incarnation": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_recovery_epoch": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "causation_event_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "correlation_ref": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "MutationMeta (§14.2), create-classed: this operation creates a record (or CASes a subordinate head through its own body fields), so the closed create meta carries NO expected_revision member — supplying one fails the closed schema (RT-01: update CAS is structural, never optional)."
+    },
+    "delegation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed",
+        "max_depth",
+        "max_children",
+        "grantee_selectors"
+      ],
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "max_depth": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "max_children": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "grantee_selectors": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "description": "Identifier array referencing selector definitions (gap note G10/G31)."
+        }
+      },
+      "description": "Verbatim §10.1 delegation ceiling; a child Mandate can never exceed it (§10.2)."
+    },
+    "bpa1Policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rules"
+      ],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/bpa1Policy/$defs/rule"
+          },
+          "description": "Bounded rule set (§14.9 BPA policy-node cap, pinned at 256 pending registry freeze). Rule order is not semantically significant (deny-wins is order-free); canonical form sorts rules by JCS bytes."
+        }
+      },
+      "$defs": {
+        "rule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "effect",
+            "atoms"
+          ],
+          "properties": {
+            "effect": {
+              "enum": [
+                "allow",
+                "deny"
+              ],
+              "description": "§10.5: a selector is a bounded union of positive (allow) atoms plus explicit deny atoms; deny wins."
+            },
+            "atoms": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atoms"
+            }
+          },
+          "description": "One rule: a conjunction over the constrained domains. A rule matches a request when every constrained domain's request value is a member of the domain atom (allow rules require the request value to be present; deny rules conservatively match an absent request value — fail closed)."
+        },
+        "atoms": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomOperation"
+            },
+            "object": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomObject"
+            },
+            "path": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomPath"
+            },
+            "network_destination": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomNetworkDestination"
+            },
+            "binding": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomBinding"
+            },
+            "purpose": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomPurpose"
+            },
+            "classification": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomClassification"
+            },
+            "time": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomTime"
+            },
+            "quantity": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomQuantity"
+            },
+            "rate": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomRate"
+            },
+            "assurance": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomAssurance"
+            },
+            "schema_evidence": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomSchemaEvidence"
+            }
+          },
+          "description": "The closed twelve-domain atom table of §10.5, one optional constraint per domain. An omitted domain is unconstrained (top); an empty object is the universal rule. Unknown keys fail closed (additionalProperties false)."
+        },
+        "atomOperation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ids"
+          ],
+          "properties": {
+            "ids": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/operationId"
+              }
+            }
+          },
+          "description": "§10.5 operation row: 'Versioned BPP operation id; subset is set inclusion.' The atom is an explicit finite id set; an empty set matches nothing."
+        },
+        "atomObject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ids"
+          ],
+          "properties": {
+            "ids": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/sourceQualifiedId"
+              }
+            }
+          },
+          "description": "§10.5 object/resource row: 'Exact source-qualified object id or server-expanded immutable collection snapshot; no mutable alias.' The AST carries only exact source-qualified ids; a pinned collection snapshot is server-expanded to exact ids at preparation with its transform id in the PreparationTrace (§10.5), so no mutable alias or unexpanded reference ever reaches the algebra. Subset is set inclusion."
+        },
+        "atomPath": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "root",
+            "segments",
+            "match"
+          ],
+          "properties": {
+            "root": {
+              "$ref": "#/$defs/bpa1Policy/$defs/sourceQualifiedId"
+            },
+            "segments": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/pathSegment"
+              }
+            },
+            "match": {
+              "enum": [
+                "exact",
+                "subtree"
+              ]
+            }
+          },
+          "description": "§10.5 path row: 'Unicode-normalized logical path segments relative to an exact WorkspaceAllocation root plus exact or subtree; string comparison never authorizes a filesystem open' (the owning broker enforces openat2-equivalent semantics at use). root is the exact WorkspaceAllocation ref; segments are NFC-normalized (evaluator-checked), never '.', '..', '/', or control characters. Different roots are disjoint. subtree covers the node and everything beneath it; exact covers only the node."
+        },
+        "atomNetworkDestination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scheme",
+            "host",
+            "ports",
+            "protocol"
+          ],
+          "properties": {
+            "scheme": {
+              "$ref": "#/$defs/bpa1Policy/$defs/schemeOrProtocol"
+            },
+            "host": {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostAtom"
+            },
+            "ports": {
+              "$ref": "#/$defs/bpa1Policy/$defs/portRange"
+            },
+            "protocol": {
+              "$ref": "#/$defs/bpa1Policy/$defs/schemeOrProtocol"
+            }
+          },
+          "description": "§10.5 network destination row: 'Scheme, A-label hostname or normalized IP/CIDR, port/range, and protocol; DNS resolution is pinned by the broker and private/special ranges require explicit atoms.' A DNS host and an IP/CIDR host are incomparable at policy level (the algebra never resolves names — typed reject); ip4 and ip6 forms are decidably disjoint. A CIDR with nonzero host bits below the prefix is not normalized and fails closed (evaluator-checked)."
+        },
+        "atomBinding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ids"
+          ],
+          "properties": {
+            "ids": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/sourceQualifiedId"
+              }
+            }
+          },
+          "description": "§10.5 provider/region/recipient row: 'Source-qualified immutable binding id; display names have no policy role.' Explicit finite set of exact binding ids; subset is set inclusion."
+        },
+        "atomPurpose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "snapshot",
+            "path"
+          ],
+          "properties": {
+            "snapshot": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "path": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+              }
+            }
+          },
+          "description": "§10.5 purpose row: 'Exact purpose ref or descendant in a pinned acyclic purpose snapshot.' snapshot pins the exact acyclic purpose snapshot (typed DigestRef); path is the materialized root-to-node ancestor chain from that snapshot (verified against the pin at preparation), so descendant testing is pure path-prefix comparison — no resolution inside the algebra. The atom covers the named node and its descendants; atoms over different snapshots are incomparable (typed reject)."
+        },
+        "atomClassification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lattice",
+            "allowed"
+          ],
+          "properties": {
+            "lattice": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "allowed": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+              }
+            }
+          },
+          "description": "§10.5 classification row: 'Element of a pinned finite lattice; restriction order is the lattice order.' lattice pins the exact finite lattice (typed DigestRef); allowed is the explicit downward-closed element set expanded against the pin at preparation (finite because the lattice is), so the lattice order is absorbed into set inclusion: subset is allowed ⊆ allowed, intersection is set intersection. Atoms over different lattices are incomparable (typed reject; §10.2 incomparable classification blocks derivation)."
+        },
+        "atomTime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not_before",
+            "not_after"
+          ],
+          "properties": {
+            "not_before": {
+              "$ref": "#/$defs/bpa1Policy/$defs/timestampMs"
+            },
+            "not_after": {
+              "$ref": "#/$defs/bpa1Policy/$defs/timestampMs"
+            }
+          },
+          "description": "§10.5 time row: 'Closed UTC server-time interval; a child interval must be contained.' Integer milliseconds of authoritative server time (§10.5: deadlines and expiry use authoritative server time); both endpoints inclusive; not_before <= not_after (evaluator-checked)."
+        },
+        "atomQuantity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dimension",
+            "canonical_unit",
+            "scale",
+            "max"
+          ],
+          "properties": {
+            "dimension": {
+              "$ref": "#/$defs/bpa1Policy/$defs/dimensionOrUnit"
+            },
+            "canonical_unit": {
+              "$ref": "#/$defs/bpa1Policy/$defs/dimensionOrUnit"
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            },
+            "max": {
+              "$ref": "#/$defs/bpa1Policy/$defs/safeNonNegativeInteger"
+            },
+            "currency": {
+              "$ref": "#/$defs/bpa1Policy/$defs/currencyCode"
+            },
+            "pricing_revision": {
+              "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "dimension": {
+                  "const": "money"
+                }
+              },
+              "required": [
+                "currency",
+                "pricing_revision"
+              ]
+            },
+            {
+              "properties": {
+                "dimension": {
+                  "not": {
+                    "const": "money"
+                  }
+                },
+                "currency": false,
+                "pricing_revision": false
+              }
+            }
+          ],
+          "description": "§10.5 quantity row: 'Non-negative fixed-scale integer plus dimension and canonical unit; money additionally names ISO currency and pricing revision.' The atom is a ceiling: it covers integer amounts 0..max at the named fixed scale. Atoms differing in dimension, canonical_unit, scale, currency, or pricing_revision are incomparable (typed reject — §10.5: currency conversion and floating-point quantities reject); subset is max <= max; intersection is min(max)."
+        },
+        "atomRate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dimension",
+            "canonical_unit",
+            "capacity",
+            "refill_amount",
+            "refill_period_milliseconds",
+            "max_burst",
+            "epoch",
+            "clock"
+          ],
+          "properties": {
+            "dimension": {
+              "$ref": "#/$defs/bpa1Policy/$defs/dimensionOrUnit"
+            },
+            "canonical_unit": {
+              "$ref": "#/$defs/bpa1Policy/$defs/dimensionOrUnit"
+            },
+            "capacity": {
+              "$ref": "#/$defs/bpa1Policy/$defs/safeNonNegativeInteger"
+            },
+            "refill_amount": {
+              "$ref": "#/$defs/bpa1Policy/$defs/safeNonNegativeInteger"
+            },
+            "refill_period_milliseconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "max_burst": {
+              "$ref": "#/$defs/bpa1Policy/$defs/safeNonNegativeInteger"
+            },
+            "epoch": {
+              "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+            },
+            "clock": {
+              "const": "authority_server"
+            }
+          },
+          "description": "§10.5 rate row: 'Exact integer token-bucket RateCeiling and authority-server epoch; subset uses capacity/refill/burst containment.' Fields verbatim from the §10.5 RateCeiling record (integer discrete refill; clock is always authority_server). Atoms differing in dimension, canonical_unit, or epoch are incomparable (typed reject). Subset is the §10.5 containment: capacity <= capacity, max_burst <= max_burst, and refill-rate containment by exact integer cross-multiplication (child.refill_amount * parent.refill_period_milliseconds <= parent.refill_amount * child.refill_period_milliseconds — no floats). Worst-case boundary-alignment dominance beyond this containment is enforced at consume time by atomic ancestor-counter locking (§10.5) — ADR-0001 open item."
+        },
+        "atomAssurance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "order",
+            "admitted"
+          ],
+          "properties": {
+            "order": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "admitted": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+              }
+            }
+          },
+          "description": "§10.5 assurance row: 'Element of a pinned finite refinement order; incomparable profiles reject.' order pins the exact finite refinement order (typed DigestRef); admitted is the explicit upward-closed profile set expanded against the pin at preparation, so the refinement order is absorbed into set inclusion. Atoms over different orders are incomparable (typed reject); within one pinned order, profile-level incomparability is absorbed by the explicit-set expansion."
+        },
+        "atomSchemaEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema",
+            "verifier",
+            "attestor",
+            "assurance_policy"
+          ],
+          "properties": {
+            "schema": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "verifier": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "attestor": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "assurance_policy": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            }
+          },
+          "description": "§10.5 schema/evidence row: 'Exact immutable schema, verifier, attestor, and assurance-policy digests.' One exact digest tuple per atom (alternatives are separate rules); subset and intersection are exact tuple equality."
+        },
+        "requestAtoms": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "$ref": "#/$defs/bpa1Policy/$defs/operationId"
+            },
+            "object": {
+              "$ref": "#/$defs/bpa1Policy/$defs/sourceQualifiedId"
+            },
+            "path": {
+              "$ref": "#/$defs/bpa1Policy/$defs/pointPath"
+            },
+            "network_destination": {
+              "$ref": "#/$defs/bpa1Policy/$defs/pointNetworkDestination"
+            },
+            "binding": {
+              "$ref": "#/$defs/bpa1Policy/$defs/sourceQualifiedId"
+            },
+            "purpose": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomPurpose"
+            },
+            "classification": {
+              "$ref": "#/$defs/bpa1Policy/$defs/pointClassification"
+            },
+            "time": {
+              "$ref": "#/$defs/bpa1Policy/$defs/pointTime"
+            },
+            "quantity": {
+              "$ref": "#/$defs/bpa1Policy/$defs/pointQuantity"
+            },
+            "rate": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomRate"
+            },
+            "assurance": {
+              "$ref": "#/$defs/bpa1Policy/$defs/pointAssurance"
+            },
+            "schema_evidence": {
+              "$ref": "#/$defs/bpa1Policy/$defs/atomSchemaEvidence"
+            }
+          },
+          "description": "The request side of decide(policy, request_atoms): one concrete value per supplied domain, compiled by the kernel from the dependency closure (§10.6), never caller-shaped. purpose reuses the atom shape (exact node = root-to-node path in the pinned snapshot); rate is the requested RateCeiling (matched by containment); schema_evidence is the exact offered digest tuple. An allow rule requires the constrained domain to be present and matching; a deny rule conservatively matches an absent domain (fail closed)."
+        },
+        "pointPath": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "root",
+            "segments"
+          ],
+          "properties": {
+            "root": {
+              "$ref": "#/$defs/bpa1Policy/$defs/sourceQualifiedId"
+            },
+            "segments": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/bpa1Policy/$defs/pathSegment"
+              }
+            }
+          },
+          "description": "Exact logical path relative to a WorkspaceAllocation root (§10.5 path row); authorization applies to the opened handle, never this string."
+        },
+        "pointNetworkDestination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scheme",
+            "host",
+            "port",
+            "protocol"
+          ],
+          "properties": {
+            "scheme": {
+              "$ref": "#/$defs/bpa1Policy/$defs/schemeOrProtocol"
+            },
+            "host": {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostPoint"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "protocol": {
+              "$ref": "#/$defs/bpa1Policy/$defs/schemeOrProtocol"
+            }
+          },
+          "description": "One concrete destination: exact host (A-label name or single broker-pinned IP), single port."
+        },
+        "pointClassification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lattice",
+            "element"
+          ],
+          "properties": {
+            "lattice": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "element": {
+              "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+            }
+          },
+          "description": "One element of the pinned finite lattice (§10.5 classification row); a different lattice pin is incomparable (typed reject)."
+        },
+        "pointTime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at"
+          ],
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/bpa1Policy/$defs/timestampMs"
+            }
+          },
+          "description": "Authoritative server-time instant, integer milliseconds (§10.5 time row)."
+        },
+        "pointQuantity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dimension",
+            "canonical_unit",
+            "scale",
+            "amount"
+          ],
+          "properties": {
+            "dimension": {
+              "$ref": "#/$defs/bpa1Policy/$defs/dimensionOrUnit"
+            },
+            "canonical_unit": {
+              "$ref": "#/$defs/bpa1Policy/$defs/dimensionOrUnit"
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            },
+            "amount": {
+              "$ref": "#/$defs/bpa1Policy/$defs/safeNonNegativeInteger"
+            },
+            "currency": {
+              "$ref": "#/$defs/bpa1Policy/$defs/currencyCode"
+            },
+            "pricing_revision": {
+              "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "dimension": {
+                  "const": "money"
+                }
+              },
+              "required": [
+                "currency",
+                "pricing_revision"
+              ]
+            },
+            {
+              "properties": {
+                "dimension": {
+                  "not": {
+                    "const": "money"
+                  }
+                },
+                "currency": false,
+                "pricing_revision": false
+              }
+            }
+          ],
+          "description": "One requested amount (§10.5 quantity row); mismatched dimension/unit/scale/currency/pricing revision is incomparable (typed reject — never converted)."
+        },
+        "pointAssurance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "order",
+            "profile"
+          ],
+          "properties": {
+            "order": {
+              "$ref": "#/$defs/bpa1Policy/$defs/digestRef"
+            },
+            "profile": {
+              "$ref": "#/$defs/bpa1Policy/$defs/identifier"
+            }
+          },
+          "description": "One attested profile in the pinned refinement order (§10.5 assurance row)."
+        },
+        "hostAtom": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostDns"
+            },
+            {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostIp4Cidr"
+            },
+            {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostIp6Cidr"
+            }
+          ],
+          "description": "Exactly one closed host constructor: A-label DNS name, IPv4 CIDR, or IPv6 CIDR (§10.5 network destination row)."
+        },
+        "hostPoint": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostDns"
+            },
+            {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostIp4"
+            },
+            {
+              "$ref": "#/$defs/bpa1Policy/$defs/hostIp6"
+            }
+          ],
+          "description": "Exactly one concrete host: A-label DNS name or a single IP address."
+        },
+        "hostDns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dns"
+          ],
+          "properties": {
+            "dns": {
+              "$ref": "#/$defs/bpa1Policy/$defs/aLabelHost"
+            }
+          }
+        },
+        "hostIp4Cidr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ip4_cidr"
+          ],
+          "properties": {
+            "ip4_cidr": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "octets",
+                "prefix_len"
+              ],
+              "properties": {
+                "octets": {
+                  "type": "array",
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                },
+                "prefix_len": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32
+                }
+              },
+              "description": "Structured normalized IPv4 CIDR (no string parsing in the algebra); host bits below the prefix must be zero (evaluator-checked)."
+            }
+          }
+        },
+        "hostIp6Cidr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ip6_cidr"
+          ],
+          "properties": {
+            "ip6_cidr": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "groups",
+                "prefix_len"
+              ],
+              "properties": {
+                "groups": {
+                  "type": "array",
+                  "minItems": 8,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                  }
+                },
+                "prefix_len": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 128
+                }
+              },
+              "description": "Structured normalized IPv6 CIDR as eight 16-bit groups; host bits below the prefix must be zero (evaluator-checked)."
+            }
+          }
+        },
+        "hostIp4": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ip4"
+          ],
+          "properties": {
+            "ip4": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            }
+          }
+        },
+        "hostIp6": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ip6"
+          ],
+          "properties": {
+            "ip6": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            }
+          }
+        },
+        "portRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "first",
+            "last"
+          ],
+          "properties": {
+            "first": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "last": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "description": "Inclusive port range; first <= last (evaluator-checked). A single port is first == last."
+        },
+        "identifier": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+        },
+        "operationId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,127}$",
+          "description": "Versioned BPP operation id from the frozen bundle registry (§14.6)."
+        },
+        "sourceQualifiedId": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x39\\x3b-\\x7e]{1,64}:[\\x21-\\x7e]{1,63}$",
+          "description": "Source-qualified immutable id: <source>:<id>, visible ASCII, one mandatory qualifier colon, at most 128 bytes total (§10.5: no mutable alias; display names have no policy role)."
+        },
+        "pathSegment": {
+          "type": "string",
+          "pattern": "^(?!\\.{1,2}$)[^/\\x00-\\x1f]{1,255}$",
+          "description": "One logical path segment: never empty, '.', '..', and never containing '/' or control characters; NFC-normalized (evaluator-checked — §10.5 Unicode-normalized logical path segments)."
+        },
+        "aLabelHost": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+          "description": "Lowercase A-label (punycode) hostname, LDH labels of at most 63 octets (§10.5: A-label hostname; no free text, no wildcard)."
+        },
+        "schemeOrProtocol": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]{0,31}$",
+          "description": "Exact lowercase scheme or protocol token (§10.5 network destination row); never a pattern."
+        },
+        "dimensionOrUnit": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "description": "Canonical dimension or unit token (§10.5 quantity/rate rows)."
+        },
+        "currencyCode": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 alphabetic currency code (§10.5 money quantities name ISO currency)."
+        },
+        "timestampMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Authoritative server time, integer milliseconds since the UTC epoch (§10.5; I-JSON safe integer, §14.2)."
+        },
+        "safeNonNegativeInteger": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "I-JSON safe integer (§14.2 rejects unsafe integers; §10.5 rejects floating-point quantities)."
+        },
+        "digestRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "class",
+            "algorithm",
+            "value_hex"
+          ],
+          "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "local_erasure_safe",
+                "scope_erasure_safe",
+                "disclosed_party",
+                "ciphertext_public"
+              ],
+              "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+            },
+            "algorithm": {
+              "enum": [
+                "sha-256",
+                "hmac-sha-256"
+              ]
+            },
+            "key_ref": {
+              "type": "string",
+              "pattern": "^[\\x21-\\x7e]{1,128}$",
+              "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+            },
+            "value_hex": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "Exactly 64 lowercase hex characters."
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "class": {
+                  "enum": [
+                    "structural_public",
+                    "portable_public",
+                    "disclosed_party",
+                    "ciphertext_public"
+                  ]
+                },
+                "algorithm": {
+                  "const": "sha-256"
+                }
+              },
+              "not": {
+                "required": [
+                  "key_ref"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "class": {
+                  "enum": [
+                    "local_erasure_safe",
+                    "scope_erasure_safe"
+                  ]
+                },
+                "algorithm": {
+                  "const": "hmac-sha-256"
+                }
+              },
+              "required": [
+                "key_ref"
+              ]
+            }
+          ],
+          "description": "Typed DigestRef pinning an immutable structure (lattice, purpose snapshot, refinement order, schema/verifier/attestor/assurance-policy): every digest field is typed, never an unlabelled hash. Atom comparability keys on exact DigestRef equality; the class is chosen per §14.2's digest-class table by the pinned structure's owner."
+        }
+      },
+      "description": "A BPA-1 policy value is a bounded set of rules; each rule is {effect: allow|deny, atoms} where atoms constrains a subset of the twelve closed §10.5 domains (an omitted domain is unconstrained; an empty atoms object is the universal rule). Deny wins; absence of a matching allow is deny (§10.5: a selector is a bounded union of positive atoms plus explicit deny atoms). The twelve domain keys are the ONLY atom keys (closed enum, ADR-0001 tag spellings frozen here): operation, object, path, network_destination, binding, purpose, classification, time, quantity, rate, assurance, schema_evidence — an unknown key is not extensible data, it fails closed; adding an atom type is BPA-2, never an in-place extension. Free text, regexes, shell syntax, display names, floats, mutable aliases, and implementation callbacks are not policy values (§10.5); all quantities are fixed-scale I-JSON safe integers. Canonical form (evaluator-enforced, policy/eval.py + policy/eval.mjs): set members sorted by UTF-16 code units, rules sorted by their JCS bytes, duplicates rejected; canonical bytes are RFC 8785 JCS and the policy digest is derived over the $domain-tagged canonical form with digest domain bpa1-policy-v1 (family-vectors/PROFILE.md §2, D-R0-1; the DigestRef class is chosen by the embedding record per §14.2). This schema is $domain-safe: every object is closed (additionalProperties false) and no property is named $domain. Cross-field rules JSON Schema cannot express are evaluator-checked and vector-pinned (spec/vectors/policy/): not_before <= not_after, ports.first <= ports.last, CIDR host bits zero below the prefix, NFC-normalized path segments, no duplicate set members. Bounds follow §14.9 (256 list items, 128-byte identifiers, bounded depth); the registry may re-pin them at bundle freeze."
+    }
+  }
+}

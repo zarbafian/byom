@@ -67,7 +67,11 @@ evaluator), and `spec/vectors/policy/` (golden vectors). The normative shape:
   callbacks never appear in the AST (§10.5); all quantities are fixed-scale
   I-JSON safe integers.
 - **Canonical bytes and digest.** Canonical form sorts set members by
-  UTF-16 code units, sorts rules by their JCS bytes, and rejects duplicates;
+  UTF-16 code units, sorts rules by their JCS bytes — the UTF-8 bytes of
+  the rule's JCS text, never UTF-16 string comparison, which disagrees on
+  astral vs U+E000..U+FFFF code points (D-RT-5 / RT-08) — and REJECTS
+  duplicate rules as `malformed` at the second occurrence, never a silent
+  dedupe (D-RT-5);
   canonical bytes are **RFC 8785 JCS** under the strict I-JSON acceptance
   rules of §14.2 (no floats). The policy digest is derived over the
   **`$domain`-tagged** canonical form with digest domain **`bpa1-policy-v1`**
@@ -126,22 +130,30 @@ Each acceptance criterion of the proposed ADR, with its evidence:
 
 ## Open items
 
-- **Rate boundary-alignment tightening.** §10.5's "cannot exceed the parent
-  under any boundary alignment" and its "active interval, and reserved
-  parent share" terms need mandate context outside the atom. BPA-1 freezes
-  the algebraic subset as the row's componentwise containment (capacity,
-  max_burst, refill rate by exact integer cross-multiplication); worst-case
-  per-window dominance and interval/share accounting remain consume-time
-  checks under §10.5's atomic ancestor-counter locking, with their own
-  golden vectors (boundary double bursts, clock skew, crash) landing with
-  that slice. Any algebraic tightening is BPA-2.
+- **Rate boundary-alignment — RESOLVED by D-RT-4 (RT-07).** §10.5's
+  "cannot exceed the parent under any boundary alignment" is not decidable
+  from the atom encoding when the two windows differ: a child `1/1ms`
+  under a parent `10/10ms` has an equal refill ratio but refills before
+  the parent boundary, so ratio cross-multiplication over-claimed. BPA-1
+  therefore FAILS CLOSED: rate atoms are comparable only under equal
+  window boundaries (same `refill_period_milliseconds` on the same
+  `epoch`), where dominance is exactly componentwise containment
+  (`capacity`, `max_burst`, `refill_amount`); any other pairing rejects
+  `incomparable`. Worst-case per-window dominance across differing
+  windows, active interval, and reserved parent share are consume-time
+  behavior under §10.5's atomic ancestor-counter locking — never a
+  policy-algebra claim. Both evaluators and the rate vectors pin this;
+  any algebraic tightening is BPA-2.
 - **Numeric caps are interim pins.** 256 rules / 256 set members / 64
   segments concretize §14.9's "bounded" language; the registry may re-pin
   them at bundle freeze — a re-pin is a new schema version, not an edit.
-- **G10/G31 rebinding.** Published ops schemas are immutable, so the opaque
-  policy bodies (`terms_constraints`, `manifestation_selector`, …) keep
-  their open-object spelling until their next schema version, which binds
-  them to `bpa1-policy.schema.json` at the registry freeze (B1).
+- **G10/G31 rebinding — LANDED (RT-06).** The immutable successor
+  versions are published now as `spec/schemas/ops/<op>-…-v2.schema.json`:
+  every G10/G31 opaque body is bound to the BPA-1 AST (a byte-identical
+  nested copy of `bpa1-policy.schema.json`, runner-verified), a closed
+  DecisionRule/terms/delegation reference shape, or a fixed enum/set. The
+  v1 publications stay unchanged; B1 and the C3a tool document freeze to
+  the v2 versions.
 
 ## Consequences
 

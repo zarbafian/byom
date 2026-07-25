@@ -1,0 +1,48 @@
+{
+  "name": "machines/episode-lease-live-head-reclaim",
+  "description": "Negative (D-RT-6, RT-10): a LIVE leased head is not stealable — worker crash/silence alone never enables reclaim, and neither a competing claim on the live head nor a claim while running is a descriptor row; only the authoritative-time expiry transition (server_time past the lease deadline) re-opens the head.",
+  "input": {
+    "machine": "episode",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "episode_claim",
+        "to": "lease_leased",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "lease_leased",
+        "via": "episode_claim",
+        "to": "lease_leased",
+        "expect": "rejected"
+      },
+      {
+        "from": "lease_leased",
+        "via": "episode_start",
+        "to": "lease_running",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "lease_running",
+        "via": "episode_claim",
+        "to": "lease_leased",
+        "expect": "rejected"
+      },
+      {
+        "from": "lease_running",
+        "via": "episode_claim",
+        "to": "lease_running",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "lease_running"
+  }
+}

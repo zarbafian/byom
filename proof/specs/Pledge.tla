@@ -9,6 +9,11 @@
 (* Activity generations, and Delivery/Review bodies are abstracted; the    *)
 (* pledgor/terms seat receipts are modeled as a set so finalization        *)
 (* determinism ("authors no missing seat", R9) is a guard, not a promise.  *)
+(* D-RT-3 (RT-03): pledge_amend only CREATES a separate proposed          *)
+(* successor (modeled as AmendPropose, absent -> proposed - the successor *)
+(* instance of this same machine); the predecessor is superseded          *)
+(* exclusively by SupersedeOnFinalize - pledge_finalize accepting the     *)
+(* successor's complete fresh seat set under the successor CAS.           *)
 (* Every operation may be replayed at any time: guards make the exact      *)
 (* retry a no-op, which is the descriptor-level idempotency claim.         *)
 (* All variables are durable; a daemon crash between any two transitions   *)
@@ -121,10 +126,22 @@ Resume ==
   /\ Enter("underway")
   /\ UNCHANGED <<positions, successors>>
 
-(* pledge_amend (R5): ONE compare-and-swap successor slot (G22).  The CAS  *)
-(* head is st itself: acceptance atomically supersedes the revision, so a  *)
-(* competing amendment finds no Open state and fails.                      *)
-Amend ==
+(* pledge_amend (R5, D-RT-3): creates the SEPARATE proposed successor      *)
+(* PledgeProposal - a fresh instance of this machine at "proposed" with    *)
+(* all currently required seats needed again (section 9.5).  It does NOT  *)
+(* touch the predecessor's state or the successor slot.                    *)
+AmendPropose ==
+  /\ st = "absent"
+  /\ Enter("proposed")
+  /\ UNCHANGED <<positions, successors, resumes>>
+
+(* pledge_finalize on the amendment successor (R9, D-RT-3): ONE            *)
+(* compare-and-swap successor slot (G22 as amended).  Acceptance of the    *)
+(* complete fresh seat set under the successor CAS atomically supersedes   *)
+(* the predecessor in the same transaction as the successor's              *)
+(* proposed -> active/waiting; a competing second amendment finds the      *)
+(* slot spent (no Open state) and fails stale_revision.                    *)
+SupersedeOnFinalize ==
   /\ st \in Open
   /\ successors' = successors + 1
   /\ Enter("superseded")
@@ -152,8 +169,9 @@ Expire ==
   /\ UNCHANGED <<positions, successors, resumes>>
 
 Next ==
-  \/ Propose \/ Position \/ Finalize \/ ActivityOpen \/ DeliverySubmit
-  \/ ReviewRecord \/ Resume \/ Amend \/ Relinquish \/ Disposition \/ Expire
+  \/ Propose \/ AmendPropose \/ Position \/ Finalize \/ ActivityOpen
+  \/ DeliverySubmit \/ ReviewRecord \/ Resume \/ SupersedeOnFinalize
+  \/ Relinquish \/ Disposition \/ Expire
 
 Spec == Init /\ [][Next]_vars
 
@@ -166,8 +184,8 @@ Spec == Init /\ [][Next]_vars
 FinalizedHasAllSeats ==
   st \notin {"absent", "proposed"} => positions = Seats
 
-(* G22: one current successor only - the amendment CAS can win at most     *)
-(* once across every interleaving and replay.                              *)
+(* G22/D-RT-3: one current successor only - the successor-finalize CAS can *)
+(* win at most once across every interleaving and replay.                  *)
 AtMostOneSuccessor == successors <= 1
 
 (* The successor slot is spent exactly when the Pledge is superseded.      *)
@@ -199,6 +217,7 @@ ResumesBounded == resumes <= MaxResumes
 \* @parity state: expired
 \* @parity state: disputed
 \* @parity transition: absent -> proposed via pledge_propose
+\* @parity transition: absent -> proposed via pledge_amend
 \* @parity transition: proposed -> proposed via pledge_position
 \* @parity transition: proposed -> active via pledge_finalize
 \* @parity transition: proposed -> waiting via pledge_finalize
@@ -210,12 +229,12 @@ ResumesBounded == resumes <= MaxResumes
 \* @parity transition: submitted -> rejected via review_record
 \* @parity transition: submitted -> disputed via review_record
 \* @parity transition: revision_requested -> underway via pledge_resume
-\* @parity transition: active -> superseded via pledge_amend
-\* @parity transition: waiting -> superseded via pledge_amend
-\* @parity transition: underway -> superseded via pledge_amend
-\* @parity transition: submitted -> superseded via pledge_amend
-\* @parity transition: revision_requested -> superseded via pledge_amend
-\* @parity transition: disputed -> superseded via pledge_amend
+\* @parity transition: active -> superseded via pledge_finalize
+\* @parity transition: waiting -> superseded via pledge_finalize
+\* @parity transition: underway -> superseded via pledge_finalize
+\* @parity transition: submitted -> superseded via pledge_finalize
+\* @parity transition: revision_requested -> superseded via pledge_finalize
+\* @parity transition: disputed -> superseded via pledge_finalize
 \* @parity transition: active -> relinquished via pledge_relinquish
 \* @parity transition: waiting -> relinquished via pledge_relinquish
 \* @parity transition: underway -> relinquished via pledge_relinquish

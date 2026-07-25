@@ -1,0 +1,42 @@
+{
+  "name": "policy/duplicate-rules-set-order-reject",
+  "description": "D-RT-5 (RT-08): two rules identical up to set-member order are duplicates in per-rule canonical form and REJECT at the second occurrence — reordering a set never smuggles a duplicate past the check",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "op_a",
+                "op_b"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "op_b",
+                "op_a"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/1"
+      }
+    }
+  }
+}

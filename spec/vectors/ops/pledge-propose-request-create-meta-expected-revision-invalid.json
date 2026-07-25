@@ -1,0 +1,45 @@
+{
+  "name": "ops/pledge-propose-request-create-meta-expected-revision-invalid",
+  "description": "RT-01: pledge_propose is create-classed — the closed create meta has NO expected_revision member, so supplying one fails the closed schema (there is no head to CAS; the update/create metas are disjoint closed shapes).",
+  "input": {
+    "schema": "pledge-propose-request",
+    "value": {
+      "version": "0.2",
+      "op": "pledge_propose",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1,
+        "expected_revision": 1
+      },
+      "endeavor_id": "endeavor-id-1",
+      "proposed_pledgor_ref": "proposed-pledgor-ref-1",
+      "beneficiary_ref": "beneficiary-ref-1",
+      "exact_outcome_schema_refs": [
+        "exact-outcome-schema-refs-1"
+      ],
+      "acceptance_criteria_refs": [
+        "acceptance-criteria-refs-1"
+      ],
+      "evidence_requirements": [],
+      "reviewer_rule_ref": "reviewer-rule-ref-1",
+      "input_context_ref": "input-context-ref-1",
+      "input_context_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:input_context_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "budget_request_set": {},
+      "allowed_manifestation_selector": {},
+      "delegation_ceiling": {},
+      "deadline": "2026-07-26T12:00:00Z",
+      "cancellation_terms": {},
+      "dependency_refs": []
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

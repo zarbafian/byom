@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "EndeavorFormationIntent/Slot",
   "owner": "kovee (C2)",
   "states": [
@@ -18,6 +19,18 @@
       "to": "prepared",
       "via": "formation_prepare",
       "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "guards": [
+        "one durable formation intent and uniqueness slot: UNIQUE(realm_id, requested_by_principal, client_formation_key) WHERE state != released (§16.3)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.prepared"
+      ],
+      "crash_result": "durable pair; a restarted or restored Kovee re-enters at the recorded state (§16.3)",
       "notes": "Kovee starts one durable formation intent and uniqueness slot (§16.3); slot: held; UNIQUE(realm_id, requested_by_principal, client_formation_key) WHERE state != released."
     },
     {
@@ -25,6 +38,20 @@
       "to": "canceled",
       "via": "formation_cancel",
       "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "guards": [
+        "local cancel durably precedes first send — the only pre-send release (§16.3 table row 1)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "after bytes may have left, cancel is not a row of this machine; the slot has no timeout-based release (§16.3)",
       "notes": "Local cancel durably precedes first send (§16.3 table row 1); slot: released. The only pre-send release; after bytes may have left, cancel is not a row of this machine."
     },
     {
@@ -32,6 +59,21 @@
       "to": "submitting",
       "via": "kovee_endeavor_form",
       "authority": "governance (R39): source-qualified human via the exact Kovee delegated-principal channel, personally filling the sole computed formation seat; fresh attempt proof over the stable command/idempotency domain",
+      "guards": [
+        "fresh human authentication attempt over the unchanged semantic command, original actor-binding/idempotency domain, and current same-human actor/binding proof (§16.3)",
+        "command endpoint incarnation and Society recovery epoch still active",
+        "source-qualified human via the exact Kovee delegated-principal channel personally fills the sole computed formation seat (R39)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest",
+        "pinned Realm/Byom binding and ContextBundle"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.submitting"
+      ],
+      "crash_result": "none or one complete signed result, or one terminal tombstone; Society bootstrap is never part of this machine (§14.8 Kovee atomic Endeavor formation row)",
       "notes": "Exact submit begins with a fresh valid attempt (§16.3 table row 2); slot: submitting; stable semantic command bytes + fresh per-attempt authentication envelope (EndeavorFormationAttempt)."
     },
     {
@@ -39,6 +81,21 @@
       "to": "submitting",
       "via": "kovee_endeavor_form",
       "authority": "governance (R39): source-qualified human via the exact Kovee delegated-principal channel, personally filling the sole computed formation seat; fresh attempt proof over the stable command/idempotency domain",
+      "guards": [
+        "fresh human authentication attempt over the unchanged semantic command, original actor-binding/idempotency domain, and current same-human actor/binding proof (§16.3)",
+        "command endpoint incarnation and Society recovery epoch still active",
+        "source-qualified human via the exact Kovee delegated-principal channel personally fills the sole computed formation seat (R39)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest",
+        "pinned Realm/Byom binding and ContextBundle"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.submitting"
+      ],
+      "crash_result": "none or one complete signed result, or one terminal tombstone; Society bootstrap is never part of this machine (§14.8 Kovee atomic Endeavor formation row)",
       "notes": "Resubmission (§16.3 table row 2): a fresh human authentication attempt over the unchanged semantic command, original actor-binding/idempotency domain, and current same-human actor/binding proof; requires the command endpoint incarnation and Society recovery epoch still active; slot: submitting."
     },
     {
@@ -46,6 +103,18 @@
       "to": "remote_unknown",
       "via": "transport_outcome_unknown",
       "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "guards": [
+        "reply lost or transport outcome unknown (§16.3 table row 3)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.remote_unknown"
+      ],
+      "crash_result": "no release — after an external call may have committed there is no timeout-based release (§16.3)",
       "notes": "Reply lost or transport outcome unknown (§16.3 table row 3); slot: remote_unknown; no release — after an external call may have committed there is no timeout-based release."
     },
     {
@@ -53,6 +122,18 @@
       "to": "byom_committed",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "valid signed result envelope from a committed reply, external_command_result_query, or external_command_terminalize (§16.3 table row 4)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.byom_committed"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
     },
     {
@@ -60,6 +141,18 @@
       "to": "byom_committed",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "valid signed result envelope from a committed reply, external_command_result_query, or external_command_terminalize (§16.3 table row 4)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.byom_committed"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
     },
     {
@@ -67,6 +160,18 @@
       "to": "byom_committed",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "valid signed result envelope from a committed reply, external_command_result_query, or external_command_terminalize (§16.3 table row 4)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.byom_committed"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
     },
     {
@@ -74,6 +179,18 @@
       "to": "byom_committed",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "valid signed result envelope from a committed reply, external_command_result_query, or external_command_terminalize (§16.3 table row 4)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.byom_committed"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
     },
     {
@@ -81,6 +198,18 @@
       "to": "byom_committed",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "valid signed result envelope from a committed reply, external_command_result_query, or external_command_terminalize (§16.3 table row 4)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.byom_committed"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
     },
     {
@@ -88,6 +217,18 @@
       "to": "byom_committed",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "repeated valid committed query or terminalization result — unchanged (§16.3 table row 10)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.byom_committed"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Repeated valid committed query or terminalization result: unchanged (§16.3 table row 10)."
     },
     {
@@ -95,6 +236,18 @@
       "to": "linking",
       "via": "committed_result_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "repeated valid committed query or terminalization result — unchanged (§16.3 table row 10)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.linking"
+      ],
+      "crash_result": "SQL loss after Byom commit is recovered from the signed result envelope (§16.3)",
       "notes": "Repeated valid committed query or terminalization result: unchanged (§16.3 table row 10)."
     },
     {
@@ -102,6 +255,18 @@
       "to": "awaiting_principal",
       "via": "absence_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified five-fact `absent`: a complete live-domain query found neither result nor tombstone; proves nothing about later arrival (§16.3 table row 5)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.awaiting_principal"
+      ],
+      "crash_result": "timeout, absence, authentication expiry, binding rotation, an unverified historical lookup, or ambiguous never releases the slot (§16.3)",
       "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
     },
     {
@@ -109,6 +274,18 @@
       "to": "awaiting_principal",
       "via": "absence_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified five-fact `absent`: a complete live-domain query found neither result nor tombstone; proves nothing about later arrival (§16.3 table row 5)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.awaiting_principal"
+      ],
+      "crash_result": "timeout, absence, authentication expiry, binding rotation, an unverified historical lookup, or ambiguous never releases the slot (§16.3)",
       "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
     },
     {
@@ -116,6 +293,18 @@
       "to": "awaiting_principal",
       "via": "absence_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified five-fact `absent`: a complete live-domain query found neither result nor tombstone; proves nothing about later arrival (§16.3 table row 5)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.awaiting_principal"
+      ],
+      "crash_result": "timeout, absence, authentication expiry, binding rotation, an unverified historical lookup, or ambiguous never releases the slot (§16.3)",
       "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
     },
     {
@@ -123,6 +312,18 @@
       "to": "awaiting_principal",
       "via": "absence_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified five-fact `absent`: a complete live-domain query found neither result nor tombstone; proves nothing about later arrival (§16.3 table row 5)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.awaiting_principal"
+      ],
+      "crash_result": "timeout, absence, authentication expiry, binding rotation, an unverified historical lookup, or ambiguous never releases the slot (§16.3)",
       "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
     },
     {
@@ -130,6 +331,18 @@
       "to": "ambiguous",
       "via": "unknown_result",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.ambiguous"
+      ],
+      "crash_result": "ambiguity never releases the slot — conservative hold, no guessing; unresolved state stays held (§16.3)",
       "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
     },
     {
@@ -137,6 +350,18 @@
       "to": "ambiguous",
       "via": "unknown_result",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.ambiguous"
+      ],
+      "crash_result": "ambiguity never releases the slot — conservative hold, no guessing; unresolved state stays held (§16.3)",
       "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
     },
     {
@@ -144,6 +369,18 @@
       "to": "ambiguous",
       "via": "unknown_result",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.ambiguous"
+      ],
+      "crash_result": "ambiguity never releases the slot — conservative hold, no guessing; unresolved state stays held (§16.3)",
       "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
     },
     {
@@ -151,6 +388,18 @@
       "to": "ambiguous",
       "via": "unknown_result",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.ambiguous"
+      ],
+      "crash_result": "ambiguity never releases the slot — conservative hold, no guessing; unresolved state stays held (§16.3)",
       "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
     },
     {
@@ -158,6 +407,20 @@
       "to": "canceled",
       "via": "tombstone_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released; Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "a delayed command racing terminalization either commits first or observes the tombstone; both cannot win (§16.3)",
       "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
     },
     {
@@ -165,6 +428,20 @@
       "to": "canceled",
       "via": "tombstone_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released; Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "a delayed command racing terminalization either commits first or observes the tombstone; both cannot win (§16.3)",
       "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
     },
     {
@@ -172,6 +449,20 @@
       "to": "canceled",
       "via": "tombstone_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released; Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "a delayed command racing terminalization either commits first or observes the tombstone; both cannot win (§16.3)",
       "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
     },
     {
@@ -179,6 +470,20 @@
       "to": "canceled",
       "via": "tombstone_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released; Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "a delayed command racing terminalization either commits first or observes the tombstone; both cannot win (§16.3)",
       "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
     },
     {
@@ -186,6 +491,20 @@
       "to": "canceled",
       "via": "tombstone_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released; Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "a delayed command racing terminalization either commits first or observes the tombstone; both cannot win (§16.3)",
       "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
     },
     {
@@ -193,6 +512,20 @@
       "to": "canceled",
       "via": "historically_fenced_absent_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "never relabelled as an idempotency tombstone that never existed; later complete hops cannot launder an earlier incomplete one (§16.3)",
       "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
     },
     {
@@ -200,6 +533,20 @@
       "to": "canceled",
       "via": "historically_fenced_absent_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "never relabelled as an idempotency tombstone that never existed; later complete hops cannot launder an earlier incomplete one (§16.3)",
       "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
     },
     {
@@ -207,6 +554,20 @@
       "to": "canceled",
       "via": "historically_fenced_absent_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "never relabelled as an idempotency tombstone that never existed; later complete hops cannot launder an earlier incomplete one (§16.3)",
       "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
     },
     {
@@ -214,6 +575,20 @@
       "to": "canceled",
       "via": "historically_fenced_absent_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "never relabelled as an idempotency tombstone that never existed; later complete hops cannot launder an earlier incomplete one (§16.3)",
       "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
     },
     {
@@ -221,6 +596,20 @@
       "to": "canceled",
       "via": "historically_fenced_absent_verified",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released"
+      ],
+      "events": [
+        "endeavor-formation.canceled"
+      ],
+      "crash_result": "never relabelled as an idempotency tombstone that never existed; later complete hops cannot launder an earlier incomplete one (§16.3)",
       "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
     },
     {
@@ -228,6 +617,18 @@
       "to": "submitting",
       "via": "terminalize_not_terminalizable",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "terminalization returned `not_terminalizable` with one closed blocking state (§16.3 table row 9)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.submitting"
+      ],
+      "crash_result": "a Byom no-op: the pair is unchanged and nothing releases (§16.3)",
       "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
     },
     {
@@ -235,6 +636,18 @@
       "to": "remote_unknown",
       "via": "terminalize_not_terminalizable",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "terminalization returned `not_terminalizable` with one closed blocking state (§16.3 table row 9)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.remote_unknown"
+      ],
+      "crash_result": "a Byom no-op: the pair is unchanged and nothing releases (§16.3)",
       "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
     },
     {
@@ -242,6 +655,18 @@
       "to": "awaiting_principal",
       "via": "terminalize_not_terminalizable",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "terminalization returned `not_terminalizable` with one closed blocking state (§16.3 table row 9)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.awaiting_principal"
+      ],
+      "crash_result": "a Byom no-op: the pair is unchanged and nothing releases (§16.3)",
       "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
     },
     {
@@ -249,6 +674,18 @@
       "to": "ambiguous",
       "via": "terminalize_not_terminalizable",
       "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "guards": [
+        "terminalization returned `not_terminalizable` with one closed blocking state (§16.3 table row 9)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.ambiguous"
+      ],
+      "crash_result": "a Byom no-op: the pair is unchanged and nothing releases (§16.3)",
       "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
     },
     {
@@ -256,6 +693,18 @@
       "to": "linking",
       "via": "external_link_begin",
       "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "guards": [
+        "begin idempotent Kovee ExternalLink commit (§16.3 table row 11)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.linking"
+      ],
+      "crash_result": "link creation is idempotent over its digest (§16.3)",
       "notes": "Begin idempotent Kovee ExternalLink commit (§16.3 table row 11); slot: linking."
     },
     {
@@ -263,6 +712,18 @@
       "to": "linking",
       "via": "external_link_retry",
       "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "guards": [
+        "retryable ExternalLink failure or retry (§16.3 table row 12)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor-formation.linking"
+      ],
+      "crash_result": "link creation is idempotent over its digest (§16.3)",
       "notes": "Retryable ExternalLink failure or retry (§16.3 table row 12); link creation is idempotent over its digest."
     },
     {
@@ -270,6 +731,20 @@
       "to": "linked",
       "via": "external_link_commit",
       "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "guards": [
+        "ExternalLink commits the exact result digest (§16.3 table row 13)"
+      ],
+      "locks": [
+        "paired intent/slot records under the slot generation",
+        "exact IdempotencyDomain/command digest"
+      ],
+      "fences": [
+        "slot released; terminal pair"
+      ],
+      "events": [
+        "endeavor-formation.linked"
+      ],
+      "crash_result": "terminal pairs do not leave them; link creation is idempotent over its digest (§16.3)",
       "notes": "ExternalLink commits the exact result digest (§16.3 table row 13); slot: released; terminal pair."
     }
   ]

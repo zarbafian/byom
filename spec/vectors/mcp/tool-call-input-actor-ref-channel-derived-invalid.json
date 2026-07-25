@@ -9,8 +9,9 @@
         "kind": "exploration",
         "purpose_ref": "purpose-114",
         "purpose_digest": {
-          "class": "structural_public",
-          "algorithm": "sha-256",
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:purpose_digest",
           "value_hex": "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
         },
         "mandate_refs": [],

@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Participant",
   "states": [
     "proposed",
@@ -13,6 +14,18 @@
       "to": "proposed",
       "via": "participant_propose",
       "authority": "participant (R5): current Participant acting only as itself",
+      "guards": [
+        "current Participant acting only as itself (R5)",
+        "kind-conditional binding: human principal observation, agent controller domain plus proposed ManifestationRevision, collective Assembly epoch (§7.1)"
+      ],
+      "locks": [
+        "current binding"
+      ],
+      "fences": [],
+      "events": [
+        "participant.proposed"
+      ],
+      "crash_result": "historical authorship survives (§14.8 Participant row)",
       "notes": "Kind-conditional binding per §7.1: human principal observation, agent controller domain plus proposed ManifestationRevision, collective Assembly epoch."
     },
     {
@@ -20,6 +33,22 @@
       "to": "active",
       "via": "participant_admit",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning admission: Society decision plus the exact MembershipAcceptance (§7.4)"
+      ],
+      "locks": [
+        "candidate acceptance",
+        "Standing decision",
+        "current binding"
+      ],
+      "fences": [
+        "binding epoch increments on identity/control change; channels fence"
+      ],
+      "events": [
+        "participant.active"
+      ],
+      "crash_result": "historical authorship survives (§14.8 Participant row)",
       "notes": "Cascade of the MembershipOffer machine's owning admission: requires the Society decision plus the exact MembershipAcceptance; binding epoch advances on identity/control change (§7.4, §14.8).",
       "cascade": true
     },
@@ -28,6 +57,21 @@
       "to": "suspended",
       "via": "participant_suspend",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact decided governance actor (R10); non-optional minimum revocation set"
+      ],
+      "locks": [
+        "Standing decision",
+        "current binding"
+      ],
+      "fences": [
+        "channels fence; dependents re-evaluate"
+      ],
+      "events": [
+        "participant.suspended"
+      ],
+      "crash_result": "historical authorship survives (§14.8 Participant row)",
       "notes": "Non-optional minimum revocation set; channels fence; dependents re-evaluate; historical authorship survives (§7.4)."
     },
     {
@@ -35,6 +79,20 @@
       "to": "retiring",
       "via": "participation_cease",
       "authority": "participant (R12): affected Participant only; not delegable",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "affected Participant only; not delegable (R12); cease at any time (§7.4, G9)"
+      ],
+      "locks": [
+        "current binding"
+      ],
+      "fences": [
+        "Standing moves to ceased; channels fence"
+      ],
+      "events": [
+        "participant.retiring"
+      ],
+      "crash_result": "historical authorship survives (§14.8 Participant row)",
       "notes": "Cease at any time; Standing moves to ceased; accepted-Pledge disposition handled independently (§7.4). Reading of §14.8 'cease/retire' recorded as gap note G9."
     },
     {
@@ -42,6 +100,20 @@
       "to": "retiring",
       "via": "participation_cease",
       "authority": "participant (R12): affected Participant only; not delegable",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "affected Participant only; not delegable (R12); cease at any time (§7.4, G9)"
+      ],
+      "locks": [
+        "current binding"
+      ],
+      "fences": [
+        "Standing moves to ceased; channels fence"
+      ],
+      "events": [
+        "participant.retiring"
+      ],
+      "crash_result": "historical authorship survives (§14.8 Participant row)",
       "notes": "§7.4 grants cease 'at any time'; suspended → retiring reading recorded as gap note G9."
     },
     {
@@ -49,6 +121,20 @@
       "to": "retired",
       "via": "participant_retire",
       "authority": "participant (R12): affected Participant only; not delegable",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "affected Participant only; not delegable (R12)"
+      ],
+      "locks": [
+        "current binding"
+      ],
+      "fences": [
+        "channels fence"
+      ],
+      "events": [
+        "participant.retired"
+      ],
+      "crash_result": "historical authorship survives; evidence remains attributable (§14.8 Participant row)",
       "notes": "Terminal; historical authorship and evidence remain attributable (§7.4, §14.8)."
     }
   ]

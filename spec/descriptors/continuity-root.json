@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "ContinuityRoot",
   "states": [
     "active",
@@ -11,6 +12,21 @@
       "to": "active",
       "via": "continuity_root_update",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant only (R13); compatibility, classification, and retention locked at first adoption (§7.3)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "compatibility/classification/retention"
+      ],
+      "fences": [
+        "current head CAS; old state refs remain private evidence"
+      ],
+      "events": [
+        "continuity-root.active"
+      ],
+      "crash_result": "Society never authors or unseals it (§14.8 ContinuityRoot row)",
       "notes": "First adoption of the participant-owned private-state handle; compatibility, classification, and retention locked (§7.3, §14.8)."
     },
     {
@@ -18,25 +34,85 @@
       "to": "active",
       "via": "continuity_root_update",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "new revision under current-head CAS; owning Participant only (R13)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "compatibility/classification/retention"
+      ],
+      "fences": [
+        "current head CAS; old state refs remain private evidence"
+      ],
+      "events": [
+        "continuity-root.active"
+      ],
+      "crash_result": "Society never authors or unseals it (§14.8 ContinuityRoot row)",
       "notes": "New revision under current-head CAS; old state refs remain private evidence (§14.8)."
     },
     {
       "from": "active",
       "to": "sealed",
       "via": "continuity_root_update",
-      "authority": "participant (R13): owning Participant only"
+      "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant only (R13)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "compatibility/classification/retention"
+      ],
+      "fences": [
+        "current head CAS; old state refs remain private evidence"
+      ],
+      "events": [
+        "continuity-root.sealed"
+      ],
+      "crash_result": "Society never authors or unseals it (§14.8 ContinuityRoot row)"
     },
     {
       "from": "active",
       "to": "retired",
       "via": "continuity_root_update",
-      "authority": "participant (R13): owning Participant only"
+      "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant only (R13)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "compatibility/classification/retention"
+      ],
+      "fences": [
+        "current head CAS; old state refs remain private evidence"
+      ],
+      "events": [
+        "continuity-root.retired"
+      ],
+      "crash_result": "Society never authors or unseals it (§14.8 ContinuityRoot row)"
     },
     {
       "from": "sealed",
       "to": "retired",
       "via": "continuity_root_update",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant only (R13)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "compatibility/classification/retention"
+      ],
+      "fences": [
+        "current head CAS; old state refs remain private evidence"
+      ],
+      "events": [
+        "continuity-root.retired"
+      ],
+      "crash_result": "Society never authors or unseals it (§14.8 ContinuityRoot row)",
       "notes": "The Society never authors or unseals it (§14.8)."
     }
   ]

@@ -1,6 +1,6 @@
 # ADR-0003: Model checking and conformance oracle
 
-Status: proposed
+Status: accepted (2026-07-26, RT-11; proposed 2026-07-25)
 Date: 2026-07-25
 Plan id: B-ADR-4
 
@@ -30,7 +30,7 @@ spec to one implementation runtime), and hand-written proofs (not
 mechanically re-checkable in CI). Akson's pattern is proven in-family and
 its tooling costs are known.
 
-## Decision (proposed)
+## Decision (accepted)
 
 - **TLA+** is the modeling language. Each B0.1 machine gets one spec plus
   TLC config under `spec/models/`, exploring crashes at every commit and
@@ -66,20 +66,37 @@ its tooling costs are known.
   coverage** (exact constants/bounds TLC explored, and which invariants are
   additionally inductive and therefore hold for any run length).
 
-## Criteria
+## Criteria (met at acceptance — RT-11)
 
-Moves to `accepted` when, within B0.1:
+Accepted with all spec-side criteria satisfied within B0.1:
 
 - every machine listed in the B0.1 sheet has a spec, a TLC config that
-  completes with zero errors in CI, and crash + replay vectors;
-- each model's proof README contains all four required statements
-  (projection, refinement boundary, fairness, coverage);
-- the negative-check suite produces a counterexample for every mutation;
-- the conformance oracle covers every (state, event) pair of every modeled
-  machine and runs in the default workspace test invocation; for at least
-  one machine the oracle table is generated from the model/descriptors, and
-  every hand-transcribed remainder is flagged in its proof README;
-- descriptor parity holds: descriptors ↔ registry ↔ modeled transitions.
+  completes with zero errors in CI (`.github/workflows/ci.yml`
+  `model-checking` job: `make -C proof full`), and crash + replay vectors
+  (`spec/vectors/machines/`);
+- each model's proof README section contains all four required statements
+  (projection, refinement boundary, fairness, coverage —
+  `proof/PROPERTIES.md`);
+- the negative-check suite (`proof/negative-checks.py`, in CI and
+  `run-checks.sh`) produces a caught failure for every deliberate
+  parity, conformance, and TLC mutation, plus the RT-16 MCP widening
+  mutations inside `conformance/run.py`;
+- descriptor parity holds and covers the v2 structured columns:
+  descriptors ↔ registry (`spec/registry.json`, RT-12) ↔ modeled
+  transitions (`proof/check-descriptors.py`; `conformance/run.py`).
+
+The originally proposed "in-workspace conformance oracle over every
+(state, event) pair, generated from the model for at least one machine"
+criterion was CIRCULAR at B0.1: it names the B1 workspace's pure
+transition functions, which cannot exist before B1 lands. Reworded (RT-11
+disposition): what B0.1 proves mechanically NOW is descriptor ↔ model
+parity plus the registry derivation; the **code oracle is a B1
+acceptance gate** — B1 does not freeze until `cargo test -p bpp-spec`
+asserts, for every (state, event) pair of every modeled machine, that the
+implementation's pure transition functions equal the committed descriptor
+rows (generated, not re-typed, wherever feasible; hand-transcribed
+remainders flagged in the proof README). That gate is recorded here so
+acceptance of this ADR cannot be read as discharging it.
 
 ## Consequences
 

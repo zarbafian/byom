@@ -1,0 +1,54 @@
+{
+  "name": "policy/subset-rate-boundary-incomparable",
+  "description": "D-RT-4 (RT-07): a child 1/1ms under a parent 10/10ms has an equal refill ratio and equal capacity/burst/epoch but refills before the parent boundary — boundary dominance is not decidable from the encoding, so is_subset fails closed with incomparable instead of returning subset:true",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 1,
+              "refill_period_milliseconds": 1,
+              "max_burst": 10,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 10,
+              "max_burst": 10,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "rate"
+      }
+    }
+  }
+}

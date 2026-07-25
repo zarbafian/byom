@@ -1,6 +1,6 @@
 {
   "name": "machines/pledge-amend-cas",
-  "description": "Pledge amendment CAS: acceptance atomically supersedes; the amendment replay is a no-op, a competing relinquish finds no open state, and expiry cannot leave the terminal state (G22, section 14.8).",
+  "description": "Pledge amendment CAS under D-RT-3 (RT-03): pledge_amend NEVER supersedes the predecessor (rejected row) — supersession commits only when pledge_finalize accepts the successor's complete fresh seat set under the successor CAS; the finalize replay is a no-op, a competing relinquish finds no open state, and expiry cannot leave the terminal state (§9.5, §14.8).",
   "input": {
     "machine": "pledge",
     "steps": [
@@ -26,11 +26,17 @@
         "from": "active",
         "via": "pledge_amend",
         "to": "superseded",
+        "expect": "rejected"
+      },
+      {
+        "from": "active",
+        "via": "pledge_finalize",
+        "to": "superseded",
         "expect": "accepted"
       },
       {
         "from": "superseded",
-        "via": "pledge_amend",
+        "via": "pledge_finalize",
         "to": "superseded",
         "expect": "replay"
       },

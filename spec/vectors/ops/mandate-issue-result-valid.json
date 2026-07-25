@@ -11,8 +11,9 @@
       "grantee_participant_ref": "part-agent-9",
       "purpose_ref": "purpose-web-research",
       "purpose_digest": {
-        "class": "structural_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:purpose_digest",
         "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "allowed_operations": [
@@ -43,14 +44,16 @@
       ],
       "decision_slot_snapshot_digests": [
         {
-          "class": "structural_public",
-          "algorithm": "sha-256",
-          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "key_ref": "society-key:soc-1/object:decision_slot_snapshot_digests"
         }
       ],
       "root_authority_trace_digest": {
-        "class": "structural_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:root_authority_trace_digest",
         "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "dependency_set_ref": "depset-77",

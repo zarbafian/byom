@@ -37,3 +37,60 @@ jobs:
       # Dependency-free independent TypeScript-family rederiver (JSDoc-typed
       # .mjs); must fail on any mismatch or an empty tree.
       - run: node family-vectors/tscheck/check.mjs
+
+  policy-evaluators:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # The two independent BPA-1 evaluators: golden vectors through each,
+      # then the pinned seeded differential (byte-identical JCS results,
+      # algebra laws, typed rejections) — ADR-0001.
+      - run: python3 policy/eval.py check spec/vectors/policy
+      - run: node policy/eval.mjs check spec/vectors/policy
+      - run: python3 policy/differential.py --seed 45217 --cases 256
+
+  model-checking:
+    # TLC over every B0.1 spec + descriptor-model parity + the ADR-0003
+    # negative mutation suite (RT-11): a red model, a descriptor/model
+    # divergence, or an uncaught mutation fails the bundle.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: cache tla2tools
+        uses: actions/cache@v4
+        with:
+          path: proof/tools/tla2tools.jar
+          key: tla2tools-latest
+      - run: pip install jsonschema
+      # TLC on all specs (downloads the jar on cache miss) + parity.
+      - run: make -C proof full
+      # ADR-0003 negative suite: every deliberate parity/conformance/TLC
+      # mutation must be caught — a vacuous harness fails here.
+      - run: python3 proof/negative-checks.py
+
+  descriptor-parity:
+    # Fast standalone parity gate (also inside model-checking's `full`):
+    # descriptors <-> models, including the v2 structured columns (RT-09).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 proof/check-descriptors.py

@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "CharterRevision",
   "states": [
     "proposed",
@@ -11,6 +12,21 @@
       "to": "active",
       "via": "society_bootstrap",
       "authority": "governance (R2): source-qualified human principal filling the bootstrap sovereign seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the Society machine's owning bootstrap: the genesis charter lands atomically inside society_bootstrap (G41)"
+      ],
+      "locks": [
+        "current amendment rule",
+        "human seats and exact subject"
+      ],
+      "fences": [
+        "one genesis set and event"
+      ],
+      "events": [
+        "charter.active"
+      ],
+      "crash_result": "none or complete genesis (§14.8 Society row 1)",
       "cascade": true,
       "notes": "§14.8 CharterRevision row: absent → active at bootstrap — the genesis charter lands atomically inside society_bootstrap (B0.1 sheet), a cascade of the Society machine's owning bootstrap — gap note G41."
     },
@@ -19,6 +35,19 @@
       "to": "proposed",
       "via": "charter_propose",
       "authority": "participant (R5): current Participant acting only as itself",
+      "guards": [
+        "current Participant acting only as itself (R5)",
+        "complete restatement against the exact current revision (previous_digest pin) (§6.2, G41)"
+      ],
+      "locks": [
+        "current amendment rule",
+        "human seats and exact subject"
+      ],
+      "fences": [],
+      "events": [
+        "charter.proposed"
+      ],
+      "crash_result": "old revision never mutates or revives (§14.8 CharterRevision row)",
       "notes": "A charter revision is proposed like any other record (§6.2) as a complete restatement against the exact current revision (previous_digest pin) — gap note G41. Stage-capable."
     },
     {
@@ -26,6 +55,21 @@
       "to": "proposed",
       "via": "charter_position",
       "authority": "governance (R6): actor for exact prepared human/governance seat; fresh challenge for human/high-risk seats",
+      "guards": [
+        "actor fills only its exact prepared human/governance seat; fresh challenge for human/high-risk seats (R6)",
+        "a human-authority requirement is never satisfied by an agent position (§10.3)"
+      ],
+      "locks": [
+        "current amendment rule",
+        "human seats and exact subject"
+      ],
+      "fences": [
+        "one current seat head (§14.8 Position/Decision row)"
+      ],
+      "events": [
+        "charter.proposed"
+      ],
+      "crash_result": "prior Position inputs remain (§14.8 Position/Decision row)",
       "notes": "Seat Position record lifecycle under the §14.8 Position/Decision row, folded as a proposal-stage self-transition — gap note G19. A human-authority requirement is never satisfied by an agent position (§10.3)."
     },
     {
@@ -33,6 +77,21 @@
       "to": "active",
       "via": "charter_finalize",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "adopted only by the current charter's exact amendment rule with its complete human seat set (§6.2); fresh challenge for a reserved action (R8)"
+      ],
+      "locks": [
+        "current amendment rule",
+        "human seats and exact subject"
+      ],
+      "fences": [
+        "new CharterRevision and GovernanceDecision; all changed dependencies re-evaluate"
+      ],
+      "events": [
+        "charter.active"
+      ],
+      "crash_result": "old revision never mutates or revives (§14.8 CharterRevision row)",
       "notes": "Adopted only by the current charter's exact amendment rule (§6.2): new CharterRevision and GovernanceDecision; all changed dependencies re-evaluate (§14.8); fresh challenge for a reserved action (R8)."
     },
     {
@@ -40,6 +99,21 @@
       "to": "superseded",
       "via": "charter_finalize",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "the same adoption atomically supersedes the prior active revision"
+      ],
+      "locks": [
+        "current amendment rule",
+        "human seats and exact subject"
+      ],
+      "fences": [
+        "all changed dependencies re-evaluate"
+      ],
+      "events": [
+        "charter.superseded"
+      ],
+      "crash_result": "old revision never mutates or revives (§14.8 CharterRevision row)",
       "notes": "§14.8: active → superseded by new active revision — the same adoption atomically supersedes the prior active revision; the old revision never mutates or revives."
     }
   ]

@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "ActIntent",
   "states": [
     "prepared",
@@ -19,6 +20,21 @@
       "to": "prepared",
       "via": "act_intent_prepare",
       "authority": "participant (R19): requesting Participant or collective Manifestation inside current executive policy",
+      "guards": [
+        "deterministic field-complete preparation from authenticated typed input and server-owned state, emitting the PreparationTrace (§13.1 step 1, §10.5)",
+        "requesting Participant or collective Manifestation inside current executive policy (R19)"
+      ],
+      "locks": [
+        "preparation trace",
+        "complete decision/dependency closure"
+      ],
+      "fences": [
+        "exact subject and one-shot use slot created"
+      ],
+      "events": [
+        "act-intent.prepared"
+      ],
+      "crash_result": "none or recoverable authorized intent (§14.8 ActIntent row 1)",
       "notes": "Deterministic field-complete preparation from authenticated typed input and server-owned state, emitting the PreparationTrace (§13.1 step 1, §10.5); exact subject and one-shot use slot; crash result: none or recoverable intent (§14.8). Stage-capable."
     },
     {
@@ -26,6 +42,21 @@
       "to": "awaiting_decision",
       "via": "act_intent_position",
       "authority": "participant (R20) or governance (R21): Participant for its exact prepared participant/resource-owner seat, or human principal for its exact prepared human-authority seat with a fresh challenge as required",
+      "guards": [
+        "first seat Position on the exact prepared intent digest (§13.1 step 2)",
+        "actor fills only its exact prepared participant/resource-owner or human-authority seat; fresh challenge for human/high-risk seats (R20/R21)"
+      ],
+      "locks": [
+        "preparation trace",
+        "exact prepared seat"
+      ],
+      "fences": [
+        "one current seat head (§14.8 Position/Decision row)"
+      ],
+      "events": [
+        "act-intent.awaiting_decision"
+      ],
+      "crash_result": "none or recoverable authorized intent (§14.8 ActIntent row 1); prior Position inputs remain (§14.8 Position/Decision row)",
       "notes": "First seat Position on the exact prepared intent digest (§13.1 step 2). Dual-surface operation: one schema pair, surface is a registry key — gap note G35."
     },
     {
@@ -33,6 +64,21 @@
       "to": "awaiting_decision",
       "via": "act_intent_position",
       "authority": "participant (R20) or governance (R21): Participant for its exact prepared participant/resource-owner seat, or human principal for its exact prepared human-authority seat with a fresh challenge as required",
+      "guards": [
+        "seat-head CAS for remaining seats and pre-finalization withdraw/supersede (§10.3)",
+        "actor fills only its exact prepared participant/resource-owner or human-authority seat; fresh challenge for human/high-risk seats (R20/R21)"
+      ],
+      "locks": [
+        "preparation trace",
+        "exact prepared seat"
+      ],
+      "fences": [
+        "one current seat head (§14.8 Position/Decision row)"
+      ],
+      "events": [
+        "act-intent.awaiting_decision"
+      ],
+      "crash_result": "none or recoverable authorized intent (§14.8 ActIntent row 1); prior Position inputs remain (§14.8 Position/Decision row)",
       "notes": "Remaining seats and pre-finalization withdraw/supersede via seat-head CAS (§10.3) — gap notes G18/G19."
     },
     {
@@ -40,6 +86,22 @@
       "to": "authorized",
       "via": "act_intent_finalize",
       "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "deterministic finalization authors no seat; complete decision closure satisfied on the exact prepared intent digest (§13.1 step 2, R22/R23)"
+      ],
+      "locks": [
+        "preparation trace",
+        "complete decision/dependency closure",
+        "exact active slot snapshot"
+      ],
+      "fences": [
+        "one GovernanceDecision bound to the intent digest; exact subject and one-shot use slot locked"
+      ],
+      "events": [
+        "act-intent.authorized"
+      ],
+      "crash_result": "none or recoverable authorized intent (§14.8 ActIntent row 1)",
       "notes": "Locks the exact active slot snapshot and binds one GovernanceDecision to the intent digest (§13.1 step 2); revision CAS (R22/R23); crash result: none or recoverable authorized intent (§14.8)."
     },
     {
@@ -47,19 +109,61 @@
       "to": "denied",
       "via": "act_intent_finalize",
       "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact deny decision recorded by deterministic finalization; authors no seat (R22/R23)"
+      ],
+      "locks": [
+        "complete decision/dependency closure"
+      ],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.denied"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)",
       "notes": "§14.8: prepared/awaiting/authorized → denied via decision — the deciding operation is act_intent_finalize recording a deny outcome; the closed row is transcribed as written. Unspent reservations released only when unambiguous."
     },
     {
       "from": "awaiting_decision",
       "to": "denied",
       "via": "act_intent_finalize",
-      "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat"
+      "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact deny decision recorded by deterministic finalization; authors no seat (R22/R23)"
+      ],
+      "locks": [
+        "complete decision/dependency closure"
+      ],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.denied"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)"
     },
     {
       "from": "authorized",
       "to": "denied",
       "via": "act_intent_finalize",
       "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact deny decision recorded by deterministic finalization; authors no seat (R22/R23)"
+      ],
+      "locks": [
+        "complete decision/dependency closure"
+      ],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.denied"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)",
       "notes": "§14.8 lists authorized among the denial sources: a later exact decision may deny an authorized-but-unconsumed intent under changed dependencies; the one-shot use slot is never consumable afterward."
     },
     {
@@ -67,44 +171,137 @@
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.expired"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)",
       "notes": "§14.8: prepared/awaiting/authorized → expired via server time; terminal — replay does not execute."
     },
     {
       "from": "awaiting_decision",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.expired"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)"
     },
     {
       "from": "authorized",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.expired"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)"
     },
     {
       "from": "prepared",
       "to": "canceled",
       "via": "act_intent_cancel",
       "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "original requester while intent unconsumed, exact cancellation grantee, or exact decided cancellation authority (R24/R25); cancellation cannot claim effect rollback"
+      ],
+      "locks": [
+        "exact cancellation decision/authority"
+      ],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.canceled"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)",
       "notes": "Cancellation cannot claim effect rollback (R24/R25); unspent reservations released only when unambiguous; terminal — replay does not execute (§14.8)."
     },
     {
       "from": "awaiting_decision",
       "to": "canceled",
       "via": "act_intent_cancel",
-      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority"
+      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "original requester while intent unconsumed, exact cancellation grantee, or exact decided cancellation authority (R24/R25); cancellation cannot claim effect rollback"
+      ],
+      "locks": [
+        "exact cancellation decision/authority"
+      ],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.canceled"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)"
     },
     {
       "from": "authorized",
       "to": "canceled",
       "via": "act_intent_cancel",
-      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority"
+      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "original requester while intent unconsumed, exact cancellation grantee, or exact decided cancellation authority (R24/R25); cancellation cannot claim effect rollback"
+      ],
+      "locks": [
+        "exact cancellation decision/authority"
+      ],
+      "fences": [
+        "unspent reservations released only when unambiguous"
+      ],
+      "events": [
+        "act-intent.canceled"
+      ],
+      "crash_result": "terminal; replay does not execute (§14.8 ActIntent denial row)"
     },
     {
       "from": "authorized",
       "to": "consumed",
       "via": "execution_permit_consume",
       "authority": "runtime (R34): trusted host effect service bound to exact prepared host Effect",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "atomic recheck of charter, standing, Mandate, decisions, dependencies, ceilings, expiry, and both fences (§13.1 steps 4–6)",
+        "one-shot (max_uses 1): exact replay of the same canonical request and key returns the same receipt; a changed request conflicts; a different key cannot consume the spent decision (G37)"
+      ],
+      "locks": [
+        "current host Effect",
+        "Mandate",
+        "budgets",
+        "dual fences"
+      ],
+      "fences": [
+        "MandateUse inserted once; one immutable ExecutionConsumptionReceipt"
+      ],
+      "events": [
+        "act-intent.consumed"
+      ],
+      "crash_result": "never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)",
       "notes": "One-shot consumption (§13.1 steps 4–6): atomic recheck of charter, standing, Mandate, decisions, dependencies, ceilings, expiry, and both fences; inserts MandateUse once; returns one immutable ExecutionConsumptionReceipt (max_uses 1). Exact replay of the same canonical request and key returns the same receipt; a changed request conflicts; a different key cannot consume the spent decision — gap note G37."
     },
     {
@@ -112,6 +309,18 @@
       "to": "executing",
       "via": "host_effect_attempt",
       "authority": "host (Kovee): the execution host stores the receipt, intersects it with stricter current platform policy, mints its local permit, and only then creates a driver attempt (§13.1 step 7; named transition, gap note G36)",
+      "guards": [
+        "host stores the receipt, intersects it with stricter current platform policy, and mints its local permit before creating a driver attempt (§13.1 step 7)"
+      ],
+      "locks": [
+        "current host Effect",
+        "dual fences"
+      ],
+      "fences": [],
+      "events": [
+        "act-intent.executing"
+      ],
+      "crash_result": "never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)",
       "notes": "§14.8's ActIntent row lists 'host attempt' with no catalog operation; recorded as the named transition host_effect_attempt pending the registry freeze (G12/G22 precedent) — never callable on BPP."
     },
     {
@@ -119,6 +328,22 @@
       "to": "succeeded",
       "via": "effect_outcome_admit",
       "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "guards": [
+        "verified Kovee Effect/receipt and unique intent/stable-key source head; the operation has no judgmental field (§14.8 EffectOutcomeAdmission row)"
+      ],
+      "locks": [
+        "current host Effect",
+        "Mandate",
+        "budgets",
+        "dual fences"
+      ],
+      "fences": [
+        "source-qualified admission once; conservative settlement"
+      ],
+      "events": [
+        "act-intent.succeeded"
+      ],
+      "crash_result": "never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)",
       "cascade": true,
       "notes": "Cascade of the runtime family's owning source admission (its owner lands with the runtime slice, G29 precedent): source-qualified EffectOutcomeAdmission once; conservative settlement; Byom never rewrites the host Effect or receipt (§13.1 step 8)."
     },
@@ -127,6 +352,22 @@
       "to": "failed",
       "via": "effect_outcome_admit",
       "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "guards": [
+        "verified Kovee Effect/receipt and unique intent/stable-key source head; the operation has no judgmental field (§14.8 EffectOutcomeAdmission row)"
+      ],
+      "locks": [
+        "current host Effect",
+        "Mandate",
+        "budgets",
+        "dual fences"
+      ],
+      "fences": [
+        "source-qualified admission once; conservative settlement"
+      ],
+      "events": [
+        "act-intent.failed"
+      ],
+      "crash_result": "never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)",
       "cascade": true
     },
     {
@@ -134,6 +375,22 @@
       "to": "ambiguous",
       "via": "effect_outcome_admit",
       "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "guards": [
+        "verified Kovee Effect/receipt and unique intent/stable-key source head; the operation has no judgmental field (§14.8 EffectOutcomeAdmission row)"
+      ],
+      "locks": [
+        "current host Effect",
+        "Mandate",
+        "budgets",
+        "dual fences"
+      ],
+      "fences": [
+        "source-qualified admission once; conservative settlement"
+      ],
+      "events": [
+        "act-intent.ambiguous"
+      ],
+      "crash_result": "never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)",
       "cascade": true,
       "notes": "If Byom cannot prove whether a non-idempotent driver acted, the state remains ambiguous and requires the charter's reconciliation procedure (§13.1); never blindly repeats a non-idempotent effect (§14.8)."
     },
@@ -142,6 +399,20 @@
       "to": "succeeded",
       "via": "effect_outcome_admit",
       "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "guards": [
+        "exact ambiguous EOA head plus independently committed/signed final host Effect/receipt successor; no judgmental field (§14.8 ActIntent source reconciliation row)"
+      ],
+      "locks": [
+        "exact ambiguous EOA head",
+        "final host Effect/receipt successor"
+      ],
+      "fences": [
+        "source EOA revision and Byom source-head CAS; conservative budget settles once; any active disposition head becomes source_advanced and late result use is quarantined"
+      ],
+      "events": [
+        "act-intent.succeeded"
+      ],
+      "crash_result": "remains ambiguous on stale/unknown/conflicting source; no GovernanceDecision invented and no disposition can block the source fact (§14.8 ActIntent source reconciliation row)",
       "cascade": true,
       "notes": "Source-authoritative reconciliation (§13.1, §14.8 ActIntent source reconciliation row): requires the independently committed, signed final host Effect/receipt successor and reconciles_admission_*; no GovernanceDecision is invented and no disposition can block the source fact."
     },
@@ -150,6 +421,20 @@
       "to": "failed",
       "via": "effect_outcome_admit",
       "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "guards": [
+        "exact ambiguous EOA head plus independently committed/signed final host Effect/receipt successor; no judgmental field (§14.8 ActIntent source reconciliation row)"
+      ],
+      "locks": [
+        "exact ambiguous EOA head",
+        "final host Effect/receipt successor"
+      ],
+      "fences": [
+        "source EOA revision and Byom source-head CAS; conservative budget settles once; any active disposition head becomes source_advanced and late result use is quarantined"
+      ],
+      "events": [
+        "act-intent.failed"
+      ],
+      "crash_result": "remains ambiguous on stale/unknown/conflicting source; no GovernanceDecision invented and no disposition can block the source fact (§14.8 ActIntent source reconciliation row)",
       "cascade": true
     }
   ]

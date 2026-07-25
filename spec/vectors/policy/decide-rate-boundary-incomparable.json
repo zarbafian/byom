@@ -1,0 +1,47 @@
+{
+  "name": "policy/decide-rate-boundary-incomparable",
+  "description": "D-RT-4 (RT-07): a rate request point on a different window boundary than the constraining atom is incomparable at decide time too",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 10,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "rate": {
+        "dimension": "compute",
+        "canonical_unit": "token",
+        "capacity": 10,
+        "refill_amount": 10,
+        "refill_period_milliseconds": 500,
+        "max_burst": 10,
+        "epoch": "ep-1",
+        "clock": "authority_server"
+      }
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "rate"
+      }
+    }
+  }
+}

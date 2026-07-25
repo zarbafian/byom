@@ -1,0 +1,21 @@
+{
+  "name": "ops/delivery-withdraw-request-missing-expected-revision-invalid",
+  "description": "RT-01: delivery_withdraw is update-classed (current-head CAS) — its closed update meta REQUIRES meta.expected_revision, so omitting the last observed revision fails structurally, never as an optional runtime nicety (§14.2 'Updates require the last observed revision').",
+  "input": {
+    "schema": "delivery-withdraw-request",
+    "value": {
+      "version": "0.2",
+      "op": "delivery_withdraw",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1
+      },
+      "delivery_id": "delivery-id-1"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "ops/pledge-position-result-missing-digest-invalid",
+  "description": "RT-03: the Position revision digest is REQUIRED on the result — it is the seat-head CAS token a later withdraw/supersede consumes as prior_position_digest (§10.3); a result without it cannot be superseded safely.",
+  "input": {
+    "schema": "pledge-position-result",
+    "value": {
+      "position_id": "position-9",
+      "revision": 1,
+      "proposal_ref": "proposal-71",
+      "proposal_revision": 1,
+      "seat_ref": "seat-pledgor-1",
+      "value": "assent",
+      "status": "active",
+      "created_at": "2026-07-25T12:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -1,0 +1,729 @@
+{
+  "registry": "byom-bpp-operations",
+  "version": "0.1.0",
+  "bundle": "B0.1",
+  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md §14.6 catalog + §14.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md §2.0; dual-surface split per gap note G35 (RT-12)",
+  "description": "Machine-readable (operation,surface) registry for the complete B0.1 bundle: exactly one row per (operation,surface) pair. The four G35 dual-surface operations (mandate_position, act_intent_position, act_intent_finalize, act_intent_cancel) carry exactly two rows each (participant + governance); every other operation exactly one. class read: never mutates, no MutationMeta; class create: mutation with the closed create meta (no expected_revision member); class update: current-head CAS mutation whose closed update meta REQUIRES meta.expected_revision (RT-01). request_schema/result_schema name the committed schema files this registry freezes to - the -v2 names are the immutable G10/G31 successor publications (RT-06). conformance/run.py derives its bundle, meta-class, surface, and MCP checks from these rows and fails on any extra/missing surface binding.",
+  "operations": [
+    {
+      "operation": "hello",
+      "surface": "pre_auth",
+      "binding": "R1",
+      "family": "negotiation",
+      "class": "read",
+      "request_schema": "hello-request",
+      "result_schema": "hello-result"
+    },
+    {
+      "operation": "protocol_info",
+      "surface": "pre_auth",
+      "binding": "R1",
+      "family": "negotiation",
+      "class": "read",
+      "request_schema": "protocol-info-request",
+      "result_schema": "protocol-info-result"
+    },
+    {
+      "operation": "feature_info",
+      "surface": "pre_auth",
+      "binding": "R1",
+      "family": "negotiation",
+      "class": "read",
+      "request_schema": "feature-info-request",
+      "result_schema": "feature-info-result"
+    },
+    {
+      "operation": "society_prepare",
+      "surface": "governance",
+      "binding": "R2",
+      "family": "society",
+      "class": "create",
+      "request_schema": "society-prepare-request",
+      "result_schema": "society-prepare-result"
+    },
+    {
+      "operation": "society_bootstrap",
+      "surface": "governance",
+      "binding": "R2",
+      "family": "society",
+      "class": "update",
+      "request_schema": "society-bootstrap-request",
+      "result_schema": "society-bootstrap-result"
+    },
+    {
+      "operation": "society_show",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "society",
+      "class": "read",
+      "request_schema": "society-show-request",
+      "result_schema": "society-show-result"
+    },
+    {
+      "operation": "society_hold",
+      "surface": "governance",
+      "binding": "R3",
+      "family": "society",
+      "class": "update",
+      "request_schema": "society-hold-request",
+      "result_schema": "society-hold-result"
+    },
+    {
+      "operation": "society_release",
+      "surface": "governance",
+      "binding": "R3",
+      "family": "society",
+      "class": "update",
+      "request_schema": "society-release-request",
+      "result_schema": "society-release-result"
+    },
+    {
+      "operation": "society_dissolve",
+      "surface": "governance",
+      "binding": "R3",
+      "family": "society",
+      "class": "update",
+      "request_schema": "society-dissolve-request",
+      "result_schema": "society-dissolve-result"
+    },
+    {
+      "operation": "charter_propose",
+      "surface": "participant",
+      "binding": "R5",
+      "family": "charter",
+      "class": "create",
+      "request_schema": "charter-propose-request-v2",
+      "result_schema": "charter-propose-result"
+    },
+    {
+      "operation": "charter_position",
+      "surface": "governance",
+      "binding": "R6",
+      "family": "charter",
+      "class": "create",
+      "request_schema": "charter-position-request",
+      "result_schema": "charter-position-result"
+    },
+    {
+      "operation": "charter_finalize",
+      "surface": "governance",
+      "binding": "R8",
+      "family": "charter",
+      "class": "update",
+      "request_schema": "charter-finalize-request",
+      "result_schema": "charter-finalize-result"
+    },
+    {
+      "operation": "charter_history",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "charter",
+      "class": "read",
+      "request_schema": "charter-history-request",
+      "result_schema": "charter-history-result"
+    },
+    {
+      "operation": "participant_propose",
+      "surface": "participant",
+      "binding": "R5",
+      "family": "participants",
+      "class": "create",
+      "request_schema": "participant-propose-request",
+      "result_schema": "participant-propose-result"
+    },
+    {
+      "operation": "membership_offer",
+      "surface": "governance",
+      "binding": "R10",
+      "family": "participants",
+      "class": "create",
+      "request_schema": "membership-offer-request",
+      "result_schema": "membership-offer-result"
+    },
+    {
+      "operation": "membership_offer_revoke",
+      "surface": "governance",
+      "binding": "R10",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "membership-offer-revoke-request",
+      "result_schema": "membership-offer-revoke-result"
+    },
+    {
+      "operation": "onboarding_offer",
+      "surface": "governance",
+      "binding": "R10",
+      "family": "participants",
+      "class": "create",
+      "request_schema": "onboarding-offer-request",
+      "result_schema": "onboarding-offer-result"
+    },
+    {
+      "operation": "participant_admit",
+      "surface": "governance",
+      "binding": "R8",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "participant-admit-request",
+      "result_schema": "participant-admit-result"
+    },
+    {
+      "operation": "participant_show",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "participants",
+      "class": "read",
+      "request_schema": "participant-show-request",
+      "result_schema": "participant-show-result"
+    },
+    {
+      "operation": "participant_suspend",
+      "surface": "governance",
+      "binding": "R10",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "participant-suspend-request",
+      "result_schema": "participant-suspend-result"
+    },
+    {
+      "operation": "participation_cease",
+      "surface": "participant",
+      "binding": "R12",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "participation-cease-request",
+      "result_schema": "participation-cease-result"
+    },
+    {
+      "operation": "participant_retire",
+      "surface": "participant",
+      "binding": "R12",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "participant-retire-request",
+      "result_schema": "participant-retire-result"
+    },
+    {
+      "operation": "manifestation_propose",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "create",
+      "request_schema": "manifestation-propose-request",
+      "result_schema": "manifestation-propose-result"
+    },
+    {
+      "operation": "manifestation_admit",
+      "surface": "governance",
+      "binding": "R8",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "manifestation-admit-request",
+      "result_schema": "manifestation-admit-result"
+    },
+    {
+      "operation": "manifestation_disable",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "manifestation-disable-request",
+      "result_schema": "manifestation-disable-result"
+    },
+    {
+      "operation": "assent_policy_adopt",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "create",
+      "request_schema": "assent-policy-adopt-request-v2",
+      "result_schema": "assent-policy-adopt-result"
+    },
+    {
+      "operation": "assent_policy_revoke",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "assent-policy-revoke-request",
+      "result_schema": "assent-policy-revoke-result"
+    },
+    {
+      "operation": "activation_policy_adopt",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "create",
+      "request_schema": "activation-policy-adopt-request-v2",
+      "result_schema": "activation-policy-adopt-result"
+    },
+    {
+      "operation": "activation_policy_revoke",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "activation-policy-revoke-request",
+      "result_schema": "activation-policy-revoke-result"
+    },
+    {
+      "operation": "continuity_root_update",
+      "surface": "participant",
+      "binding": "R13",
+      "family": "participants",
+      "class": "update",
+      "request_schema": "continuity-root-update-request-v2",
+      "result_schema": "continuity-root-update-result"
+    },
+    {
+      "operation": "membership_refuse",
+      "surface": "candidate",
+      "binding": "R11",
+      "family": "candidates",
+      "class": "update",
+      "request_schema": "membership-refuse-request",
+      "result_schema": "membership-refuse-result"
+    },
+    {
+      "operation": "membership_accept",
+      "surface": "candidate",
+      "binding": "R11",
+      "family": "candidates",
+      "class": "update",
+      "request_schema": "membership-accept-request",
+      "result_schema": "membership-accept-result"
+    },
+    {
+      "operation": "candidate_self_policy_propose",
+      "surface": "candidate",
+      "binding": "R11",
+      "family": "candidates",
+      "class": "create",
+      "request_schema": "candidate-self-policy-propose-request-v2",
+      "result_schema": "candidate-self-policy-propose-result"
+    },
+    {
+      "operation": "endeavor_propose",
+      "surface": "participant",
+      "binding": "R5",
+      "family": "endeavors",
+      "class": "create",
+      "request_schema": "endeavor-propose-request",
+      "result_schema": "endeavor-propose-result"
+    },
+    {
+      "operation": "endeavor_position",
+      "surface": "participant",
+      "binding": "R7",
+      "family": "endeavors",
+      "class": "create",
+      "request_schema": "endeavor-position-request",
+      "result_schema": "endeavor-position-result"
+    },
+    {
+      "operation": "endeavor_finalize",
+      "surface": "participant",
+      "binding": "R9",
+      "family": "endeavors",
+      "class": "update",
+      "request_schema": "endeavor-finalize-request",
+      "result_schema": "endeavor-finalize-result"
+    },
+    {
+      "operation": "endeavor_hold",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "endeavors",
+      "class": "update",
+      "request_schema": "endeavor-hold-request",
+      "result_schema": "endeavor-hold-result"
+    },
+    {
+      "operation": "endeavor_release",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "endeavors",
+      "class": "update",
+      "request_schema": "endeavor-release-request",
+      "result_schema": "endeavor-release-result"
+    },
+    {
+      "operation": "endeavor_close",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "endeavors",
+      "class": "update",
+      "request_schema": "endeavor-close-request",
+      "result_schema": "endeavor-close-result"
+    },
+    {
+      "operation": "call_open",
+      "surface": "participant",
+      "binding": "R5",
+      "family": "calls_and_pledges",
+      "class": "create",
+      "request_schema": "call-open-request-v2",
+      "result_schema": "call-open-result"
+    },
+    {
+      "operation": "call_withdraw",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "calls_and_pledges",
+      "class": "update",
+      "request_schema": "call-withdraw-request",
+      "result_schema": "call-withdraw-result"
+    },
+    {
+      "operation": "pledge_propose",
+      "surface": "participant",
+      "binding": "R5",
+      "family": "calls_and_pledges",
+      "class": "create",
+      "request_schema": "pledge-propose-request-v2",
+      "result_schema": "pledge-propose-result"
+    },
+    {
+      "operation": "pledge_position",
+      "surface": "participant",
+      "binding": "R7",
+      "family": "calls_and_pledges",
+      "class": "create",
+      "request_schema": "pledge-position-request",
+      "result_schema": "pledge-position-result"
+    },
+    {
+      "operation": "pledge_finalize",
+      "surface": "participant",
+      "binding": "R9",
+      "family": "calls_and_pledges",
+      "class": "update",
+      "request_schema": "pledge-finalize-request",
+      "result_schema": "pledge-finalize-result"
+    },
+    {
+      "operation": "pledge_amend",
+      "surface": "participant",
+      "binding": "R5",
+      "family": "calls_and_pledges",
+      "class": "create",
+      "request_schema": "pledge-amend-request-v2",
+      "result_schema": "pledge-amend-result"
+    },
+    {
+      "operation": "pledge_resume",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "calls_and_pledges",
+      "class": "update",
+      "request_schema": "pledge-resume-request",
+      "result_schema": "pledge-resume-result"
+    },
+    {
+      "operation": "pledge_relinquish",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "calls_and_pledges",
+      "class": "update",
+      "request_schema": "pledge-relinquish-request",
+      "result_schema": "pledge-relinquish-result"
+    },
+    {
+      "operation": "delivery_submit",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "calls_and_pledges",
+      "class": "create",
+      "request_schema": "delivery-submit-request",
+      "result_schema": "delivery-submit-result"
+    },
+    {
+      "operation": "delivery_withdraw",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "calls_and_pledges",
+      "class": "update",
+      "request_schema": "delivery-withdraw-request",
+      "result_schema": "delivery-withdraw-result"
+    },
+    {
+      "operation": "review_record",
+      "surface": "participant",
+      "binding": "R14",
+      "family": "calls_and_pledges",
+      "class": "create",
+      "request_schema": "review-record-request",
+      "result_schema": "review-record-result"
+    },
+    {
+      "operation": "mandate_prepare",
+      "surface": "participant",
+      "binding": "R15",
+      "family": "mandates",
+      "class": "create",
+      "request_schema": "mandate-prepare-request-v2",
+      "result_schema": "mandate-prepare-result"
+    },
+    {
+      "operation": "mandate_position",
+      "surface": "participant",
+      "binding": "R16",
+      "family": "mandates",
+      "class": "create",
+      "request_schema": "mandate-position-request",
+      "result_schema": "mandate-position-result"
+    },
+    {
+      "operation": "mandate_position",
+      "surface": "governance",
+      "binding": "R17",
+      "family": "mandates",
+      "class": "create",
+      "request_schema": "mandate-position-request",
+      "result_schema": "mandate-position-result"
+    },
+    {
+      "operation": "mandate_issue",
+      "surface": "governance",
+      "binding": "R18",
+      "family": "mandates",
+      "class": "update",
+      "request_schema": "mandate-issue-request",
+      "result_schema": "mandate-issue-result-v2"
+    },
+    {
+      "operation": "mandate_derive",
+      "surface": "participant",
+      "binding": "R15",
+      "family": "mandates",
+      "class": "create",
+      "request_schema": "mandate-derive-request-v2",
+      "result_schema": "mandate-derive-result"
+    },
+    {
+      "operation": "mandate_hold",
+      "surface": "governance",
+      "binding": "R18",
+      "family": "mandates",
+      "class": "update",
+      "request_schema": "mandate-hold-request",
+      "result_schema": "mandate-hold-result"
+    },
+    {
+      "operation": "mandate_revoke",
+      "surface": "governance",
+      "binding": "R18",
+      "family": "mandates",
+      "class": "update",
+      "request_schema": "mandate-revoke-request",
+      "result_schema": "mandate-revoke-result"
+    },
+    {
+      "operation": "act_intent_prepare",
+      "surface": "participant",
+      "binding": "R19",
+      "family": "acts",
+      "class": "create",
+      "request_schema": "act-intent-prepare-request",
+      "result_schema": "act-intent-prepare-result"
+    },
+    {
+      "operation": "act_intent_position",
+      "surface": "participant",
+      "binding": "R20",
+      "family": "acts",
+      "class": "create",
+      "request_schema": "act-intent-position-request",
+      "result_schema": "act-intent-position-result"
+    },
+    {
+      "operation": "act_intent_position",
+      "surface": "governance",
+      "binding": "R21",
+      "family": "acts",
+      "class": "create",
+      "request_schema": "act-intent-position-request",
+      "result_schema": "act-intent-position-result"
+    },
+    {
+      "operation": "act_intent_finalize",
+      "surface": "participant",
+      "binding": "R22",
+      "family": "acts",
+      "class": "update",
+      "request_schema": "act-intent-finalize-request",
+      "result_schema": "act-intent-finalize-result"
+    },
+    {
+      "operation": "act_intent_finalize",
+      "surface": "governance",
+      "binding": "R23",
+      "family": "acts",
+      "class": "update",
+      "request_schema": "act-intent-finalize-request",
+      "result_schema": "act-intent-finalize-result"
+    },
+    {
+      "operation": "act_intent_cancel",
+      "surface": "participant",
+      "binding": "R24",
+      "family": "acts",
+      "class": "update",
+      "request_schema": "act-intent-cancel-request",
+      "result_schema": "act-intent-cancel-result"
+    },
+    {
+      "operation": "act_intent_cancel",
+      "surface": "governance",
+      "binding": "R25",
+      "family": "acts",
+      "class": "update",
+      "request_schema": "act-intent-cancel-request",
+      "result_schema": "act-intent-cancel-result"
+    },
+    {
+      "operation": "execution_permit_consume",
+      "surface": "runtime",
+      "binding": "R34",
+      "family": "acts",
+      "class": "update",
+      "request_schema": "execution-permit-consume-request",
+      "result_schema": "execution-permit-consume-result"
+    },
+    {
+      "operation": "activity_open",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "create",
+      "request_schema": "activity-open-request",
+      "result_schema": "activity-open-result"
+    },
+    {
+      "operation": "activity_show",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "activities",
+      "class": "read",
+      "request_schema": "activity-show-request",
+      "result_schema": "activity-show-result"
+    },
+    {
+      "operation": "activity_hold",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "update",
+      "request_schema": "activity-hold-request",
+      "result_schema": "activity-hold-result"
+    },
+    {
+      "operation": "activity_close",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "update",
+      "request_schema": "activity-close-request",
+      "result_schema": "activity-close-result"
+    },
+    {
+      "operation": "wake_intent_submit",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "create",
+      "request_schema": "wake-intent-submit-request",
+      "result_schema": "wake-intent-submit-result"
+    },
+    {
+      "operation": "wake_intent_withdraw",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "update",
+      "request_schema": "wake-intent-withdraw-request",
+      "result_schema": "wake-intent-withdraw-result"
+    },
+    {
+      "operation": "episode_request",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "create",
+      "request_schema": "episode-request-request",
+      "result_schema": "episode-request-result"
+    },
+    {
+      "operation": "continuation_write",
+      "surface": "participant",
+      "binding": "R29",
+      "family": "activities",
+      "class": "create",
+      "request_schema": "continuation-write-request",
+      "result_schema": "continuation-write-result"
+    },
+    {
+      "operation": "snapshot_get",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "snapshot-get-request",
+      "result_schema": "snapshot-get-result"
+    },
+    {
+      "operation": "events_read",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "events-read-request",
+      "result_schema": "events-read-result"
+    },
+    {
+      "operation": "events_wait",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "events-wait-request",
+      "result_schema": "events-wait-result"
+    },
+    {
+      "operation": "event_payload",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "event-payload-request",
+      "result_schema": "event-payload-result"
+    },
+    {
+      "operation": "idempotency_result",
+      "surface": "originating",
+      "binding": "R41",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "idempotency-result-request",
+      "result_schema": "idempotency-result-result"
+    },
+    {
+      "operation": "cursor_recover",
+      "surface": "originating",
+      "binding": "R41",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "cursor-recover-request",
+      "result_schema": "cursor-recover-result"
+    },
+    {
+      "operation": "recovery_checkpoint_show",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "events_and_recovery_core",
+      "class": "read",
+      "request_schema": "recovery-checkpoint-show-request",
+      "result_schema": "recovery-checkpoint-show-result"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "ops/membership-accept-request-public-subject-digest-invalid",
+  "description": "RT-02: the MembershipOffer subject is an authority subject — its digest is pinned local_erasure_safe (strictly per-object keyed HMAC, PROFILE.md §6.2); a well-constructed structural_public digest in that position is digest_class_mismatch, never a silent substitution.",
+  "input": {
+    "schema": "membership-accept-request",
+    "value": {
+      "version": "0.2",
+      "op": "membership_accept",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1,
+        "expected_revision": 1
+      },
+      "offer_ref": "offer-ref-1",
+      "subject_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

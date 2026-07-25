@@ -1,0 +1,23 @@
+{
+  "name": "ops/society-dissolve-request-missing-expected-revision-invalid",
+  "description": "RT-01: society_dissolve is update-classed (current-head CAS) — its closed update meta REQUIRES meta.expected_revision, so omitting the last observed revision fails structurally, never as an optional runtime nicety (§14.2 'Updates require the last observed revision').",
+  "input": {
+    "schema": "society-dissolve-request",
+    "value": {
+      "version": "0.2",
+      "op": "society_dissolve",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1
+      },
+      "society_id": "society-id-1",
+      "dissolution_decision_ref": "dissolution-decision-ref-1",
+      "retention_and_key_plan_ref": "retention-and-key-plan-ref-1"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

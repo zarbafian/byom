@@ -32,7 +32,12 @@ transition, or vice versa, is a CI failure, not a review catch):
    directions);
 4. every annotated state name appears as a quoted literal in the module body
    (before the terminator) — a state renamed in the model but not in its
-   annotation fails here.
+   annotation fails here;
+5. every claimed descriptor is a v2 descriptor (RT-09): format
+   ``byom-descriptor/v2`` and, per transition row, the structured §14.8
+   columns — guards (non-empty), locks, fences, events (non-empty), and a
+   non-empty crash_result — so a modeled machine can never bind a
+   descriptor that lost its guard/lock/fence/event/crash contract.
 
 Honesty (ADR-0003, plan section 3): the parity block is a transcription of
 the model's transition relation, compared mechanically against the committed
@@ -61,7 +66,7 @@ class Checker:
         self.failures: list[str] = []
         self.claimed: dict[str, str] = {}  # descriptor file -> module
         self.counts = {"modules": 0, "descriptors": 0, "states": 0,
-                       "transitions": 0}
+                       "transitions": 0, "columns": 0}
 
     def fail(self, message: str) -> None:
         self.failures.append(message)
@@ -174,6 +179,31 @@ class Checker:
                 self.fail(f"{name}: annotated state {s!r} does not occur as "
                           "a quoted literal in the module body")
 
+        # Descriptor format v2 (RT-09): the structured §14.8 columns must
+        # be present on every row of a modeled machine.
+        if descriptor.get("format") != "byom-descriptor/v2":
+            self.fail(f"{name}: descriptor {desc_file} is not format "
+                      "byom-descriptor/v2 (RT-09)")
+        for i, r in enumerate(descriptor["transitions"]):
+            where = f"{name}: {desc_file} transitions[{i}]"
+            for key, min_items in (("guards", 1), ("locks", 0),
+                                   ("fences", 0), ("events", 1)):
+                val = r.get(key)
+                if not (isinstance(val, list) and len(val) >= min_items
+                        and all(isinstance(s, str) and s for s in val)):
+                    self.fail(f"{where}: {key} must be a list of non-empty "
+                              "strings"
+                              + (" with at least one entry"
+                                 if min_items else "") + " (RT-09)")
+                else:
+                    self.counts["columns"] += 1
+            if not (isinstance(r.get("crash_result"), str)
+                    and r["crash_result"]):
+                self.fail(f"{where}: crash_result must be a non-empty "
+                          "string (RT-09)")
+            else:
+                self.counts["columns"] += 1
+
         self.counts["descriptors"] += 1
         self.counts["states"] += len(ann_states & desc_states)
         self.counts["transitions"] += len(ann_rows & desc_rows)
@@ -199,7 +229,9 @@ class Checker:
         print(f"parity:   {self.counts['modules']} modules, "
               f"{self.counts['descriptors']} descriptors bound, "
               f"{self.counts['states']} states and "
-              f"{self.counts['transitions']} transitions in exact agreement")
+              f"{self.counts['transitions']} transitions in exact "
+              f"agreement ({self.counts['columns']} v2 structured columns "
+              "checked)")
         if modeled_none:
             print(f"no-descriptor models (declared '@parity none'): "
                   f"{', '.join(modeled_none)}")

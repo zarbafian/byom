@@ -1,0 +1,54 @@
+{
+  "name": "policy/intersect-rate-boundary-incomparable",
+  "description": "D-RT-4 (RT-07): rate atoms with differing refill periods are incomparable in every operation — the meet of differing windows is not an algebra claim either",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 10,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 20000,
+              "max_burst": 10,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "rate"
+      }
+    }
+  }
+}

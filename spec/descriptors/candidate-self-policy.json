@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Candidate self-policy",
   "states": [
     "proposed",
@@ -12,6 +13,20 @@
       "to": "proposed",
       "via": "candidate_self_policy_propose",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "candidate actor for the exact MembershipOffer only (R11)",
+        "kinds assent | activation | continuity; the admission decision cannot edit it (§7.3, §7.4)"
+      ],
+      "locks": [
+        "exact candidate channel",
+        "onboarding fence",
+        "admission subject"
+      ],
+      "fences": [],
+      "events": [
+        "candidate-self-policy.proposed"
+      ],
+      "crash_result": "never active before Standing (§14.8 Candidate self-policy row)",
       "notes": "Exact candidate channel under the onboarding fence; kinds assent | activation | continuity; the admission decision cannot edit it (§7.3, §7.4)."
     },
     {
@@ -19,6 +34,22 @@
       "to": "activated",
       "via": "participant_admit",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning admission: activates only candidate-authored proposals included in the admission subject"
+      ],
+      "locks": [
+        "exact candidate channel",
+        "onboarding fence",
+        "admission subject"
+      ],
+      "fences": [
+        "activation preserves adoption/control-domain provenance"
+      ],
+      "events": [
+        "candidate-self-policy.activated"
+      ],
+      "crash_result": "never active before Standing (§14.8 Candidate self-policy row)",
       "notes": "Cascade of the MembershipOffer machine's owning admission: activates only candidate-authored proposals included in the admission subject, preserving adoption/control-domain provenance; never active before Standing (§14.3, §14.8).",
       "cascade": true
     },
@@ -27,6 +58,22 @@
       "to": "rejected",
       "via": "membership_refuse",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning refusal"
+      ],
+      "locks": [
+        "exact candidate channel",
+        "onboarding fence",
+        "admission subject"
+      ],
+      "fences": [
+        "every terminal offer transition fences the candidate credential"
+      ],
+      "events": [
+        "candidate-self-policy.rejected"
+      ],
+      "crash_result": "never active before Standing (§14.8 Candidate self-policy row)",
       "notes": "Cascade of the MembershipOffer machine's owning refusal; every terminal offer transition fences the candidate credential (§14.8).",
       "cascade": true
     },
@@ -35,6 +82,22 @@
       "to": "rejected",
       "via": "membership_offer_revoke",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning revocation"
+      ],
+      "locks": [
+        "exact candidate channel",
+        "onboarding fence",
+        "admission subject"
+      ],
+      "fences": [
+        "every terminal offer transition fences the candidate credential"
+      ],
+      "events": [
+        "candidate-self-policy.rejected"
+      ],
+      "crash_result": "never active before Standing (§14.8 Candidate self-policy row)",
       "notes": "Cascade of the MembershipOffer machine's owning revocation (§14.8).",
       "cascade": true
     },
@@ -43,6 +106,21 @@
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at; expires with the offer/onboarding fence"
+      ],
+      "locks": [
+        "exact candidate channel",
+        "onboarding fence",
+        "admission subject"
+      ],
+      "fences": [
+        "every terminal offer transition fences the candidate credential"
+      ],
+      "events": [
+        "candidate-self-policy.expired"
+      ],
+      "crash_result": "never active before Standing (§14.8 Candidate self-policy row)",
       "notes": "Expires with the offer/onboarding fence (§14.8)."
     }
   ]

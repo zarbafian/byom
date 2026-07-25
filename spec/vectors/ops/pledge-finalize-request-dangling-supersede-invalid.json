@@ -1,0 +1,30 @@
+{
+  "name": "ops/pledge-finalize-request-dangling-supersede-invalid",
+  "description": "D-RT-3 (RT-03): the successor CAS pair is both-or-neither — a predecessor reference without its exact pinned revision fails the closed oneOf.",
+  "input": {
+    "schema": "pledge-finalize-request",
+    "value": {
+      "version": "0.2",
+      "op": "pledge_finalize",
+      "meta": {
+        "request_id": "req-2",
+        "idempotency_key": "idem-2",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 1
+      },
+      "proposal_ref": "proposal-84",
+      "proposal_revision": 1,
+      "subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:terms",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "supersedes_pledge_ref": "pledge-12"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

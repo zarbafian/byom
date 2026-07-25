@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "OnboardingActivationOffer",
   "states": [
     "offered",
@@ -14,6 +15,21 @@
       "to": "offered",
       "via": "onboarding_offer",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "exact decided governance actor (R10)",
+        "bound to the exact MembershipOffer, candidate Participant, proposed Manifestation digest, minimal disclosed context, one Episode, no general effect/child authority, resource ceiling, and expiry (§7.4)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "one zero-general-effect fence; optional one-shot compute receipt"
+      ],
+      "events": [
+        "onboarding-activation-offer.offered"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "notes": "Bound to the exact MembershipOffer, candidate Participant, proposed Manifestation digest, minimal disclosed context, one Episode, no general effect/child authority, resource ceiling, and expiry; one zero-general-effect fence and optional one-shot compute receipt (§7.4). Moves the MembershipOffer to onboarding."
     },
     {
@@ -21,6 +37,21 @@
       "to": "active",
       "via": "onboarding_episode_claim",
       "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation",
+      "guards": [
+        "candidate workload bound to the exact offer and proposed Manifestation (R31)",
+        "one offer fence current (§14.7)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "one fence"
+      ],
+      "events": [
+        "onboarding-activation-offer.active"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "notes": "Runtime-family operation (B0.1 runtime slice); one offer fence (§14.7/R31)."
     },
     {
@@ -28,6 +59,23 @@
       "to": "active",
       "via": "onboarding_compute_permit_consume",
       "authority": "runtime (R32): Kovee model broker bound to the exact OnboardingComputeIntent",
+      "guards": [
+        "Kovee model broker bound to the exact OnboardingComputeIntent (R32)",
+        "at most one compute use: the one-shot OnboardingComputeIntent/Receipt binds final provider bytes, disclosure manifest, budget, and candidate fence (§7.4)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload",
+        "final provider/disclosure manifests",
+        "budget and fence"
+      ],
+      "fences": [
+        "at most one compute use; one-shot receipt; output reaches candidate surface only"
+      ],
+      "events": [
+        "onboarding-activation-offer.active"
+      ],
+      "crash_result": "runtime output never becomes acceptance (§14.8 Onboarding compute row)",
       "notes": "At most one compute use; the one-shot OnboardingComputeIntent/Receipt binds final provider bytes, disclosure manifest, budget, and candidate fence (§7.4)."
     },
     {
@@ -35,19 +83,62 @@
       "to": "completed",
       "via": "onboarding_episode_complete",
       "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation",
+      "guards": [
+        "candidate workload bound to the exact offer (R31); completion is evidence only and is never reinterpreted as acceptance (§14.3)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "completion is evidence only"
+      ],
+      "events": [
+        "onboarding-activation-offer.completed"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "notes": "Completion is evidence only and is never reinterpreted as acceptance (§14.3, §14.8)."
     },
     {
       "from": "active",
       "to": "completed",
       "via": "onboarding_episode_complete",
-      "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation"
+      "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation",
+      "guards": [
+        "candidate workload bound to the exact offer (R31); completion is evidence only and is never reinterpreted as acceptance (§14.3)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "completion is evidence only"
+      ],
+      "events": [
+        "onboarding-activation-offer.completed"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)"
     },
     {
       "from": "offered",
       "to": "refused",
       "via": "membership_refuse",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning refusal; candidate only for refusal (R11)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "refusal advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.refused"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "notes": "Cascade of the MembershipOffer machine's owning refusal: advances the fence and closes the candidate workload/channel (§14.8).",
       "cascade": true
     },
@@ -56,6 +147,21 @@
       "to": "refused",
       "via": "membership_refuse",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning refusal; candidate only for refusal (R11)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "refusal advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.refused"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "cascade": true
     },
     {
@@ -63,6 +169,21 @@
       "to": "refused",
       "via": "membership_refuse",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning refusal; candidate only for refusal (R11)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "refusal advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.refused"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "cascade": true
     },
     {
@@ -70,6 +191,21 @@
       "to": "revoked",
       "via": "membership_offer_revoke",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning revocation (R10)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "revoke advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.revoked"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "notes": "Cascade of the MembershipOffer machine's owning revocation; same fence advance without a candidate-attributed refusal (§7.4).",
       "cascade": true
     },
@@ -78,6 +214,21 @@
       "to": "revoked",
       "via": "membership_offer_revoke",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning revocation (R10)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "revoke advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.revoked"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "cascade": true
     },
     {
@@ -85,6 +236,21 @@
       "to": "revoked",
       "via": "membership_offer_revoke",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the MembershipOffer machine's owning revocation (R10)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "revoke advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.revoked"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "cascade": true
     },
     {
@@ -92,19 +258,61 @@
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "expiry advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.expired"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)",
       "notes": "No state authors acceptance; the terminal fence survives retry (§14.8)."
     },
     {
       "from": "active",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "expiry advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.expired"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)"
     },
     {
       "from": "completed",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [
+        "exact offer decision",
+        "candidate/onboarding workload"
+      ],
+      "fences": [
+        "expiry advances the fence and closes the candidate workload/channel"
+      ],
+      "events": [
+        "onboarding-activation-offer.expired"
+      ],
+      "crash_result": "no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)"
     }
   ]
 }

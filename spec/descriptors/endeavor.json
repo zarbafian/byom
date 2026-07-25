@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Endeavor",
   "states": [
     "proposed",
@@ -16,6 +17,18 @@
       "to": "proposed",
       "via": "endeavor_propose",
       "authority": "participant (R5): current Participant acting only as itself",
+      "guards": [
+        "current Participant acting only as itself (R5)",
+        "source content immutable and classified; adopted through its governance rule, not a coordinator's prose (§9.1)"
+      ],
+      "locks": [
+        "source/classification roots"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor.proposed"
+      ],
+      "crash_result": "none or complete (§14.8 Endeavor formation row; creation staged as one SQL set — row derived, gap note G17)",
       "notes": "Adopted through its governance rule, not a coordinator's prose; source content immutable and classified (§9.1). §14.8's Endeavor rows begin at proposed — creation transition derived, gap note G17. Stage-capable."
     },
     {
@@ -23,6 +36,19 @@
       "to": "proposed",
       "via": "endeavor_position",
       "authority": "participant (R7): Participant for its exact eligible seat",
+      "guards": [
+        "actor fills only its authenticated exact eligible seat (R7, §14.6)"
+      ],
+      "locks": [
+        "exact eligible seat"
+      ],
+      "fences": [
+        "one current seat head (§14.8 Position/Decision row)"
+      ],
+      "events": [
+        "endeavor.proposed"
+      ],
+      "crash_result": "prior Position inputs remain (§14.8 Position/Decision row)",
       "notes": "Seat Position record lifecycle (absent → active → withdrawn or superseded) under the §14.8 Position/Decision row, folded here as a proposal-stage self-transition — gap note G19; fills only the authenticated actor's eligible seat (§14.6)."
     },
     {
@@ -30,6 +56,20 @@
       "to": "active",
       "via": "endeavor_finalize",
       "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "deterministic finalization authors no missing seat; complete required seat set (R9)"
+      ],
+      "locks": [
+        "proposal/decision/source/classification/budget roots"
+      ],
+      "fences": [
+        "exact Endeavor and accounts created atomically"
+      ],
+      "events": [
+        "endeavor.active"
+      ],
+      "crash_result": "none or complete (§14.8 Endeavor formation row)",
       "notes": "§14.8 Endeavor row: locks proposal/decision/source/classification/budget roots; exact Endeavor and accounts; crash result is none or complete."
     },
     {
@@ -37,6 +77,21 @@
       "to": "held",
       "via": "endeavor_hold",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact Participant or collective authorized by the governing subject (R14)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "fences affected activities"
+      ],
+      "events": [
+        "endeavor.held"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "Fences affected activities (§14.8)."
     },
     {
@@ -44,6 +99,21 @@
       "to": "active",
       "via": "endeavor_release",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact Participant or collective authorized by the governing subject (R14)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "releases affected activities"
+      ],
+      "events": [
+        "endeavor.active"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "Releases affected activities (§14.8)."
     },
     {
@@ -51,6 +121,19 @@
       "to": "reviewing",
       "via": "endeavor_close",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "endeavor_close discriminated by target_state (G17); closure enters review of the declared acceptance rule (§9.5)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [],
+      "events": [
+        "endeavor.reviewing"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "Closure enters review of the declared acceptance rule (§9.5); endeavor_close is discriminated by target_state — gap note G17."
     },
     {
@@ -58,6 +141,21 @@
       "to": "fulfilled",
       "via": "endeavor_close",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "declared acceptance rule satisfied and required closure decision recorded — a green dashboard is not a decision (§9.5)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event"
+      ],
+      "events": [
+        "endeavor.fulfilled"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "Only when the declared acceptance rule is satisfied and the required closure decision is recorded; a green dashboard is not a decision (§9.5); no dashboard-derived close (§14.8)."
     },
     {
@@ -65,6 +163,21 @@
       "to": "failed",
       "via": "endeavor_close",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "required closure decision recorded (§9.5)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event"
+      ],
+      "events": [
+        "endeavor.failed"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "Terminal outcome event (§14.8)."
     },
     {
@@ -72,38 +185,128 @@
       "to": "abandoned",
       "via": "endeavor_close",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "requires the governing decision (§14.8: active/held/reviewing → abandoned or dissolved)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event; fences affected activities"
+      ],
+      "events": [
+        "endeavor.abandoned"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "§14.8: active/held/reviewing → abandoned or dissolved; requires the governing decision."
     },
     {
       "from": "held",
       "to": "abandoned",
       "via": "endeavor_close",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "requires the governing decision (§14.8: active/held/reviewing → abandoned or dissolved)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event; fences affected activities"
+      ],
+      "events": [
+        "endeavor.abandoned"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)"
     },
     {
       "from": "reviewing",
       "to": "abandoned",
       "via": "endeavor_close",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "requires the governing decision (§14.8: active/held/reviewing → abandoned or dissolved)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event; fences affected activities"
+      ],
+      "events": [
+        "endeavor.abandoned"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)"
     },
     {
       "from": "active",
       "to": "dissolved",
       "via": "endeavor_close",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "requires the governing decision (§14.8: active/held/reviewing → abandoned or dissolved)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event; fences affected activities"
+      ],
+      "events": [
+        "endeavor.dissolved"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)",
       "notes": "Terminal outcome event; fences affected activities (§14.8)."
     },
     {
       "from": "held",
       "to": "dissolved",
       "via": "endeavor_close",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "requires the governing decision (§14.8: active/held/reviewing → abandoned or dissolved)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event; fences affected activities"
+      ],
+      "events": [
+        "endeavor.dissolved"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)"
     },
     {
       "from": "reviewing",
       "to": "dissolved",
       "via": "endeavor_close",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "requires the governing decision (§14.8: active/held/reviewing → abandoned or dissolved)"
+      ],
+      "locks": [
+        "governing decision",
+        "exact acceptance evidence"
+      ],
+      "fences": [
+        "terminal outcome event; fences affected activities"
+      ],
+      "events": [
+        "endeavor.dissolved"
+      ],
+      "crash_result": "no dashboard-derived close (§14.8 Endeavor lifecycle row)"
     }
   ]
 }

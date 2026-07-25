@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Society",
   "states": [
     "forming",
@@ -13,6 +14,20 @@
       "to": "forming",
       "via": "society_prepare",
       "authority": "governance (R2): source-qualified human principal filling the bootstrap sovereign seat",
+      "guards": [
+        "source-qualified human principal filling the bootstrap sovereign seat (R2)",
+        "server prepares the canonical bootstrap subject and required sovereign seats (§14.6)"
+      ],
+      "locks": [
+        "endpoint witness",
+        "source identity",
+        "initial Charter/classification/budgets"
+      ],
+      "fences": [],
+      "events": [
+        "society.forming"
+      ],
+      "crash_result": "none or complete genesis (§14.8 Society row 1)",
       "notes": "§14.8 Society row 1: server prepares the canonical bootstrap subject and required sovereign seats (§14.6); crash result is none or complete genesis."
     },
     {
@@ -20,6 +35,22 @@
       "to": "active",
       "via": "society_bootstrap",
       "authority": "governance (R2): source-qualified human principal filling the bootstrap sovereign seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "source-qualified human principal filling the bootstrap sovereign seat (R2)"
+      ],
+      "locks": [
+        "endpoint witness",
+        "source identity",
+        "initial Charter/classification/budgets"
+      ],
+      "fences": [
+        "one genesis set and event"
+      ],
+      "events": [
+        "society.active"
+      ],
+      "crash_result": "none or complete genesis (§14.8 Society row 1)",
       "notes": "One genesis set and event: Society, first CharterRevision, sovereign seats, decision rules, classification binding, budget roots, event genesis (§6.1)."
     },
     {
@@ -27,6 +58,20 @@
       "to": "held",
       "via": "society_hold",
       "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "current human decision: human principal filling the exact current human-authority seat (R3)"
+      ],
+      "locks": [
+        "Society/Charter/recovery"
+      ],
+      "fences": [
+        "hold increments authority fence"
+      ],
+      "events": [
+        "society.held"
+      ],
+      "crash_result": "old work remains fenced (§14.8 Society row 2)",
       "notes": "Hold increments the authority fence; old work remains fenced (§14.8 Society row 2)."
     },
     {
@@ -34,6 +79,20 @@
       "to": "active",
       "via": "society_release",
       "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "current human decision (R3); current charter, standing, budget, and security checks re-run (§6.3)"
+      ],
+      "locks": [
+        "Society/Charter/recovery"
+      ],
+      "fences": [
+        "release creates new dependency revision"
+      ],
+      "events": [
+        "society.active"
+      ],
+      "crash_result": "old work remains fenced (§14.8 Society row 2)",
       "notes": "Release creates a new dependency revision after current charter, standing, budget, and security checks (§6.3, §14.8)."
     },
     {
@@ -41,6 +100,20 @@
       "to": "dissolving",
       "via": "society_dissolve",
       "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "dissolution decision and retention/key plan locked (R3)"
+      ],
+      "locks": [
+        "dissolution decision and retention/key plan"
+      ],
+      "fences": [
+        "fence all new authority"
+      ],
+      "events": [
+        "society.dissolving"
+      ],
+      "crash_result": "resumes dissolving; never auto-completes (§14.8 Society row 3)",
       "notes": "Locks the dissolution decision and retention/key plan; fences all new authority (§14.8 Society row 3)."
     },
     {
@@ -48,6 +121,20 @@
       "to": "dissolving",
       "via": "society_dissolve",
       "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "dissolution decision and retention/key plan locked (R3)"
+      ],
+      "locks": [
+        "dissolution decision and retention/key plan"
+      ],
+      "fences": [
+        "fence all new authority"
+      ],
+      "events": [
+        "society.dissolving"
+      ],
+      "crash_result": "resumes dissolving; never auto-completes (§14.8 Society row 3)",
       "notes": "Same dissolution entry from held (§14.8: active or held → dissolving)."
     },
     {
@@ -55,6 +142,20 @@
       "to": "dissolved",
       "via": "society_dissolve",
       "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "terminal record only after the disposition ledger completes (G2)"
+      ],
+      "locks": [
+        "dissolution decision and retention/key plan"
+      ],
+      "fences": [
+        "terminal record after disposition ledger"
+      ],
+      "events": [
+        "society.dissolved"
+      ],
+      "crash_result": "resumes dissolving; never auto-completes (§14.8 Society row 3)",
       "notes": "Terminal record only after the disposition ledger completes; crash resumes dissolving and never auto-completes (§14.8; reading recorded as gap note G2)."
     }
   ]

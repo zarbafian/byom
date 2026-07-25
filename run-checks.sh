@@ -16,6 +16,13 @@ python3 policy/differential.py --seed 45217 --cases 256
 echo "== descriptor-model parity (proof/specs <-> spec/descriptors)"
 python3 proof/check-descriptors.py
 
+echo "== negative mutation suite (ADR-0003; parity/conformance mutations, TLC when java present)"
+if command -v java >/dev/null 2>&1 && [ -f proof/tools/tla2tools.jar ]; then
+  python3 proof/negative-checks.py
+else
+  python3 proof/negative-checks.py --no-tlc
+fi
+
 echo "== family vectors (independent rederiver)"
 python3 family-vectors/xcheck.py
 

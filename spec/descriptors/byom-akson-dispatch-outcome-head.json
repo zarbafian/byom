@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "ByomAksonDispatchOutcomeReceiptHead",
   "owner": "kovee (C2)",
   "states": [
@@ -11,6 +12,20 @@
       "to": "ambiguous",
       "via": "dispatch_receipt_genesis_ambiguous",
       "authority": "kovee (C2): the Kovee-owned byom_akson_dispatch_v1 driver service signing the genesis receipt (revision 1); Kovee is the sole caller of the Akson surface (family contract L63)",
+      "guards": [
+        "ambiguous genesis disposition (dispatch_unknown | result_unknown | verification_unknown) at revision 1; the ambiguous arm forbids reconciles fields (§17.2)",
+        "Kovee is the sole caller of the Akson surface (family contract L63)"
+      ],
+      "locks": [
+        "same receipt/effect and complete phase/intent/key identity"
+      ],
+      "fences": [
+        "Kovee alone appends the signed receipt and CASes its head; Byom state untouched"
+      ],
+      "events": [
+        "byom-akson-dispatch-outcome-head.ambiguous"
+      ],
+      "crash_result": "one successor wins; no fork, skipped revision, changed identity, or final reopen (§14.8 Kovee Akson receipt head row)",
       "notes": "An ambiguous genesis (disposition: ambiguous — dispatch_unknown | result_unknown | verification_unknown) creates the one head per Kovee Effect in state ambiguous (§17.2). Byom later verifies the immutable receipt and admits an ambiguous EOA; conservative budget settlement holds while ambiguous (C2 inventory)."
     },
     {
@@ -18,6 +33,19 @@
       "to": "final",
       "via": "dispatch_receipt_genesis_final",
       "authority": "kovee (C2): same driver service",
+      "guards": [
+        "non-ambiguous genesis disposition (pre_result_failed, verification_rejected, verified_result) at revision 1 (§17.2 receipt revisioning)"
+      ],
+      "locks": [
+        "same receipt/effect and complete phase/intent/key identity"
+      ],
+      "fences": [
+        "Kovee alone appends the signed receipt and CASes its head; Byom state untouched"
+      ],
+      "events": [
+        "byom-akson-dispatch-outcome-head.final"
+      ],
+      "crash_result": "one successor wins; no fork, skipped revision, changed identity, or final reopen (§14.8 Kovee Akson receipt head row)",
       "notes": "Every non-ambiguous genesis disposition (pre_result_failed, verification_rejected, verified_result) marks the head final immediately (§17.2 receipt revisioning)."
     },
     {
@@ -25,6 +53,22 @@
       "to": "final",
       "via": "dispatch_receipt_successor_final",
       "authority": "kovee (C2): Kovee CAS-commits the immutable successor receipt and this head together BEFORE byom sees it (§16.6 item 11: commit every Kovee source successor before Byom independently admits it)",
+      "guards": [
+        "successor allowed only from an ambiguous head: same receipt id, Effect, profile, and chain identity; revision increments by exactly one",
+        "CAS: previous_receipt_digest and reconciles_host_receipt_digest equal the current head digest",
+        "head CAS committed before Byom independently admits it (§16.6 item 11)"
+      ],
+      "locks": [
+        "same receipt/effect and complete phase/intent/key identity",
+        "predecessor and reconciliation pointer equal current digest"
+      ],
+      "fences": [
+        "Kovee alone appends the signed receipt and CASes its head; Byom state untouched; a final head is terminal — a late result is retained as source-qualified conflict evidence"
+      ],
+      "events": [
+        "byom-akson-dispatch-outcome-head.final"
+      ],
+      "crash_result": "one successor wins; no fork, skipped revision, changed identity, or final reopen (§14.8 Kovee Akson receipt head row)",
       "notes": "A successor is allowed only from an ambiguous head; it keeps the same receipt id, Effect, profile, and chain identity, increments the revision by exactly one, and names the current receipt digest as both previous_receipt_digest and reconciles_host_receipt_digest. One concurrent successor wins; a fork conflicts. Every successor is final: the ambiguous arm forbids reconciles fields, so an ambiguity-stage change is not a successor. A final head is terminal — no later Kovee receipt reopens it, a late result is retained as source-qualified conflict evidence, and an EffectGovernanceDisposition against an ambiguous receipt never closes this head (its own head is fenced source_advanced by this transition's Byom-side admission)."
     }
   ]

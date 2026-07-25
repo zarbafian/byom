@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Pledge",
   "states": [
     "proposed",
@@ -22,13 +23,58 @@
       "to": "proposed",
       "via": "pledge_propose",
       "authority": "participant (R5): current Participant acting only as itself",
-      "notes": "New PledgeProposal with server-prepared terms digest and required slots (§9.3, §14.6); §9.3 leaves the proposal's state field unspecified — 'proposed' is the folded pre-formation state of this machine, gap note G20. Stage-capable."
+      "guards": [
+        "current Participant acting only as itself (R5)",
+        "server-prepared terms digest and required concrete slot/seat records (§9.3, §14.6)"
+      ],
+      "locks": [
+        "exact proposal"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.proposed"
+      ],
+      "crash_result": "prior Positions remain; derived set all-or-none (§14.8 Pledge formation row; pre-formation state folded, gap note G20)",
+      "notes": "New PledgeProposal with server-prepared terms digest and required concrete slot/seat records (§9.3, §14.6; RT-03); §9.3 leaves the proposal's state field unspecified — 'proposed' is the folded pre-formation state of this machine, gap note G20. Stage-capable."
+    },
+    {
+      "from": "absent",
+      "to": "proposed",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "guards": [
+        "creates a separate proposed successor naming the prior Pledge, revision, and terms digest (amendment_of) with fresh concrete slot/seat records (D-RT-3)",
+        "one CAS successor slot: a second live successor for the same predecessor fails stale_revision"
+      ],
+      "locks": [
+        "exact predecessor Pledge revision",
+        "successor CAS slot"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.proposed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)",
+      "notes": "D-RT-3 (RT-03): pledge_amend creates a SEPARATE proposed successor PledgeProposal naming the prior Pledge, revision, and terms digest (amendment_of, §9.3) with fresh concrete slot/seat records — it needs all currently required seats again (§9.5). One CAS successor slot: a second live successor for the same predecessor fails stale_revision. The predecessor Pledge does NOT move here; it is superseded only when pledge_finalize accepts the complete fresh seat set under the successor CAS."
     },
     {
       "from": "proposed",
       "to": "proposed",
       "via": "pledge_position",
       "authority": "participant (R7): Participant for its exact eligible seat",
+      "guards": [
+        "actor fills only its exact eligible seat (R7); no Charter, human, coordinator, model, finalizer, collective, or runtime can fill the pledgor seat merely because it controls resources or execution (§9.3)"
+      ],
+      "locks": [
+        "exact eligible seat"
+      ],
+      "fences": [
+        "one current seat head (§14.8 Position/Decision row)"
+      ],
+      "events": [
+        "pledge.proposed"
+      ],
+      "crash_result": "prior Position inputs remain (§14.8 Position/Decision row)",
       "notes": "Seat Position record lifecycle under the §14.8 Position/Decision row, folded as a proposal-stage self-transition — gap note G19. Formation consumes a separately attributable receipt for every required slot; no Charter, human, coordinator, model, finalizer, collective, or runtime can fill the pledgor seat merely because it controls resources or execution (§9.3)."
     },
     {
@@ -36,6 +82,24 @@
       "to": "active",
       "via": "pledge_finalize",
       "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "complete final slot set; deterministic finalization authors no missing seat (R9)"
+      ],
+      "locks": [
+        "exact proposal",
+        "current Position heads",
+        "decision",
+        "budgets",
+        "optional Mandate"
+      ],
+      "fences": [
+        "atomic Pledge, locked slot snapshot, Byom reservations, initial PledgeWorkstream and optional Mandate — derived set all-or-none"
+      ],
+      "events": [
+        "pledge.active"
+      ],
+      "crash_result": "prior Positions remain; derived set all-or-none (§14.8 Pledge formation row)",
       "notes": "§14.8: proposal + final slots → active or waiting; atomic Pledge, locked slot snapshot, Byom reservations, initial PledgeWorkstream, optional Mandate — derived set all-or-none; prior Positions remain."
     },
     {
@@ -43,6 +107,25 @@
       "to": "waiting",
       "via": "pledge_finalize",
       "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "complete final slot set; deterministic finalization authors no missing seat (R9)",
+        "waiting on exact source-qualified dependencies (§9.4)"
+      ],
+      "locks": [
+        "exact proposal",
+        "current Position heads",
+        "decision",
+        "budgets",
+        "optional Mandate"
+      ],
+      "fences": [
+        "atomic Pledge, locked slot snapshot, Byom reservations, initial PledgeWorkstream and optional Mandate — derived set all-or-none"
+      ],
+      "events": [
+        "pledge.waiting"
+      ],
+      "crash_result": "prior Positions remain; derived set all-or-none (§14.8 Pledge formation row)",
       "notes": "Waiting on exact source-qualified dependencies (§9.4)."
     },
     {
@@ -50,6 +133,17 @@
       "to": "underway",
       "via": "activity_open",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "cascade of the ActivityStream machine's owning open: the PledgeWorkstream (committed subtype, §11.1) begins work over the pledgor channel"
+      ],
+      "locks": [
+        "pledgor channel"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.underway"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "notes": "Cascade of the ActivityStream machine's owning open: the PledgeWorkstream (committed subtype, §11.1) begins work (§14.8: active/waiting → underway / activity).",
       "cascade": true
     },
@@ -58,6 +152,17 @@
       "to": "underway",
       "via": "activity_open",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "cascade of the ActivityStream machine's owning open: the PledgeWorkstream (committed subtype, §11.1) begins work over the pledgor channel"
+      ],
+      "locks": [
+        "pledgor channel"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.underway"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "notes": "Cascade of the ActivityStream machine's owning open: the PledgeWorkstream (committed subtype, §11.1) begins work (§14.8: active/waiting → underway / activity).",
       "cascade": true
     },
@@ -66,6 +171,18 @@
       "to": "submitted",
       "via": "delivery_submit",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "cascade of the Delivery/Review machine's owning submission: pledgor-only Delivery (§9.5)"
+      ],
+      "locks": [
+        "pledgor channel",
+        "exact Pledge/Delivery"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.submitted"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "notes": "Cascade of the Delivery/Review machine's owning submission: pledgor-only Delivery moves the Pledge to submitted (§9.5, §14.8).",
       "cascade": true
     },
@@ -74,6 +191,17 @@
       "to": "fulfilled",
       "via": "review_record",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "cascade of the Delivery/Review machine's owning review: the immutable Review outcome drives the Pledge transition in the same review transaction; no runtime or verifier authors acceptance"
+      ],
+      "locks": [
+        "exact Pledge/Delivery/reviewer decision"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.fulfilled"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "cascade": true,
       "notes": "Cascade of the Delivery/Review machine's owning review: the immutable Review outcome drives the Pledge transition, separate but in the same review transaction (§14.8); no runtime or verifier authors acceptance."
     },
@@ -82,6 +210,17 @@
       "to": "revision_requested",
       "via": "review_record",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "cascade of the Delivery/Review machine's owning review: the immutable Review outcome drives the Pledge transition in the same review transaction; no runtime or verifier authors acceptance"
+      ],
+      "locks": [
+        "exact Pledge/Delivery/reviewer decision"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.revision_requested"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "cascade": true
     },
     {
@@ -89,6 +228,17 @@
       "to": "rejected",
       "via": "review_record",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "cascade of the Delivery/Review machine's owning review: the immutable Review outcome drives the Pledge transition in the same review transaction; no runtime or verifier authors acceptance"
+      ],
+      "locks": [
+        "exact Pledge/Delivery/reviewer decision"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.rejected"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "cascade": true
     },
     {
@@ -96,6 +246,17 @@
       "to": "disputed",
       "via": "review_record",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "cascade of the Delivery/Review machine's owning review: the immutable Review outcome drives the Pledge transition in the same review transaction; no runtime or verifier authors acceptance"
+      ],
+      "locks": [
+        "exact Pledge/Delivery/reviewer decision"
+      ],
+      "fences": [],
+      "events": [
+        "pledge.disputed"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "cascade": true
     },
     {
@@ -103,191 +264,602 @@
       "to": "underway",
       "via": "pledge_resume",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact Participant or collective authorized by the governing subject (R14)"
+      ],
+      "locks": [
+        "pledgor channel",
+        "exact Pledge"
+      ],
+      "fences": [
+        "each resume starts a new Activity generation under unchanged terms; no effect implied"
+      ],
+      "events": [
+        "pledge.underway"
+      ],
+      "crash_result": "late result stays on old delivery/revision (§14.8 Pledge activity row)",
       "notes": "Each resume starts a new Activity generation under unchanged terms; no effect implied; late result stays on the old delivery/revision (§14.8)."
     },
     {
       "from": "active",
       "to": "superseded",
-      "via": "pledge_amend",
-      "authority": "participant (R5): current Participant acting only as itself",
-      "notes": "One compare-and-swap successor slot; the amendment (a new PledgeProposal naming the prior Pledge, revision, and terms digest) needs all currently required seats again, and its acceptance atomically supersedes the old revision, fences incompatible episodes and unstarted effects, reallocates budgets, and creates a new PledgeWorkstream generation where required (§9.5); §14.8 lists amend on this row — one current successor only, gap note G22."
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization of the successor proposal; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "successor proposal revision pinned by meta.expected_revision; supersedes_pledge_ref/_revision pin the exact predecessor; complete fresh seat set accepted"
+      ],
+      "locks": [
+        "successor CAS",
+        "exact predecessor Pledge revision"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively; new PledgeWorkstream generation where required"
+      ],
+      "events": [
+        "pledge.superseded"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)",
+      "notes": "D-RT-3 (RT-03): supersession commits HERE, not at pledge_amend — pledge_finalize of the amendment successor accepts the complete fresh seat set under the successor CAS (meta.expected_revision pins the successor proposal revision; supersedes_pledge_ref/supersedes_pledge_revision pin the exact predecessor) and, in the same transaction as the successor's proposed → active/waiting, atomically supersedes the predecessor, fences incompatible episodes and unstarted effects, reallocates budgets, and creates a new PledgeWorkstream generation where required (§9.5, §14.8; gap note G22 as amended)."
     },
     {
       "from": "waiting",
       "to": "superseded",
-      "via": "pledge_amend",
-      "authority": "participant (R5): current Participant acting only as itself"
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization of the successor proposal; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "successor proposal revision pinned by meta.expected_revision; supersedes_pledge_ref/_revision pin the exact predecessor; complete fresh seat set accepted"
+      ],
+      "locks": [
+        "successor CAS",
+        "exact predecessor Pledge revision"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively; new PledgeWorkstream generation where required"
+      ],
+      "events": [
+        "pledge.superseded"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "underway",
       "to": "superseded",
-      "via": "pledge_amend",
-      "authority": "participant (R5): current Participant acting only as itself"
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization of the successor proposal; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "successor proposal revision pinned by meta.expected_revision; supersedes_pledge_ref/_revision pin the exact predecessor; complete fresh seat set accepted"
+      ],
+      "locks": [
+        "successor CAS",
+        "exact predecessor Pledge revision"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively; new PledgeWorkstream generation where required"
+      ],
+      "events": [
+        "pledge.superseded"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "submitted",
       "to": "superseded",
-      "via": "pledge_amend",
-      "authority": "participant (R5): current Participant acting only as itself"
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization of the successor proposal; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "successor proposal revision pinned by meta.expected_revision; supersedes_pledge_ref/_revision pin the exact predecessor; complete fresh seat set accepted"
+      ],
+      "locks": [
+        "successor CAS",
+        "exact predecessor Pledge revision"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively; new PledgeWorkstream generation where required"
+      ],
+      "events": [
+        "pledge.superseded"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "revision_requested",
       "to": "superseded",
-      "via": "pledge_amend",
-      "authority": "participant (R5): current Participant acting only as itself"
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization of the successor proposal; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "successor proposal revision pinned by meta.expected_revision; supersedes_pledge_ref/_revision pin the exact predecessor; complete fresh seat set accepted"
+      ],
+      "locks": [
+        "successor CAS",
+        "exact predecessor Pledge revision"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively; new PledgeWorkstream generation where required"
+      ],
+      "events": [
+        "pledge.superseded"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "disputed",
       "to": "superseded",
-      "via": "pledge_amend",
-      "authority": "participant (R5): current Participant acting only as itself"
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization of the successor proposal; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "successor proposal revision pinned by meta.expected_revision; supersedes_pledge_ref/_revision pin the exact predecessor; complete fresh seat set accepted"
+      ],
+      "locks": [
+        "successor CAS",
+        "exact predecessor Pledge revision"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively; new PledgeWorkstream generation where required"
+      ],
+      "events": [
+        "pledge.superseded"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "active",
       "to": "relinquished",
       "via": "pledge_relinquish",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "accepted cancellation terms applied; the kernel never rewrites the act as success (§9.5)"
+      ],
+      "locks": [
+        "accepted cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.relinquished"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)",
       "notes": "The kernel records the request and applies the accepted cancellation terms; it never rewrites that act as success; reservations settle conservatively (§9.5, §14.8)."
     },
     {
       "from": "waiting",
       "to": "relinquished",
       "via": "pledge_relinquish",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "accepted cancellation terms applied; the kernel never rewrites the act as success (§9.5)"
+      ],
+      "locks": [
+        "accepted cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.relinquished"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "underway",
       "to": "relinquished",
       "via": "pledge_relinquish",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "accepted cancellation terms applied; the kernel never rewrites the act as success (§9.5)"
+      ],
+      "locks": [
+        "accepted cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.relinquished"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "submitted",
       "to": "relinquished",
       "via": "pledge_relinquish",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "accepted cancellation terms applied; the kernel never rewrites the act as success (§9.5)"
+      ],
+      "locks": [
+        "accepted cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.relinquished"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "revision_requested",
       "to": "relinquished",
       "via": "pledge_relinquish",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "accepted cancellation terms applied; the kernel never rewrites the act as success (§9.5)"
+      ],
+      "locks": [
+        "accepted cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.relinquished"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "disputed",
       "to": "relinquished",
       "via": "pledge_relinquish",
-      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "accepted cancellation terms applied; the kernel never rewrites the act as success (§9.5)"
+      ],
+      "locks": [
+        "accepted cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.relinquished"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "active",
       "to": "canceled",
       "via": "pledge_disposition_decision",
       "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.canceled"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)",
       "notes": "§14.8's Pledge row lists 'decision' for → canceled/failed with no catalog operation (the remaining obligation becomes canceled, novated, disputed, failed, or unresolved under its own procedure, §9.5); recorded as the named transition pledge_disposition_decision pending the registry freeze — gap note G22."
     },
     {
       "from": "waiting",
       "to": "canceled",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.canceled"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "underway",
       "to": "canceled",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.canceled"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "submitted",
       "to": "canceled",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.canceled"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "revision_requested",
       "to": "canceled",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.canceled"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "disputed",
       "to": "canceled",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.canceled"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "active",
       "to": "failed",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.failed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "waiting",
       "to": "failed",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.failed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "underway",
       "to": "failed",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.failed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "submitted",
       "to": "failed",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.failed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "revision_requested",
       "to": "failed",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.failed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "disputed",
       "to": "failed",
       "via": "pledge_disposition_decision",
-      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "guards": [
+        "exact deciding record under the obligation's own procedure (§9.5; named transition, G22)"
+      ],
+      "locks": [
+        "exact deciding record/cancellation terms"
+      ],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.failed"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "active",
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.expired"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)",
       "notes": "§14.8: nonterminal → expired / expiry; incompatible Activities and unstarted effects fenced; reservations settled conservatively."
     },
     {
       "from": "waiting",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.expired"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "underway",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.expired"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "submitted",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.expired"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "revision_requested",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.expired"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     },
     {
       "from": "disputed",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's deadline (server time)"
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "guards": [
+        "authoritative server time at or past the record's deadline"
+      ],
+      "locks": [],
+      "fences": [
+        "incompatible Activities and unstarted effects fenced; reservations settled conservatively"
+      ],
+      "events": [
+        "pledge.expired"
+      ],
+      "crash_result": "one current successor only (§14.8 Pledge termination row)"
     }
   ]
 }

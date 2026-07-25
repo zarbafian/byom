@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "ByomSubordinateReservation",
   "owner": "kovee (C2)",
   "states": [
@@ -15,6 +16,20 @@
       "to": "requested",
       "via": "subordinate_reserve_request",
       "authority": "kovee (C2): the byom kernel initiates at resource_allocate (family contract L31) under the pinned realm binding epoch; Kovee executes the reservation — Kovee platform capacity lives under another owner and is never part of the byom transaction (§11.4)",
+      "guards": [
+        "initiated by the byom kernel at resource_allocate under the pinned realm binding epoch (family contract L31)",
+        "every item pins its exact parent §11.4 reservation item and never exceeds parent_worst_case_amount (NeverAboveParent)",
+        "idempotent over stable_external_reservation_key, persisted on the ExternalBudgetBridge before queueing (§11.4)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [],
+      "events": [
+        "subordinate-reservation.requested"
+      ],
+      "crash_result": "timeout queries; unknown remains uncertain (§14.8 ExternalBudgetBridge row)",
       "notes": "The idempotent bridge saga persists the ExternalBudgetBridge with stable_external_reservation_key before queueing (§11.4). The subordinate request may narrow or deny but never parallel-charge the same use; every item pins its exact parent §11.4 reservation item and NEVER exceeds parent_worst_case_amount (runner cross-member check; SubordinateReservation.tla NeverAboveParent)."
     },
     {
@@ -22,6 +37,18 @@
       "to": "requested",
       "via": "subordinate_reserve_request",
       "authority": "kovee (C2): same saga",
+      "guards": [
+        "exact retry under the same stable_external_reservation_key returns the identical pending request — never a second reservation row (CreateOnce)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [],
+      "events": [
+        "subordinate-reservation.requested"
+      ],
+      "crash_result": "timeout queries; unknown remains uncertain (§14.8 ExternalBudgetBridge row)",
       "notes": "Exact retry under the same stable_external_reservation_key returns the identical pending request — never a second reservation row (SubordinateReservation.tla CreateOnce)."
     },
     {
@@ -29,6 +56,20 @@
       "to": "confirmed",
       "via": "subordinate_reserved",
       "authority": "kovee (C2): Kovee durably commits the exact subordinate reservation (possibly narrowed) and returns its ref, revision, and digest, persisted on the bridge (§11.4)",
+      "guards": [
+        "Kovee durably commits the exact subordinate reservation (possibly narrowed); it may narrow or deny but never parallel-charge the same use (§11.4)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "subordinate ref/revision/digest persisted on the bridge; the byom parent stays reserved (no parallel charge, no early release)"
+      ],
+      "events": [
+        "subordinate-reservation.confirmed"
+      ],
+      "crash_result": "source ref/revision/digest persisted; Episode queues only if confirmed (§14.8 ExternalBudgetBridge row)",
       "notes": "Queueing requires BOTH exact reservation sets (§11.4); the byom parent stays reserved the whole time (no parallel charge, no early release)."
     },
     {
@@ -36,6 +77,20 @@
       "to": "denied",
       "via": "subordinate_denied",
       "authority": "kovee (C2): Kovee's definite denial",
+      "guards": [
+        "Kovee's definite denial (§11.4)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "releases only demonstrably unspent Byom reservations"
+      ],
+      "events": [
+        "subordinate-reservation.denied"
+      ],
+      "crash_result": "timeout queries; unknown remains uncertain (§14.8 ExternalBudgetBridge row)",
       "notes": "A denial releases only demonstrably unspent Byom reservations (§11.4)."
     },
     {
@@ -43,6 +98,20 @@
       "to": "uncertain",
       "via": "subordinate_outcome_unknown",
       "authority": "kovee (C2): transport loss or unknown result — a recorded fact, not a decision",
+      "guards": [
+        "transport loss or unknown result — a recorded fact, not a decision"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "the byom reservation is NOT released; spend stays blocked"
+      ],
+      "events": [
+        "subordinate-reservation.uncertain"
+      ],
+      "crash_result": "unknown remains uncertain; the byom reservation is not released and spend stays blocked until the stable query or the R38 seat resolves it (§11.4, family contract L33)",
       "notes": "An unknown result remains uncertain (§11.4): the byom reservation is NOT released, spend stays blocked, and only the stable query or the R38 governance seat resolves it — guessing is not a transition."
     },
     {
@@ -50,6 +119,18 @@
       "to": "uncertain",
       "via": "subordinate_query_unknown",
       "authority": "kovee (C2): the stable saga query (§16.6 item 4's query step) still cannot prove the outcome",
+      "guards": [
+        "the stable saga query still cannot prove the outcome (§16.6 item 4)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [],
+      "events": [
+        "subordinate-reservation.uncertain"
+      ],
+      "crash_result": "conservative hold; nothing releases (§11.4)",
       "notes": "Conservative hold; nothing releases."
     },
     {
@@ -57,6 +138,20 @@
       "to": "confirmed",
       "via": "subordinate_query_confirmed",
       "authority": "kovee (C2): the stable query returns the exact committed subordinate reservation — verification, not authority",
+      "guards": [
+        "the stable query returns the exact committed subordinate reservation — verification, not authority (ResolutionIsReal)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "bridge persists the recovered ref/revision/digest"
+      ],
+      "events": [
+        "subordinate-reservation.confirmed"
+      ],
+      "crash_result": "the recovery query surfaces Kovee's durable truth, never invents one (ResolutionIsReal; §11.4)",
       "notes": "Resolves to what actually happened; the bridge persists the recovered ref/revision/digest."
     },
     {
@@ -64,6 +159,20 @@
       "to": "denied",
       "via": "subordinate_query_denied",
       "authority": "kovee (C2): the stable query proves the reservation was never created (Kovee's durable idempotency state for the stable key)",
+      "guards": [
+        "the stable query proves the reservation was never created — Kovee's durable idempotency state for the stable key (ResolutionIsReal)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "released amount is exactly the demonstrably unspent byom reservation"
+      ],
+      "events": [
+        "subordinate-reservation.denied"
+      ],
+      "crash_result": "the recovery query surfaces Kovee's durable truth, never invents one (ResolutionIsReal; §11.4)",
       "notes": "Only a verified absence drives the deny; the released amount is exactly the demonstrably unspent byom reservation."
     },
     {
@@ -71,6 +180,22 @@
       "to": "released",
       "via": "budget_reconcile",
       "authority": "governance (R38): the exact reconciliation seat with a fresh challenge for ambiguous release; services prepare evidence only",
+      "guards": [
+        "exact R38 reconciliation seat with a fresh challenge for ambiguous release; services prepare evidence only",
+        "the only release from uncertain — a governance decision, never a timeout (family contract L33)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key",
+        "R38 reconciliation decision"
+      ],
+      "fences": [
+        "release applied under account locks"
+      ],
+      "events": [
+        "subordinate-reservation.released"
+      ],
+      "crash_result": "unknown quantity never returns to remaining without the R38 decision (§14.8 BudgetReservationSet row; family contract L33)",
       "notes": "The only release from uncertain (family contract L33): a governance decision, never a timeout. Disagreement or a stale lease blocks spend until this seat decides."
     },
     {
@@ -78,6 +203,21 @@
       "to": "settled",
       "via": "subordinate_settle",
       "authority": "kovee (C2): measured settlement from a trusted broker meter or independently verified provider receipt — participant and worker reports are evidence, not meters (§11.4/L33)",
+      "guards": [
+        "measured settlement from a trusted broker meter or independently verified provider receipt — participant and worker reports are evidence, not meters (§11.4)",
+        "monotonic, stable-keyed, applied once on both sides (SettleOnce); charged never exceeds the reserved amount"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "settlement applied once on both sides; unknown or underivable cost keeps the reservation or settles to the conservative maximum"
+      ],
+      "events": [
+        "subordinate-reservation.settled"
+      ],
+      "crash_result": "changed request id cannot double settle (§14.8 UsageSettlement row)",
       "notes": "Monotonic, stable-keyed, applied once on BOTH sides (SubordinateReservation.tla SettleOnce); charged never exceeds the reserved amount. Unknown or underivable cost keeps the reservation or settles to the conservative maximum."
     },
     {
@@ -85,6 +225,20 @@
       "to": "released",
       "via": "subordinate_release",
       "authority": "kovee (C2): both sides release an unspent confirmed reservation when the work never queues (episode canceled before launch)",
+      "guards": [
+        "both sides release an unspent confirmed reservation when the work never queues (episode canceled before launch)"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "releases only demonstrably unspent quantity; the parent bucket returns in the same accounting step"
+      ],
+      "events": [
+        "subordinate-reservation.released"
+      ],
+      "crash_result": "unknown quantity never returns to remaining (§14.8 BudgetReservationSet row)",
       "notes": "Releases only demonstrably unspent quantity; the parent bucket returns in the same accounting step."
     },
     {
@@ -92,6 +246,18 @@
       "to": "released",
       "via": "subordinate_release",
       "authority": "kovee (C2): saga completion after a definite denial",
+      "guards": [
+        "saga completion after a definite denial; nothing was ever charged"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [],
+      "events": [
+        "subordinate-reservation.released"
+      ],
+      "crash_result": "unknown quantity never returns to remaining (§14.8 BudgetReservationSet row)",
       "notes": "Terminal bookkeeping row; nothing was ever charged."
     },
     {
@@ -99,6 +265,20 @@
       "to": "released",
       "via": "subordinate_release",
       "authority": "kovee (C2): saga completion after settlement",
+      "guards": [
+        "saga completion after settlement; releases the reserved remainder above the settled charge"
+      ],
+      "locks": [
+        "exact Byom reservation (parent §11.4 reservation items)",
+        "Kovee endpoint/binding/stable key"
+      ],
+      "fences": [
+        "released_lifetime is a monotonic audit counter, not an available bucket (§11.4)"
+      ],
+      "events": [
+        "subordinate-reservation.released"
+      ],
+      "crash_result": "terminal: a released bridge never revives — new work is a fresh saga row under a fresh stable key (§11.4)",
       "notes": "Releases the reserved remainder above the settled charge; released_lifetime is a monotonic audit counter, not an available bucket (§11.4). Terminal: a released bridge never revives — new work is a fresh saga row under a fresh stable key."
     }
   ]

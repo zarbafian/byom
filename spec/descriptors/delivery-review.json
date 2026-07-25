@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Delivery/Review",
   "states": [
     "submitted",
@@ -12,6 +13,21 @@
       "to": "submitted",
       "via": "delivery_submit",
       "authority": "participant (R29): authenticated pledgor channel only — a runtime service records an EpisodeCompletion but cannot impersonate the Participant or create a Delivery (§9.5)",
+      "guards": [
+        "authenticated pledgor channel only — a runtime service records an EpisodeCompletion but cannot impersonate the Participant or create a Delivery (§9.5)",
+        "exact episode fence when an Episode is cited — a fenced/stale result stays an orphan diagnostic (G24)"
+      ],
+      "locks": [
+        "exact Pledge revision",
+        "cited EpisodeCompletion/episode fence where present"
+      ],
+      "fences": [
+        "records exact outputs/terms/evidence"
+      ],
+      "events": [
+        "delivery-review.submitted"
+      ],
+      "crash_result": "no runtime or verifier authors acceptance (§14.8 Delivery/Review row)",
       "notes": "Records exact outputs, terms digest, evidence, and subject digest; cites any EpisodeCompletion; exact episode fence when an Episode is cited (R29) — a fenced/stale result stays an orphan diagnostic (gap note G24)."
     },
     {
@@ -19,6 +35,20 @@
       "to": "superseded",
       "via": "delivery_submit",
       "authority": "participant (R29): authenticated pledgor channel only — a runtime service records an EpisodeCompletion but cannot impersonate the Participant or create a Delivery (§9.5)",
+      "guards": [
+        "authenticated pledgor channel only (§9.5)",
+        "a later Delivery for the same Pledge revision supersedes the prior submission (G24)"
+      ],
+      "locks": [
+        "exact Pledge revision"
+      ],
+      "fences": [
+        "records exact outputs/terms/evidence"
+      ],
+      "events": [
+        "delivery-review.superseded"
+      ],
+      "crash_result": "no runtime or verifier authors acceptance (§14.8 Delivery/Review row)",
       "notes": "A later Delivery for the same Pledge revision supersedes the prior submission (§9.5 state list) — gap note G24."
     },
     {
@@ -26,6 +56,20 @@
       "to": "withdrawn",
       "via": "delivery_withdraw",
       "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact Participant or collective authorized by the governing subject (R14)"
+      ],
+      "locks": [
+        "exact Pledge revision"
+      ],
+      "fences": [
+        "already performed disclosures and effects remain historical facts"
+      ],
+      "events": [
+        "delivery-review.withdrawn"
+      ],
+      "crash_result": "no runtime or verifier authors acceptance (§14.8 Delivery/Review row)",
       "notes": "Already performed disclosures and effects remain historical facts (§9.5)."
     },
     {
@@ -33,6 +77,21 @@
       "to": "review_recorded",
       "via": "review_record",
       "authority": "participant (R14): exact reviewer seat only (§14.8 Delivery/Review row)",
+      "guards": [
+        "exact reviewer seat only (§14.8 Delivery/Review row)",
+        "one immutable Review with outcome fulfilled | revision_requested | rejected | disputed; verification never decides fulfillment (§9.5)"
+      ],
+      "locks": [
+        "exact submitted Delivery",
+        "exact reviewer seat"
+      ],
+      "fences": [
+        "Pledge transition separate but same review transaction"
+      ],
+      "events": [
+        "delivery-review.review_recorded"
+      ],
+      "crash_result": "no runtime or verifier authors acceptance (§14.8 Delivery/Review row)",
       "notes": "One immutable Review with outcome fulfilled | revision_requested | rejected | disputed; the Pledge transition is separate but in the same review transaction; no runtime or verifier authors acceptance, and verification never decides fulfillment (§9.5, §14.8)."
     }
   ]

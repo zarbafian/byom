@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "MembershipOffer/Standing",
   "states": [
     "offered",
@@ -20,6 +21,19 @@
       "to": "offered",
       "via": "membership_offer",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "exact decided governance actor (R10)",
+        "bound to participant, proposed standing, subject digest, offering decision, and expiry (§7.4)"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [],
+      "events": [
+        "membership-offer-standing.offered"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)",
       "notes": "MembershipOffer bound to participant, proposed standing, subject digest, offering decision, and expiry (§7.4)."
     },
     {
@@ -27,6 +41,20 @@
       "to": "onboarding",
       "via": "onboarding_offer",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "cascade of the OnboardingActivationOffer machine's owning absent → offered transition under the same governance decision"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "onboarding has one zero-general-effect fence and optional one-shot compute receipt"
+      ],
+      "events": [
+        "membership-offer-standing.onboarding"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)",
       "notes": "Cascade of the OnboardingActivationOffer machine's owning absent → offered transition: the same governance decision moves the MembershipOffer to onboarding (§14.8).",
       "cascade": true
     },
@@ -35,19 +63,61 @@
       "to": "accepted",
       "via": "membership_accept",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "only the candidate authors acceptance; acceptance is not Standing (§7.4, R11)"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [],
+      "events": [
+        "membership-offer-standing.accepted"
+      ],
+      "crash_result": "silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)",
       "notes": "Only the candidate authors acceptance; acceptance is not Standing (§7.4)."
     },
     {
       "from": "onboarding",
       "to": "accepted",
       "via": "membership_accept",
-      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only"
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "only the candidate authors acceptance; acceptance is not Standing (§7.4, R11)"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [],
+      "events": [
+        "membership-offer-standing.accepted"
+      ],
+      "crash_result": "silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)"
     },
     {
       "from": "accepted",
       "to": "admitted",
       "via": "participant_admit",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "admit CASes the same offer revision — admission and retraction cannot both win",
+        "binds the current MembershipAcceptance (§7.4, §14.3)"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "admission binds current acceptance and Standing; Participant binding epoch advances"
+      ],
+      "events": [
+        "membership-offer-standing.admitted"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)",
       "notes": "Admit/refuse/expiry CAS the same offer revision — admission and retraction cannot both win; binds the current MembershipAcceptance and advances the Participant binding epoch (§7.4, §14.3)."
     },
     {
@@ -55,6 +125,21 @@
       "to": "standing_active",
       "via": "participant_admit",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "admission creates the active StandingRevision bound to the admission decision and exact acceptance (§7.4)"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "admission binds current acceptance and Standing"
+      ],
+      "events": [
+        "membership-offer-standing.standing_active"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)",
       "notes": "Admission creates the active StandingRevision bound to the admission decision and exact acceptance (§7.4, §14.8: accepted → admitted plus active Standing)."
     },
     {
@@ -62,19 +147,64 @@
       "to": "refused",
       "via": "membership_refuse",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "only the candidate authors refusal (R11); refuse CASes the same offer revision"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "refusal advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs; retraction cites prior acceptance"
+      ],
+      "events": [
+        "membership-offer-standing.refused"
+      ],
+      "crash_result": "exact refusal retry returns its receipt (§14.8 MembershipOffer/Standing row)",
       "notes": "One revision-CAS transaction: appends MembershipRefusal, supersedes any prior acceptance, advances the onboarding fence, revokes unused compute authority, rejects pending candidate self-policy proposals, closes the candidate channel; exact retry returns the same receipt (§7.4)."
     },
     {
       "from": "onboarding",
       "to": "refused",
       "via": "membership_refuse",
-      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only"
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "only the candidate authors refusal (R11); refuse CASes the same offer revision"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "refusal advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs; retraction cites prior acceptance"
+      ],
+      "events": [
+        "membership-offer-standing.refused"
+      ],
+      "crash_result": "exact refusal retry returns its receipt (§14.8 MembershipOffer/Standing row)"
     },
     {
       "from": "accepted",
       "to": "refused",
       "via": "membership_refuse",
       "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "only the candidate authors refusal (R11); refuse CASes the same offer revision"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "refusal advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs; retraction cites prior acceptance"
+      ],
+      "events": [
+        "membership-offer-standing.refused"
+      ],
+      "crash_result": "exact refusal retry returns its receipt (§14.8 MembershipOffer/Standing row)",
       "notes": "Cites and supersedes the stale acceptance (§7.4)."
     },
     {
@@ -82,38 +212,125 @@
       "to": "revoked",
       "via": "membership_offer_revoke",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact decided governance actor (R10); same authority fencing as refusal without attributing a refusal to the candidate"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "revoke advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs"
+      ],
+      "events": [
+        "membership-offer-standing.revoked"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)",
       "notes": "Same authority fencing as refusal without attributing a refusal to the candidate (§7.4)."
     },
     {
       "from": "onboarding",
       "to": "revoked",
       "via": "membership_offer_revoke",
-      "authority": "governance (R10): exact decided governance actor"
+      "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact decided governance actor (R10); same authority fencing as refusal without attributing a refusal to the candidate"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "revoke advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs"
+      ],
+      "events": [
+        "membership-offer-standing.revoked"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)"
     },
     {
       "from": "accepted",
       "to": "revoked",
       "via": "membership_offer_revoke",
-      "authority": "governance (R10): exact decided governance actor"
+      "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact decided governance actor (R10); same authority fencing as refusal without attributing a refusal to the candidate"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "revoke advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs"
+      ],
+      "events": [
+        "membership-offer-standing.revoked"
+      ],
+      "crash_result": "no terminal offer can later admit (§14.8 MembershipOffer/Standing row)"
     },
     {
       "from": "offered",
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at; expiry CASes the same offer revision and races admission"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "expiry advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs"
+      ],
+      "events": [
+        "membership-offer-standing.expired"
+      ],
+      "crash_result": "silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)",
       "notes": "Silence and stale acceptance expire; silence never becomes acceptance (§7.4, §14.8)."
     },
     {
       "from": "onboarding",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at; expiry CASes the same offer revision and races admission"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "expiry advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs"
+      ],
+      "events": [
+        "membership-offer-standing.expired"
+      ],
+      "crash_result": "silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)"
     },
     {
       "from": "accepted",
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at; expiry CASes the same offer revision and races admission"
+      ],
+      "locks": [
+        "governance decision",
+        "affected candidate/Participant channel"
+      ],
+      "fences": [
+        "expiry advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs"
+      ],
+      "events": [
+        "membership-offer-standing.expired"
+      ],
+      "crash_result": "silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)",
       "notes": "Expiry applies from accepted as well and races admission through the same CAS (§7.4)."
     },
     {
@@ -121,6 +338,20 @@
       "to": "standing_suspended",
       "via": "participant_suspend",
       "authority": "governance (R10): exact decided governance actor",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the Participant machine's owning suspend under the exact decided governance actor (R10)"
+      ],
+      "locks": [
+        "current Standing/binding"
+      ],
+      "fences": [
+        "minimum revocation set fences positions, contexts, Mandates, Episodes, effects"
+      ],
+      "events": [
+        "membership-offer-standing.standing_suspended"
+      ],
+      "crash_result": "no partial revocation (§14.8 Standing row)",
       "notes": "Cascade of the Participant machine's owning active → suspended transition; the minimum revocation set fences positions, contexts, Mandates, Episodes, effects — no partial revocation (§7.4, §14.8 Standing row).",
       "cascade": true
     },
@@ -129,6 +360,20 @@
       "to": "standing_ceased",
       "via": "participation_cease",
       "authority": "participant (R12): affected Participant only; not delegable",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cease actor is self: affected Participant only, not delegable (R12)"
+      ],
+      "locks": [
+        "current Standing/binding"
+      ],
+      "fences": [
+        "minimum revocation set fences positions, contexts, Mandates, Episodes, effects"
+      ],
+      "events": [
+        "membership-offer-standing.standing_ceased"
+      ],
+      "crash_result": "no partial revocation (§14.8 Standing row)",
       "notes": "Cascade of the Participant machine's owning active → retiring transition; cease moves Standing to ceased immediately (§7.4, §14.8 Standing row).",
       "cascade": true
     },
@@ -137,6 +382,19 @@
       "to": "standing_expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the StandingRevision expires_at (§7.4)"
+      ],
+      "locks": [
+        "current Standing/binding"
+      ],
+      "fences": [
+        "minimum revocation set fences positions, contexts, Mandates, Episodes, effects"
+      ],
+      "events": [
+        "membership-offer-standing.standing_expired"
+      ],
+      "crash_result": "no partial revocation (§14.8 Standing row)",
       "notes": "StandingRevision expires_at (§7.4 Standing shape, §14.8 Standing row)."
     },
     {
@@ -144,6 +402,19 @@
       "to": "standing_superseded",
       "via": "standing_replacement",
       "authority": "governance decision adopting a successor StandingRevision",
+      "guards": [
+        "governance decision adopting a successor StandingRevision (named transition, G12)"
+      ],
+      "locks": [
+        "current Standing/binding"
+      ],
+      "fences": [
+        "minimum revocation set fences positions, contexts, Mandates, Episodes, effects"
+      ],
+      "events": [
+        "membership-offer-standing.standing_superseded"
+      ],
+      "crash_result": "no partial revocation (§14.8 Standing row)",
       "notes": "§14.8 Standing row names 'replacement' with no catalog operation; recorded as the named transition standing_replacement pending registry freeze — gap note G12."
     }
   ]

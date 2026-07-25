@@ -15,8 +15,9 @@
       },
       "endeavor_id": "endeavor-12",
       "subject_digest": {
-        "class": "structural_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:subject_digest",
         "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "positions": [

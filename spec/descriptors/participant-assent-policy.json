@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Participant assent policy",
   "states": [
     "active",
@@ -12,6 +13,19 @@
       "to": "active",
       "via": "assent_policy_adopt",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "adoption only over the authenticated owning Participant channel (R13)",
+        "under stricter Charter/host ceilings; never inferred from package, controller, profile claim, Charter, Assembly vote, model output, or runtime configuration (§7.3)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "stricter Charter/host ceiling"
+      ],
+      "fences": [],
+      "events": [
+        "participant-assent-policy.active"
+      ],
+      "crash_result": "no Charter fallback/reactivation (§14.8 Participant assent policy row)",
       "notes": "Adoption only over the authenticated Participant channel, under stricter Charter/host ceilings; never inferred from package, controller, profile claim, Charter, Assembly vote, model output, or runtime configuration. Candidate bootstrap activates through the Candidate self-policy machine (§7.3, §14.8)."
     },
     {
@@ -19,6 +33,20 @@
       "to": "superseded",
       "via": "assent_policy_adopt",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "replacement adoption (previous_digest chain) supersedes the prior active revision"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "stricter Charter/host ceiling"
+      ],
+      "fences": [
+        "replacement supersedes the prior active revision"
+      ],
+      "events": [
+        "participant-assent-policy.superseded"
+      ],
+      "crash_result": "no Charter fallback/reactivation (§14.8 Participant assent policy row)",
       "notes": "Replacement adoption (previous_digest chain) supersedes the prior active revision (§14.8 'adopt/revoke/replace')."
     },
     {
@@ -26,6 +54,21 @@
       "to": "revoked",
       "via": "assent_policy_revoke",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant only (R13)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "stricter Charter/host ceiling"
+      ],
+      "fences": [
+        "derived assent ordinals counted atomically; root mode propagates"
+      ],
+      "events": [
+        "participant-assent-policy.revoked"
+      ],
+      "crash_result": "no Charter fallback/reactivation (§14.8 Participant assent policy row)",
       "notes": "No Charter fallback or reactivation; derived assent ordinals were counted atomically against the revision (§7.3, §14.8)."
     },
     {
@@ -33,6 +76,18 @@
       "to": "expired",
       "via": "server_time",
       "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the policy expires_at (§7.3)"
+      ],
+      "locks": [
+        "owning Participant channel",
+        "stricter Charter/host ceiling"
+      ],
+      "fences": [],
+      "events": [
+        "participant-assent-policy.expired"
+      ],
+      "crash_result": "no Charter fallback/reactivation (§14.8 Participant assent policy row)",
       "notes": "Policy expires_at (§7.3 shape)."
     }
   ]

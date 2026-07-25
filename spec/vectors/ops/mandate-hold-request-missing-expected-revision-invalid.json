@@ -1,0 +1,22 @@
+{
+  "name": "ops/mandate-hold-request-missing-expected-revision-invalid",
+  "description": "RT-01: mandate_hold is update-classed (current-head CAS) — its closed update meta REQUIRES meta.expected_revision, so omitting the last observed revision fails structurally, never as an optional runtime nicety (§14.2 'Updates require the last observed revision').",
+  "input": {
+    "schema": "mandate-hold-request",
+    "value": {
+      "version": "0.2",
+      "op": "mandate_hold",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1
+      },
+      "mandate_id": "mandate-id-1",
+      "held_by_decision_ref": "held-by-decision-ref-1"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

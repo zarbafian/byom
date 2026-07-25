@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/mcp/v0/mcp-tools.schema.json",
   "title": "byom-mcp tool-schema document (C3a; amendment A4)",
-  "description": "Closed meta-schema for mcp/byom-mcp.tools.json — the versioned MCP tool bundle binding the C3a sheet's exact candidate and participant op lists (plan/sheets/C3a.md; candidate profile normative via design/2026-07-25-amendment-family-contract.md A4). Tool names are closed per-profile enums, so a governance, runtime, or admin operation as a tool name fails this schema (deny-by-absence); the profiles object is itself closed — no third profile can exist. Per-tool input schemas are derived from the spec/schemas/ops request schemas minus the channel/bridge envelope {version, op, meta}; the field-level subset, access, and channel-derived-field rules that JSON Schema cannot express are enforced by conformance/run.py's c3a check.",
+  "description": "Closed meta-schema for mcp/byom-mcp.tools.json — the versioned MCP tool bundle binding the C3a sheet's exact candidate and participant op lists (plan/sheets/C3a.md; candidate profile normative via design/2026-07-25-amendment-family-contract.md A4). Tool names are closed per-profile enums, so a governance, runtime, or admin operation as a tool name fails this schema (deny-by-absence); the profiles object is itself closed — no third profile can exist. Per-tool input schemas are derived from the spec/schemas/ops request schemas minus the channel/bridge envelope {version, op, meta}; the field-level subset, access, and channel-derived-field rules that JSON Schema cannot express are enforced by conformance/run.py's c3a check. Document v0.1.1 (D-RT-2, RT-14): the four null-bound tools (engram_propose, engram_read, engram_search, budget_show) are removed from the advertised participant profile until their owning bundles (B0.4 knowledge, budgets) freeze — no callable placeholder with op_request_schema null exists, so every advertised tool is fully schema-backed; they return via a new tools-document version. Tool input schemas are verbatim copies (property bodies, top-level oneOf, exact transitive $defs) of their committed op request schemas (RT-16), with the C3a-bound G10/G31 ops frozen to their immutable -v2 successor schemas (RT-06).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -30,7 +30,11 @@
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sheet", "amendment", "op_schemas"],
+      "required": [
+        "sheet",
+        "amendment",
+        "op_schemas"
+      ],
       "properties": {
         "sheet": {
           "const": "plan/sheets/C3a.md"
@@ -47,7 +51,10 @@
     "profiles": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["candidate", "participant"],
+      "required": [
+        "candidate",
+        "participant"
+      ],
       "properties": {
         "candidate": {
           "$ref": "#/$defs/candidateProfile"
@@ -61,13 +68,21 @@
     "excluded_surfaces": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assertion", "surfaces"],
+      "required": [
+        "assertion",
+        "surfaces"
+      ],
       "properties": {
         "assertion": {
           "const": "No governance, runtime, or admin tool exists in either profile, ever."
         },
         "surfaces": {
-          "const": ["governance", "runtime", "admin", "human_authority"]
+          "const": [
+            "governance",
+            "runtime",
+            "admin",
+            "human_authority"
+          ]
         }
       },
       "description": "The deny-by-absence assertion (C3a sheet; A4: no human-authority, governance, or admin tool on the candidate binding). The exact-list checks make it structural; this records it in the document itself."
@@ -110,12 +125,8 @@
         "byom_act_intent_prepare",
         "byom_act_intent_position",
         "byom_act_intent_cancel",
-        "byom_engram_propose",
-        "byom_engram_read",
-        "byom_engram_search",
         "byom_participant_show",
         "byom_society_show",
-        "byom_budget_show",
         "byom_snapshot_get",
         "byom_events_read",
         "byom_events_wait",
@@ -123,12 +134,16 @@
         "byom_idempotency_result",
         "byom_cursor_recover"
       ],
-      "description": "The exact participant-profile tool set — the C3a sheet's participant list in sheet order, deduplicated (the sheet lists activity_show twice; one tool binds it). Participant/projection surfaces only."
+      "description": "The exact participant-profile tool set — the C3a sheet's participant list in sheet order, deduplicated (the sheet lists activity_show twice; one tool binds it) and minus the four null-bound tools removed by D-RT-2 (RT-14): engram_propose/read/search and budget_show return with their owning bundles via a new tools-document version. Participant/projection surfaces only."
     },
     "candidateProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "binding", "tools"],
+      "required": [
+        "profile",
+        "binding",
+        "tools"
+      ],
       "properties": {
         "profile": {
           "const": "candidate"
@@ -158,7 +173,11 @@
     "participantProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "binding", "tools"],
+      "required": [
+        "profile",
+        "binding",
+        "tools"
+      ],
       "properties": {
         "profile": {
           "const": "participant"
@@ -168,8 +187,8 @@
         },
         "tools": {
           "type": "array",
-          "minItems": 38,
-          "maxItems": 38,
+          "minItems": 34,
+          "maxItems": 34,
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/toolEntry",
@@ -205,7 +224,12 @@
           ]
         },
         "closed_server_side_on": {
-          "const": ["admission", "refusal", "revocation", "expiry"]
+          "const": [
+            "admission",
+            "refusal",
+            "revocation",
+            "expiry"
+          ]
         },
         "converts_in_place": {
           "const": false
@@ -233,7 +257,10 @@
           "const": "participant_admit"
         },
         "surfaces": {
-          "const": ["participant", "projection"]
+          "const": [
+            "participant",
+            "projection"
+          ]
         },
         "elicitation_is_assent": {
           "const": false
@@ -263,12 +290,15 @@
           "description": "The §14.6 catalog operation this tool binds; name must equal byom_<op> (conformance-checked)."
         },
         "op_request_schema": {
-          "type": ["string", "null"],
-          "pattern": "^[a-z][a-z0-9-]*-request$",
-          "description": "The committed spec/schemas/ops request schema the input schema derives from; null exactly when no op schema is committed yet (the tool then exposes zero args — conformance-checked)."
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*-request(-v2)?$",
+          "description": "The committed spec/schemas/ops request schema the input schema is a verbatim derivation of. Never null: a tool without a committed, fully specified request contract is not advertised at all (D-RT-2, RT-14). The -v2 names are the immutable G10/G31 successor publications C3a freezes to (RT-06)."
         },
         "access": {
-          "enum": ["safe_to_allow", "gated"],
+          "enum": [
+            "safe_to_allow",
+            "gated"
+          ],
           "description": "The akson-mcp marking: read-only tools are safe to allow; authority-bearing (mutating) tools stay gated so each call is a deliberate yes."
         },
         "description": {
@@ -284,7 +314,11 @@
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "additionalProperties", "properties"],
+      "required": [
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
       "properties": {
         "type": {
           "const": "object"
@@ -312,7 +346,9 @@
         "propertyNames": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["pattern"],
+          "required": [
+            "pattern"
+          ],
           "properties": {
             "pattern": {
               "type": "string"
@@ -328,9 +364,17 @@
           "additionalProperties": {
             "type": "object"
           }
+        },
+        "oneOf": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object"
+          },
+          "description": "Verbatim copy of the request schema's top-level conditional-requirement arms (both-or-neither pairs, conditional assent receipts — RT-03/RT-05), so the embedded tool schema enforces the same closed tuples as the wire schema."
         }
       },
-      "description": "A closed embedded JSON Schema: the op request schema minus the channel/bridge envelope {version, op, meta} (the bridge derives protocol version from negotiation and MutationMeta from channel state; channel-derived fields per gap note G16 never appear). additionalProperties false is mandatory — an input carrying an undeclared or channel-derived field fails the tool call."
+      "description": "A closed embedded JSON Schema: the op request schema minus the channel/bridge envelope {version, op, meta} (the bridge derives protocol version from negotiation and MutationMeta from channel state; channel-derived fields per gap note G16 never appear). additionalProperties false is mandatory — an input carrying an undeclared or channel-derived field fails the tool call. Property bodies, any top-level oneOf, and the exact transitive $defs closure are verbatim copies of the named op request schema — conformance/run.py compares them byte-for-byte (JCS) and runs widening-mutation self-tests (RT-16)."
     }
   }
 }

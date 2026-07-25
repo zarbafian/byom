@@ -47,14 +47,18 @@ SEMANTICS (frozen by ADR-0001, grounded in §10.5):
   atom pair across the two inputs (or policy x request) is checked for
   comparability — different classification lattices, assurance orders,
   purpose snapshots, quantity dimension/unit/scale/currency/pricing revision,
-  rate dimension/unit/epoch, or a DNS host against an IP/CIDR host reject
+  rate dimension/unit/epoch/refill-period (D-RT-4: rate claims need equal
+  window boundaries — anything finer is consume-time behavior, so differing
+  refill periods fail closed), or a DNS host against an IP/CIDR host reject
   with {"kind": "incomparable", "where": <domain>}. The scan order is fixed
   (first policy's rules, then second's, then the domain table order), so both
   independent evaluators report the identical first conflict.
 - Canonical form: set members sorted by UTF-16 code units, rules sorted by
-  their JCS bytes, exact duplicates removed; canonical bytes are RFC 8785
-  JCS and the policy digest is SHA-256 over the $domain-tagged canonical
-  form with domain "bpa1-policy-v1" (family-vectors/PROFILE.md §2, D-R0-1).
+  their JCS UTF-8 BYTES, and duplicate rules REJECT with malformed at the
+  second occurrence — never a silent dedupe (D-RT-5 / RT-08); canonical
+  bytes are RFC 8785 JCS and the policy digest is SHA-256 over the
+  $domain-tagged canonical form with domain "bpa1-policy-v1"
+  (family-vectors/PROFILE.md §2, D-R0-1).
 - Post-parse numeric equivalence: JSON parsers cannot distinguish 1.0 from 1
   in every language, so integral floats are accepted as their integer value;
   non-integral numbers are malformed (§10.5 floating-point quantities
@@ -519,6 +523,16 @@ def validate_policy(p, base: str = "") -> dict:
             if d in atoms:
                 natoms[d] = ATOM_VALIDATORS[d](atoms[d], f"{w}/atoms/{d}")
         out.append({"effect": r["effect"], "atoms": natoms})
+    # D-RT-5 (RT-08): duplicate rules REJECT (malformed) at the second
+    # occurrence in input order — never a silent dedupe. Duplicates compare
+    # in per-rule canonical form (set members sorted), the same form the
+    # canonical ordering uses.
+    seen = set()
+    for i, r in enumerate(out):
+        key = jcs(_canonical_rule(r))
+        if key in seen:
+            raise PolicyError("malformed", f"{base}/rules/{i}")
+        seen.add(key)
     return {"rules": out}
 
 
@@ -645,9 +659,19 @@ def comparable(domain: str, a: dict, b: dict) -> bool:
                     and a["pricing_revision"] == b["pricing_revision"])
         return True
     if domain == "rate":
+        # D-RT-4 (RT-07): rate claims are decidable from the encoding alone
+        # only under EQUAL window boundaries — same refill period on the
+        # same epoch. A child 1/1ms under a parent 10/10ms refills before
+        # the parent boundary, so differing periods are incomparable (fail
+        # closed); boundary-finer semantics (active interval, reserved
+        # share, alignment) are consume-time behavior under §10.5's atomic
+        # ancestor-counter locking, never a policy-algebra claim. BPA-2 may
+        # tighten.
         return (a["dimension"] == b["dimension"]
                 and a["canonical_unit"] == b["canonical_unit"]
-                and a["epoch"] == b["epoch"])
+                and a["epoch"] == b["epoch"]
+                and a["refill_period_milliseconds"]
+                == b["refill_period_milliseconds"])
     if domain == "network_destination":
         return _host_kind(a["host"]) == _host_kind(b["host"])
     return True  # operation, object, binding, path, time, schema_evidence
@@ -680,12 +704,14 @@ def _host_subset(c: dict, p: dict) -> bool:
 
 
 def _rate_contained(c: dict, p: dict) -> bool:
-    """§10.5 rate containment: capacity, burst, and refill rate by exact
-    integer cross-multiplication (no floats, no rounding)."""
+    """§10.5 rate containment under D-RT-4 (RT-07): comparable() has
+    already required EQUAL window boundaries (same refill period, same
+    epoch), so containment is exactly componentwise — capacity, burst, and
+    refill amount. Ratio cross-multiplication is deliberately gone: it
+    blessed a child that refills before the parent boundary."""
     return (c["capacity"] <= p["capacity"]
             and c["max_burst"] <= p["max_burst"]
-            and (c["refill_amount"] * p["refill_period_milliseconds"]
-                 <= p["refill_amount"] * c["refill_period_milliseconds"]))
+            and c["refill_amount"] <= p["refill_amount"])
 
 
 def atom_subset(domain: str, c: dict, p: dict) -> bool:
@@ -784,21 +810,14 @@ def atom_intersect(domain: str, a: dict, b: dict):
         out["max"] = min(a["max"], b["max"])
         return out
     if domain == "rate":
-        ra = a["refill_amount"] * b["refill_period_milliseconds"]
-        rb = b["refill_amount"] * a["refill_period_milliseconds"]
-        if ra < rb:
-            refill = a
-        elif rb < ra:
-            refill = b
-        else:
-            refill = (a if a["refill_period_milliseconds"]
-                      >= b["refill_period_milliseconds"] else b)
+        # D-RT-4: comparability already pinned equal window boundaries, so
+        # the meet is componentwise on the shared period.
         return {
             "dimension": a["dimension"],
             "canonical_unit": a["canonical_unit"],
             "capacity": min(a["capacity"], b["capacity"]),
-            "refill_amount": refill["refill_amount"],
-            "refill_period_milliseconds": refill["refill_period_milliseconds"],
+            "refill_amount": min(a["refill_amount"], b["refill_amount"]),
+            "refill_period_milliseconds": a["refill_period_milliseconds"],
             "max_burst": min(a["max_burst"], b["max_burst"]),
             "epoch": a["epoch"],
             "clock": "authority_server",
@@ -860,21 +879,30 @@ def member(domain: str, point, atom: dict) -> bool:
 
 # -------------------------------------------------------- canonical form ----
 
+def _canonical_rule(r: dict) -> dict:
+    """Per-rule canonical form: set members sorted (UTF-16 code units)."""
+    atoms = {}
+    for d, atom in r["atoms"].items():
+        atom = dict(atom)
+        for key in ("ids", "allowed", "admitted"):
+            if key in atom:
+                atom[key] = _sorted_set(atom[key])
+        atoms[d] = atom
+    return {"effect": r["effect"], "atoms": atoms}
+
+
 def canonicalize(policy: dict) -> dict:
     """Canonical form: set members sorted (UTF-16 code units), rules sorted
-    by their JCS bytes, exact duplicates removed. Semantics-preserving:
-    rule order is irrelevant to decide/is_subset/intersect."""
-    rules = []
-    for r in policy["rules"]:
-        atoms = {}
-        for d, atom in r["atoms"].items():
-            atom = dict(atom)
-            for key in ("ids", "allowed", "admitted"):
-                if key in atom:
-                    atom[key] = _sorted_set(atom[key])
-            atoms[d] = atom
-        rules.append({"effect": r["effect"], "atoms": atoms})
-    keyed = sorted(((jcs(r), r) for r in rules), key=lambda kr: _u16key(kr[0]))
+    by their JCS UTF-8 BYTES (D-RT-5 / RT-08 — never UTF-16 string order,
+    which disagrees on astral vs U+E000..U+FFFF code points). Duplicate
+    INPUT rules were already rejected by validate_policy (D-RT-5); the
+    dedupe below only ever folds identical DERIVED rules an intersection
+    legitimately produces (e.g. one deny rule shared by both factors).
+    Semantics-preserving: rule order is irrelevant to
+    decide/is_subset/intersect."""
+    rules = [_canonical_rule(r) for r in policy["rules"]]
+    keyed = sorted(((jcs(r), r) for r in rules),
+                   key=lambda kr: kr[0].encode("utf-8"))
     out, seen = [], None
     for k, r in keyed:
         if k != seen:

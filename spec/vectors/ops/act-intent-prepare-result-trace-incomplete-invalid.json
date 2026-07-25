@@ -1,0 +1,211 @@
+{
+  "name": "ops/act-intent-prepare-result-trace-incomplete-invalid",
+  "description": "RT-04: the PreparationTrace must carry COMPLETE output-pointer provenance — dropping the stable_execution_key source row leaves a projected member without provenance, which the runner's mechanical completeness check rejects even though JSON Schema alone cannot.",
+  "input": {
+    "schema": "act-intent-prepare-result",
+    "value": {
+      "intent_id": "intent-31",
+      "revision": 1,
+      "state": "prepared",
+      "kind": "model_egress",
+      "execution_kind": "external_effect",
+      "requested_by_participant": "part-agent-9",
+      "subject_ref": "subject-egress-4",
+      "subject_revision": 2,
+      "subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:subject_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "preconditions": [],
+      "context_manifest_ref": "ctx-manifest-14",
+      "context_manifest_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:context_manifest_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "driver_audience": "kovee-effect-service",
+      "budget_reservation_set_ref": "reservation-set-61",
+      "mandate_ref": "mandate-23",
+      "mandate_revision": 1,
+      "mandate_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:mandate_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "preparation_trace": {
+        "trace_id": "trace-88",
+        "operation": "act_intent_prepare",
+        "actor_binding_ref": "binding-5",
+        "input_ref": "input-90",
+        "input_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:input",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "output_subject_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:subject_digest",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "field_sources": [
+          {
+            "output_pointer": "/intent_id",
+            "source_ref": "server-state-7",
+            "source_pointer": "/intent_id",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/revision",
+            "source_ref": "server-state-7",
+            "source_pointer": "/revision",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/state",
+            "source_ref": "server-state-7",
+            "source_pointer": "/state",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/kind",
+            "source_ref": "input-90",
+            "source_pointer": "/kind",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/execution_kind",
+            "source_ref": "input-90",
+            "source_pointer": "/execution_kind",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/requested_by_participant",
+            "source_ref": "input-90",
+            "source_pointer": "/requested_by_participant",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/subject_ref",
+            "source_ref": "input-90",
+            "source_pointer": "/subject_ref",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/subject_revision",
+            "source_ref": "input-90",
+            "source_pointer": "/subject_revision",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/subject_digest",
+            "source_ref": "input-90",
+            "source_pointer": "/subject_digest",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/preconditions",
+            "source_ref": "input-90",
+            "source_pointer": "/preconditions",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/context_manifest_ref",
+            "source_ref": "input-90",
+            "source_pointer": "/context_manifest_ref",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/context_manifest_digest",
+            "source_ref": "input-90",
+            "source_pointer": "/context_manifest_digest",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/driver_audience",
+            "source_ref": "input-90",
+            "source_pointer": "/driver_audience",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/budget_reservation_set_ref",
+            "source_ref": "input-90",
+            "source_pointer": "/budget_reservation_set_ref",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/mandate_ref",
+            "source_ref": "server-state-7",
+            "source_pointer": "/mandate_ref",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/mandate_revision",
+            "source_ref": "server-state-7",
+            "source_pointer": "/mandate_revision",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/mandate_digest",
+            "source_ref": "server-state-7",
+            "source_pointer": "/mandate_digest",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/authorization_dependency_set_ref",
+            "source_ref": "server-state-7",
+            "source_pointer": "/authorization_dependency_set_ref",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/dependency_digest",
+            "source_ref": "server-state-7",
+            "source_pointer": "/dependency_digest",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/required_seat_refs",
+            "source_ref": "server-state-7",
+            "source_pointer": "/required_seat_refs",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/expires_at",
+            "source_ref": "server-state-7",
+            "source_pointer": "/expires_at",
+            "transform_id": "canonical-projection-v1"
+          }
+        ],
+        "policy_algebra_version": "bpa-1",
+        "dependency_set_ref": "depset-81",
+        "created_at": "2026-07-25T12:00:00Z",
+        "digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:trace",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        }
+      },
+      "authorization_dependency_set_ref": "depset-81",
+      "dependency_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:dependency_digest",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "stable_execution_key": "exec-key-410",
+      "required_seat_refs": [
+        "seat-human-authority-1"
+      ],
+      "expires_at": "2026-07-26T12:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

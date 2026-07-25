@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "ContinuationHead",
   "states": [
     "current"
@@ -9,6 +10,23 @@
       "to": "current",
       "via": "continuation_write",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "predecessor explicitly absent exactly at Activity generation revision zero (§11.3)",
+        "owning Participant/Manifestation channel (R29); current Episode fence when episodic"
+      ],
+      "locks": [
+        "owning Participant/Manifestation",
+        "exact Activity generation",
+        "expected head/predecessor",
+        "current Episode fence when episodic"
+      ],
+      "fences": [
+        "appends one immutable Continuation and CASes the one generation head (UNIQUE(activity_stream_id, generation)) in the same transaction"
+      ],
+      "events": [
+        "continuation-head.current"
+      ],
+      "crash_result": "one concurrent writer wins; stale writer returns current opaque head and cannot append (§14.8 Continuation head row)",
       "notes": "Absent at Activity generation revision zero → current revision one: predecessor is explicitly absent exactly at revision zero (§11.3, §14.8); appends one immutable Continuation and CASes the one generation head (UNIQUE(activity_stream_id, generation)) in the same transaction."
     },
     {
@@ -16,6 +34,23 @@
       "to": "current",
       "via": "continuation_write",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "expected_head_revision CAS with the current Continuation/digest as predecessor (§11.3)",
+        "current Episode fence when episodic — a stale Episode/Manifestation cannot advance the head"
+      ],
+      "locks": [
+        "owning Participant/Manifestation",
+        "exact Activity generation",
+        "expected head/predecessor",
+        "current Episode fence when episodic"
+      ],
+      "fences": [
+        "appends one immutable Continuation and CASes the one generation head; no automatic merge or alternate current branch"
+      ],
+      "events": [
+        "continuation-head.current"
+      ],
+      "crash_result": "one concurrent writer wins; stale writer returns current opaque head and cannot append (§14.8 Continuation head row)",
       "notes": "Current revision N → N+1 under expected_head_revision CAS with the current Continuation/digest as predecessor; one concurrent writer wins — the stale writer returns the current opaque head and cannot append; no automatic merge or alternate current branch; current Episode fence when episodic; a stale Episode/Manifestation may retain bytes as local diagnostic evidence but cannot advance the head (§11.3, §14.8) — gap note G28."
     }
   ]

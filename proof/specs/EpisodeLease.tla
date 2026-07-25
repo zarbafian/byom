@@ -38,11 +38,14 @@ VARIABLES
   holder,     \* worker holding the current lease, or "none"
   wfence,     \* [Workers -> 0..MaxFence]: fence each worker last claimed
   attempts,   \* history: immutable EpisodeAttempts ever created
+  expiries,   \* history: authoritative lease expiries (D-RT-6)
+  yields,     \* history: voluntary lease yields (D-RT-6)
   completedFence, \* history: fence under which completion committed (0 = none)
   everSubmitted, everAdmitted, everBridged  \* pipeline history flags
 
 vars == <<act, wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-          completedFence, everSubmitted, everAdmitted, everBridged>>
+          expiries, yields, completedFence, everSubmitted, everAdmitted,
+          everBridged>>
 
 ActStates == {"absent", "ready", "active", "waiting", "reviewing", "held",
               "completed", "failed", "canceled"}
@@ -55,8 +58,9 @@ AllocStates == {"absent", "allocation_prepared", "allocation_reserved",
 EpStates == {"absent", "prepared", "eligible", "queued", "running",
              "yielded", "waiting", "completed", "interrupted", "failed",
              "canceled", "ambiguous"}
-LeaseStates == {"absent", "lease_leased", "lease_running", "lease_yielding",
-                "lease_completing", "lease_terminal"}
+LeaseStates == {"absent", "lease_leased", "lease_expired",
+                "lease_running", "lease_yielding", "lease_completing",
+                "lease_terminal"}
 
 TypeOK ==
   /\ act \in ActStates
@@ -69,6 +73,8 @@ TypeOK ==
   /\ holder \in Workers \cup {None}
   /\ wfence \in [Workers -> 0..MaxFence]
   /\ attempts \in 0..MaxFence
+  /\ expiries \in 0..MaxFence
+  /\ yields \in 0..MaxFence
   /\ completedFence \in 0..MaxFence
   /\ everSubmitted \in BOOLEAN
   /\ everAdmitted \in BOOLEAN
@@ -78,7 +84,7 @@ Init ==
   /\ act = "absent" /\ wi = "absent" /\ adm = "absent" /\ alloc = "absent"
   /\ ep = "absent" /\ lease = "absent"
   /\ fence = 0 /\ holder = None /\ wfence = [w \in Workers |-> 0]
-  /\ attempts = 0 /\ completedFence = 0
+  /\ attempts = 0 /\ expiries = 0 /\ yields = 0 /\ completedFence = 0
   /\ everSubmitted = FALSE /\ everAdmitted = FALSE /\ everBridged = FALSE
 
 \* The current lease holder with a current (non-stale) fence.
@@ -92,7 +98,7 @@ ActivityOpen ==
   /\ act = "absent"
   /\ act' = "ready"
   /\ UNCHANGED <<wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* activity_hold (R29): any nonterminal -> held; hold fences a running     *)
 (* Episode (episode row running -> interrupted, one transaction).          *)
@@ -101,7 +107,7 @@ Hold ==
   /\ act' = "held"
   /\ ep' = IF ep = "running" THEN "interrupted" ELSE ep
   /\ UNCHANGED <<wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* activity_close (R29, target_state-discriminated, G25): cancel fences a  *)
 (* running Episode (episode row running -> canceled); in-flight work       *)
@@ -111,21 +117,21 @@ Close ==
   /\ \E target \in {"completed", "failed", "canceled"} : act' = target
   /\ ep' = IF ep = "running" THEN "canceled" ELSE ep
   /\ UNCHANGED <<wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* delivery_submit cascade: the PledgeWorkstream enters review.            *)
 DeliverySubmit ==
   /\ act = "active"
   /\ act' = "reviewing"
   /\ UNCHANGED <<wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* pledge_resume cascade: a new Activity generation under unchanged terms. *)
 PledgeResume ==
   /\ act = "reviewing"
   /\ act' = "ready"
   /\ UNCHANGED <<wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* ------------------ WakeIntent / admission / allocation ---------------- *)
 
@@ -137,19 +143,19 @@ WakeSubmit ==
   /\ wi' = "submitted"
   /\ everSubmitted' = TRUE
   /\ UNCHANGED <<act, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everAdmitted, everBridged>>
+                 completedFence, everAdmitted, everBridged, expiries, yields>>
 
 WakeWithdraw ==
   /\ wi = "submitted"
   /\ wi' = "withdrawn"
   /\ UNCHANGED <<act, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 WakeExpire ==
   /\ wi = "submitted"
   /\ wi' = "expired"
   /\ UNCHANGED <<act, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* activation_admit (kernel, non-callable): deterministic evaluation of a  *)
 (* COMMITTED WakeIntent - the kernel may deny but cannot invent an         *)
@@ -160,7 +166,7 @@ ActivationAdmit ==
   /\ \E d \in {"admission_admitted", "admission_denied"} : adm' = d
   /\ everAdmitted' = (adm' = "admission_admitted")
   /\ UNCHANGED <<act, wi, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everBridged>>
+                 completedFence, everSubmitted, everBridged, expiries, yields>>
 
 (* activation_policy_revoke cascade (R13): queued admissions fence on      *)
 (* revoke without erasing executed Episodes.                               *)
@@ -168,13 +174,13 @@ AdmissionRevoke ==
   /\ adm = "admission_admitted"
   /\ adm' = "admission_revoked"
   /\ UNCHANGED <<act, wi, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 AdmissionExpire ==
   /\ adm = "admission_admitted"
   /\ adm' = "admission_expired"
   /\ UNCHANGED <<act, wi, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* resource_allocate (kernel, non-callable): can only reserve an ADMITTED  *)
 (* WakeIntent (section 11.1); prepared -> reserved -> bridged, with the    *)
@@ -184,20 +190,20 @@ AllocPrepare ==
   /\ adm = "admission_admitted"
   /\ alloc' = "allocation_prepared"
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 AllocReserve ==
   /\ alloc = "allocation_prepared"
   /\ alloc' = "allocation_reserved"
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 AllocBridge ==
   /\ alloc = "allocation_reserved"
   /\ alloc' = "allocation_bridged"
   /\ everBridged' = TRUE
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted>>
+                 completedFence, everSubmitted, everAdmitted, expiries, yields>>
 
 (* An unknown Kovee bridge stays uncertain; releases/revocations settle    *)
 (* conservatively (section 14.8).                                          *)
@@ -208,7 +214,7 @@ AllocSettle ==
                     "allocation_revoked"} :
        alloc' = target
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* ------------------------------ Episode -------------------------------- *)
 
@@ -220,7 +226,7 @@ EpisodeCreate ==
   /\ ep' = "prepared"
   /\ act' = "active"
   /\ UNCHANGED <<wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* episode_request: deterministic eligibility - no raw message or Kovee    *)
 (* attention candidate starts an Episode (section 11.2).                   *)
@@ -228,7 +234,7 @@ EpisodeEligible ==
   /\ ep = "prepared"
   /\ ep' = "eligible"
   /\ UNCHANGED <<act, wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* resource_allocate: queue ONLY after both Byom and Kovee reservations    *)
 (* (the bridged allocation); an uncertain bridge stays unqueued.           *)
@@ -237,7 +243,7 @@ Queue ==
   /\ alloc = "allocation_bridged"
   /\ ep' = "queued"
   /\ UNCHANGED <<act, wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* episode_claim (R30): compare-and-swap on the ONE EpisodeLeaseHead -     *)
 (* increments the Byom fence and creates an immutable EpisodeAttempt.      *)
@@ -251,13 +257,28 @@ Claim(w) ==
   /\ wfence' = [wfence EXCEPT ![w] = fence + 1]
   /\ attempts' = attempts + 1
   /\ UNCHANGED <<act, wi, adm, alloc, ep, completedFence, everSubmitted,
-                 everAdmitted, everBridged>>
+                 everAdmitted, everBridged, expiries, yields>>
 
-(* episode_claim: expired-head re-claim (lease_leased -> lease_leased)     *)
-(* under a FRESH fence and a new immutable attempt; expiry never deletes   *)
-(* the head or reuses a fence - the old worker is stale (section 11.2).    *)
-ReClaim(w) ==
+(* server_time (D-RT-6, RT-10): authoritative expiry - the server clock    *)
+(* passes the lease deadline and moves the head to lease_expired.  This    *)
+(* is the ONLY thing that makes a leased head re-claimable: worker crash   *)
+(* or silence is stuttering and enables nothing.  Expiry never deletes     *)
+(* the head or reuses a fence (section 11.2).                              *)
+LeaseExpire ==
   /\ lease = "lease_leased"
+  /\ expiries < MaxFence
+  /\ expiries' = expiries + 1
+  /\ lease' = "lease_expired"
+  /\ UNCHANGED <<act, wi, adm, alloc, ep, fence, holder, wfence, attempts,
+                 completedFence, everSubmitted, everAdmitted, everBridged,
+                 yields>>
+
+(* episode_claim: expired-head re-claim (lease_expired -> lease_leased)    *)
+(* under a FRESH fence and a new immutable attempt - enabled ONLY from     *)
+(* the authoritative lease_expired state (D-RT-6): a live leased head is   *)
+(* not stealable.  The old worker is stale (section 11.2).                 *)
+ReClaim(w) ==
+  /\ lease = "lease_expired"
   /\ fence < MaxFence
   /\ lease' = "lease_leased"
   /\ holder' = w
@@ -265,7 +286,7 @@ ReClaim(w) ==
   /\ wfence' = [wfence EXCEPT ![w] = fence + 1]
   /\ attempts' = attempts + 1
   /\ UNCHANGED <<act, wi, adm, alloc, ep, completedFence, everSubmitted,
-                 everAdmitted, everBridged>>
+                 everAdmitted, everBridged, expiries, yields>>
 
 (* episode_claim: re-claim after yield (lease_yielding -> lease_leased);   *)
 (* prior attempts remain historical.                                       *)
@@ -278,7 +299,7 @@ YieldReClaim(w) ==
   /\ wfence' = [wfence EXCEPT ![w] = fence + 1]
   /\ attempts' = attempts + 1
   /\ UNCHANGED <<act, wi, adm, alloc, ep, completedFence, everSubmitted,
-                 everAdmitted, everBridged>>
+                 everAdmitted, everBridged, expiries, yields>>
 
 (* episode_start (R30): only the current holder under the current fence.   *)
 Start(w) ==
@@ -288,7 +309,7 @@ Start(w) ==
   /\ ep' = "running"
   /\ lease' = "lease_running"
   /\ UNCHANGED <<act, wi, adm, alloc, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* episode_yield (R30): yield to yielded, or to waiting on an admitted     *)
 (* event/dependency; the stream returns to waiting (activity cascade).     *)
@@ -296,11 +317,14 @@ Yield(w) ==
   /\ ep = "running"
   /\ lease = "lease_running"
   /\ CurrentHolder(w)
+  /\ yields < MaxFence
+  /\ yields' = yields + 1
   /\ \E target \in {"yielded", "waiting"} : ep' = target
   /\ lease' = "lease_yielding"
   /\ act' = IF act = "active" THEN "waiting" ELSE act
   /\ UNCHANGED <<wi, adm, alloc, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged,
+                 expiries>>
 
 (* episode_complete (R30): completion is evidence only - Delivery remains  *)
 (* separate and pledgor-authored; conservative settlement; the stream      *)
@@ -314,14 +338,14 @@ Complete(w) ==
   /\ act' = IF act = "active" THEN "ready" ELSE act
   /\ completedFence' = fence
   /\ UNCHANGED <<wi, adm, alloc, fence, holder, wfence, attempts,
-                 everSubmitted, everAdmitted, everBridged>>
+                 everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* episode_complete: the completing head settles terminal.                 *)
 CompleteSettle ==
   /\ lease = "lease_completing"
   /\ lease' = "lease_terminal"
   /\ UNCHANGED <<act, wi, adm, alloc, ep, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* episode_fail (R30): only the current holder under the current fence.    *)
 Fail(w) ==
@@ -331,7 +355,7 @@ Fail(w) ==
   /\ ep' = "failed"
   /\ lease' = "lease_terminal"
   /\ UNCHANGED <<act, wi, adm, alloc, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 (* server_time: lease/deadline expiry with unknown external use is         *)
 (* ambiguous - never blindly repeated (section 14.8).                      *)
@@ -340,7 +364,7 @@ AmbiguousTimeout ==
   /\ lease = "lease_running"
   /\ ep' = "ambiguous"
   /\ UNCHANGED <<act, wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
 
 Next ==
   \/ ActivityOpen \/ Hold \/ Close \/ DeliverySubmit \/ PledgeResume
@@ -348,7 +372,7 @@ Next ==
   \/ ActivationAdmit \/ AdmissionRevoke \/ AdmissionExpire
   \/ AllocPrepare \/ AllocReserve \/ AllocBridge \/ AllocSettle
   \/ EpisodeCreate \/ EpisodeEligible \/ Queue
-  \/ CompleteSettle \/ AmbiguousTimeout
+  \/ CompleteSettle \/ AmbiguousTimeout \/ LeaseExpire
   \/ \E w \in Workers :
        \/ Claim(w) \/ ReClaim(w) \/ YieldReClaim(w)
        \/ Start(w) \/ Yield(w) \/ Complete(w) \/ Fail(w)
@@ -397,6 +421,16 @@ AmbiguousNeverCompleted == ep = "ambiguous" => completedFence = 0
 (* The Episode runs only under a running lease head.                       *)
 RunningHasRunningLease == ep = "running" => lease = "lease_running"
 
+(* D-RT-6 (RT-10): crash alone never enables reclaim.  Every attempt       *)
+(* beyond the first consumed either an authoritative-time expiry           *)
+(* (LeaseExpire) or a voluntary yield - crash/stuttering mints nothing.    *)
+ReclaimNeedsExpiryOrYield == attempts <= 1 + expiries + yields
+
+(* An expired head still exists: expiry never deletes the head or its      *)
+(* fence history (section 11.2).                                           *)
+ExpiryKeepsHead ==
+  lease = "lease_expired" => holder # None /\ fence > 0
+
 =============================================================================
 \* Descriptor-model parity annotations (proof/check-descriptors.py).
 \* @parity module: EpisodeLease
@@ -413,6 +447,7 @@ RunningHasRunningLease == ep = "running" => lease = "lease_running"
 \* @parity state: canceled
 \* @parity state: ambiguous
 \* @parity state: lease_leased
+\* @parity state: lease_expired
 \* @parity state: lease_running
 \* @parity state: lease_yielding
 \* @parity state: lease_completing
@@ -429,7 +464,8 @@ RunningHasRunningLease == ep = "running" => lease = "lease_running"
 \* @parity transition: running -> canceled via activity_close
 \* @parity transition: running -> ambiguous via server_time
 \* @parity transition: absent -> lease_leased via episode_claim
-\* @parity transition: lease_leased -> lease_leased via episode_claim
+\* @parity transition: lease_leased -> lease_expired via server_time
+\* @parity transition: lease_expired -> lease_leased via episode_claim
 \* @parity transition: lease_leased -> lease_running via episode_start
 \* @parity transition: lease_running -> lease_yielding via episode_yield
 \* @parity transition: lease_yielding -> lease_leased via episode_claim

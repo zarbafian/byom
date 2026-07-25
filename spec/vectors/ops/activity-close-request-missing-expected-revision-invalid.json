@@ -1,0 +1,23 @@
+{
+  "name": "ops/activity-close-request-missing-expected-revision-invalid",
+  "description": "RT-01: activity_close is update-classed (current-head CAS) — its closed update meta REQUIRES meta.expected_revision, so omitting the last observed revision fails structurally, never as an optional runtime nicety (§14.2 'Updates require the last observed revision').",
+  "input": {
+    "schema": "activity-close-request",
+    "value": {
+      "version": "0.2",
+      "op": "activity_close",
+      "meta": {
+        "request_id": "request-id-1",
+        "idempotency_key": "idempotency-key-1",
+        "expected_endpoint_incarnation": "expected-endpoint-incarnation-1",
+        "expected_recovery_epoch": 1
+      },
+      "activity_stream_ref": "activity-stream-ref-1",
+      "generation": 1,
+      "target_state": "completed"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

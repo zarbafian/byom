@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "Manifestation",
   "states": [
     "proposed",
@@ -12,6 +13,18 @@
       "to": "proposed",
       "via": "manifestation_propose",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "owning Participant only (R13)",
+        "a package, model, adapter, controller, or material security-profile change creates a new revision (§7.2)"
+      ],
+      "locks": [
+        "owning Participant proposal"
+      ],
+      "fences": [],
+      "events": [
+        "manifestation.proposed"
+      ],
+      "crash_result": "active work pauses or uses recorded selector (§14.8 Manifestation row)",
       "notes": "Owning-Participant proposal; a package, model, adapter, controller, or material security-profile change creates a new revision (§7.2)."
     },
     {
@@ -19,6 +32,21 @@
       "to": "active",
       "via": "manifestation_admit",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "exact admission/compatibility decision"
+      ],
+      "locks": [
+        "owning Participant proposal",
+        "exact admission/compatibility decision"
+      ],
+      "fences": [
+        "the new digest never inherits authority silently"
+      ],
+      "events": [
+        "manifestation.active"
+      ],
+      "crash_result": "active work pauses or uses recorded selector (§14.8 Manifestation row)",
       "notes": "Exact admission/compatibility decision; the new digest never inherits authority silently (§14.8)."
     },
     {
@@ -26,6 +54,20 @@
       "to": "disabled",
       "via": "manifestation_disable",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant only (R13)"
+      ],
+      "locks": [
+        "owning Participant proposal"
+      ],
+      "fences": [
+        "active work pauses or follows the recorded manifestation selector"
+      ],
+      "events": [
+        "manifestation.disabled"
+      ],
+      "crash_result": "active work pauses or uses recorded selector (§14.8 Manifestation row)",
       "notes": "Active work pauses or follows the recorded manifestation selector (§7.2, §14.8)."
     },
     {
@@ -33,6 +75,21 @@
       "to": "superseded",
       "via": "manifestation_admit",
       "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "admitting a successor revision supersedes the active one; active Pledges and Mandates follow their recorded selector (§7.2)"
+      ],
+      "locks": [
+        "owning Participant proposal",
+        "exact admission/compatibility decision"
+      ],
+      "fences": [
+        "successor admission supersedes the active revision"
+      ],
+      "events": [
+        "manifestation.superseded"
+      ],
+      "crash_result": "active work pauses or uses recorded selector (§14.8 Manifestation row)",
       "notes": "§14.8 'replace': admitting a successor revision supersedes the active one; active Pledges and Mandates follow their recorded selector (§7.2)."
     }
   ]

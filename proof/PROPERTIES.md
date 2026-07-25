@@ -85,15 +85,19 @@ distinct states, exhaustive.
 
 The §9.3–9.5/§14.8 lifecycle exactly as committed in `pledge.json`,
 including `disputed`, with the folded proposal stage (G20) and the
-one-successor amendment CAS (G22). Finalization determinism ("authors no
-missing seat", R9) is a guard over an explicit seat-receipt set, not a
-promise.
+one-successor amendment CAS re-cut per D-RT-3 (RT-03): `pledge_amend`
+only creates a SEPARATE proposed successor (`AmendPropose`, absent →
+proposed — the successor instance of this same machine); the predecessor
+is superseded exclusively by `SupersedeOnFinalize` — `pledge_finalize`
+accepting the successor's complete fresh seat set under the successor
+CAS. Finalization determinism ("authors no missing seat", R9) is a guard
+over an explicit seat-receipt set, not a promise.
 
 | Model invariant | Design | Descriptor rows |
 |---|---|---|
 | `FinalizedHasAllSeats` | §9.3/§14.6 every required slot separately attributable; R9 authors no seat | `pledge_position`, `pledge_finalize` |
-| `AtMostOneSuccessor` | §14.8 one current successor only (G22) | `pledge_amend` |
-| `SupersededIffSuccessor` | §14.8 acceptance atomically supersedes | `pledge_amend` |
+| `AtMostOneSuccessor` | §14.8 one current successor only (G22 as amended by D-RT-3) | `pledge_finalize` superseded rows |
+| `SupersededIffSuccessor` | §9.5 acceptance (of the successor's fresh seat set) atomically supersedes — never `pledge_amend` itself | `pledge_finalize` superseded rows |
 | `TerminalIsFinal` | §14.8 closed-machine rule: terminal states are final | all terminal fan-out rows |
 | `ResumesBounded` | §14.8 each resume is a new Activity generation (finite check) | `pledge_resume` |
 
@@ -128,16 +132,23 @@ nothing completes except under the current lease fence (§11.2).
 | `CompletionUnderCurrentFence` | §11.2/§14.8 stale-claim rejection: a superseded worker's completion never lands | `episode_complete` |
 | `AmbiguousNeverCompleted` | §14.8 unknown external use is ambiguous, never reported complete | `server_time` row |
 | `RunningHasRunningLease` | §11.2 the Episode runs only under a running head | `episode_start` |
+| `ReclaimNeedsExpiryOrYield` | D-RT-6 (RT-10): crash alone never enables reclaim — every attempt beyond the first consumed an authoritative-time expiry or a voluntary yield | `server_time` expiry row, `episode_claim` re-claim rows |
+| `ExpiryKeepsHead` | §11.2 lease expiry never deletes the head or reuses a fence | `server_time` expiry row |
 
 **Projection**: one ActivityStream, one WakeIntent revision, one admission,
-one allocation, one Episode, one lease head, `Workers` competing for it;
-worker crash/silence needs no explicit action because an expired head is
-re-claimable at any time (`ReClaim` — the crash story for workers); daemon
-state durable, byomd crash = stuttering. **Refinement boundary**: the three
+one allocation, one Episode, one lease head, `Workers` competing for it.
+D-RT-6 (RT-10): worker crash/silence is STUTTERING and enables nothing —
+a leased head becomes re-claimable only through the explicit `LeaseExpire`
+transition, guarded by authoritative server time past the lease deadline
+(the `server_time`-driven `lease_leased → lease_expired` row), and
+`ReClaim` is enabled only from `lease_expired`; a live leased head is not
+stealable (the negative walk vector pins the absent row). Daemon state
+durable, byomd crash = stuttering. **Refinement boundary**: the three
 descriptors above (exact, machine-checked); Kovee's placement/attention side
 is out of scope (only its committed outcomes — bridge, deny, unknown —
-appear); no code yet. **Fairness**: none; safety only. **Coverage**:
-`Workers = {w1, w2}`, `MaxFence = 3`; 33,488 distinct states, exhaustive.
+appear); no code yet. **Fairness**: none; safety only (expiry is modeled
+as always possible, never required). **Coverage**: `Workers = {w1, w2}`,
+`MaxFence = 3`; 41,552 distinct states, exhaustive.
 
 ### specs/ActIntentPermit.tla — one-shot execution permit
 
@@ -379,11 +390,16 @@ terminal, and the witness-unknown query/abandon-after-proof recovery paths.
 
 ## Remaining
 
-1. **Negative checks.** Akson's `negative-checks.sh` (mutations that must
-   produce counterexamples, probes that must be refuted) has no byom
-   counterpart yet; until it lands, harness non-vacuity rests on the
-   documented TLC state counts and the parity mutation behavior. ADR-0003
-   requires it before B0.1 moves to `accepted`.
+1. **Negative checks — LANDED (RT-11).** `proof/negative-checks.py` (in
+   CI's `model-checking` job and `run-checks.sh`) mutates descriptors,
+   models, annotations, and schemas and requires every mutant to be
+   caught: dropped/invented/renamed descriptor rows and states, lost v2
+   structured columns, a de-versioned format tag, dropped parity
+   annotations, model-only literal renames, a widened update meta, and
+   two TLC guard-weakening mutations that must yield counterexamples
+   (Pledge finalize without the seat set; EpisodeLease reclaim of a live
+   head — D-RT-6). The RT-16 MCP widening mutations run inside
+   `conformance/run.py` on every invocation.
 2. **Induction.** All seven models are TLC-bounded (exhaustive at their
    configured constants). BudgetConservation (arbitrary `Cap`) and
    MandateChain (arbitrary chain depth) are the flagged Apalache candidates.

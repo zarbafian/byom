@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "GreenfieldEnablement",
   "owner": "kovee (C2)",
   "states": [
@@ -13,6 +14,20 @@
       "to": "bindings_created",
       "via": "governance_enable",
       "authority": "kovee (C2): human realm-owner principal only, per the frozen governance_enable KCP authority row (family contract §2.A) — never a service identity, session, assistant, or connector",
+      "guards": [
+        "human realm-owner principal only, per the frozen governance_enable KCP authority row — never a service identity, session, assistant, or connector",
+        "pre-existing Society required (native society_prepare/society_bootstrap; Kovee is never the genesis governance actor)",
+        "no overlapping scope selector holds an active owner binding or a pending enablement past step 1 — rejection is the absence of a row (§16.6 item 1)"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch"
+      ],
+      "fences": [],
+      "events": [
+        "greenfield-enablement.bindings_created"
+      ],
+      "crash_result": "durable saga state: a restarted or restored Kovee re-enters at the recorded state; retry returns the identical pending bindings, never a second row (greenfield-saga §5)",
       "notes": "Saga step 1 (D10, amendment A2): durably create KoveeRealmByomBinding + KoveeSocietyMapping, not yet authoritative; the owner binding stays none. Requires the pre-existing Society (native society_prepare/society_bootstrap; Kovee is never the genesis governance actor). An overlapping active owner selector rejects the enable — overlap rejection is the absence of any row here (§14.8 closed-machine rule)."
     },
     {
@@ -20,6 +35,18 @@
       "to": "bindings_created",
       "via": "governance_enable",
       "authority": "kovee (C2): same frozen authority row",
+      "guards": [
+        "retry before activation is idempotent over (realm, exact scope digest, binding epoch) — returns the identical pending bindings (GreenfieldEnablement.tla RetryIdempotent)"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch"
+      ],
+      "fences": [],
+      "events": [
+        "greenfield-enablement.bindings_created"
+      ],
+      "crash_result": "durable saga state: retry returns the identical pending bindings, never a second creation (greenfield-saga §5)",
       "notes": "Retry before activation returns the identical pending bindings — idempotent over (realm, exact scope digest, binding epoch); never a second creation (GreenfieldEnablement.tla RetryIdempotent)."
     },
     {
@@ -27,6 +54,22 @@
       "to": "active",
       "via": "owner_cas_none_to_byom",
       "authority": "kovee (C2): the same governance_enable invocation's step 2 under the frozen authority row; a CAS proves concurrency, not authority",
+      "guards": [
+        "CAS KoveeGovernanceOwnerBinding none→byom at the expected revision under the expected binding epoch — a changed revision, epoch, or subject digest conflicts and commits nothing; a CAS proves concurrency, not authority",
+        "re-checks that no overlapping owner selector is active (NoOverlappingActiveOwners)"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch",
+        "expected KoveeGovernanceOwnerBinding revision"
+      ],
+      "fences": [
+        "binding and mapping activated atomically with the owner CAS"
+      ],
+      "events": [
+        "greenfield-enablement.active"
+      ],
+      "crash_result": "crash between the CAS send and its durable record leaves bindings_created with unknown CAS outcome, resolved query-first — only a verified answer drives retry or rollback; guessing is not a transition (greenfield-saga §5)",
       "notes": "Saga step 2: CAS KoveeGovernanceOwnerBinding none→byom at the expected revision, atomic with binding/mapping activation; re-checks that no overlapping owner selector is active. Exact-CAS: a changed revision or epoch conflicts and commits nothing."
     },
     {
@@ -34,6 +77,18 @@
       "to": "active",
       "via": "governance_enable",
       "authority": "kovee (C2): same frozen authority row",
+      "guards": [
+        "retry after activation returns the stored identical binding — never a second creation, CAS, or epoch advance (RetryIdempotent)"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch"
+      ],
+      "fences": [],
+      "events": [
+        "greenfield-enablement.active"
+      ],
+      "crash_result": "the owner CAS outcome is never silently redone or undone by a restore; an active binding stays active at its recorded epoch (greenfield-saga §5)",
       "notes": "Retry after activation returns the identical binding (stored result); never a second creation, CAS, or epoch advance."
     },
     {
@@ -41,6 +96,21 @@
       "to": "rolled_back",
       "via": "governance_enable_rollback",
       "authority": "kovee (C2): the enabling human realm-owner principal, or the saga's own definite pre-CAS failure handling",
+      "guards": [
+        "strictly before activation: the enabling human realm-owner principal, or the saga's own definite pre-CAS failure handling",
+        "voids the pending bindings; the owner binding stays none"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch"
+      ],
+      "fences": [
+        "the binding epoch is spent — the rolled-back epoch can never activate (NoActivationAfterRollback)"
+      ],
+      "events": [
+        "greenfield-enablement.rolled_back"
+      ],
+      "crash_result": "a rolled-back epoch stays spent across restore; it can never activate (greenfield-saga §5, ActiveEpochNeverRolledBack)",
       "notes": "Rollback strictly before activation: voids the pending bindings, the owner binding stays none, and the binding epoch is spent — the rolled-back epoch can never activate (GreenfieldEnablement.tla NoActivationAfterRollback). After the CAS there is no rollback, only governance_disable."
     },
     {
@@ -48,6 +118,18 @@
       "to": "bindings_created",
       "via": "governance_enable",
       "authority": "kovee (C2): same frozen authority row",
+      "guards": [
+        "fresh enablement after rollback opens a NEW binding epoch (generation increments); never resurrects or reuses the rolled-back epoch's bindings"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch"
+      ],
+      "fences": [],
+      "events": [
+        "greenfield-enablement.bindings_created"
+      ],
+      "crash_result": "durable saga state: the rolled-back epoch stays spent; the fresh epoch re-enters at its recorded state (greenfield-saga §5)",
       "notes": "A fresh enablement after rollback opens a NEW binding epoch (generation increments); it never resurrects or reuses the rolled-back epoch's bindings."
     },
     {
@@ -55,6 +137,20 @@
       "to": "disabled",
       "via": "governance_disable",
       "authority": "kovee (C2): human realm-owner principal, always step-up (frozen authority row)",
+      "guards": [
+        "human realm-owner principal, always step-up (frozen authority row)"
+      ],
+      "locks": [
+        "frozen governance_enable KCP authority row (family contract §2.A)",
+        "exact scope selector/digest and binding epoch"
+      ],
+      "fences": [
+        "owner binding frozen (status active→frozen, owner arm retained for audit); derived channels and permits invalidate"
+      ],
+      "events": [
+        "greenfield-enablement.disabled"
+      ],
+      "crash_result": "the frozen owner row survives restore; re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine (greenfield-saga §5)",
       "notes": "Freezes the owner binding (status active→frozen, owner arm retained for audit); derived channels and permits invalidate. Terminal here: re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine. Distinct from §25's GovernanceCutover (sage→none→byom), a different machine (amendment A2)."
     }
   ]

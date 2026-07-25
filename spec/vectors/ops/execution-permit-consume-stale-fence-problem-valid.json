@@ -1,0 +1,20 @@
+{
+  "name": "ops/execution-permit-consume-stale-fence-problem-valid",
+  "description": "RT-05 stale-fence negative: a consume carrying a superseded byom_fence_epoch (or a stale meta.expected_revision intent pin) fails stale_revision — Byom atomically rechecks both current fences and the pinned intent revision before inserting MandateUse (§13.1 steps 4-5; R34 dual fences, gap note G37).",
+  "input": {
+    "schema": "bpp-failure",
+    "value": {
+      "outcome": "problem",
+      "problem": {
+        "kind": "stale_revision",
+        "type": "https://byom.dev/problems/stale_revision",
+        "status": 409,
+        "title": "consume fence or intent revision is no longer current",
+        "detail": "byom_fence_epoch 4 was superseded by a lease re-claim (current epoch 5) and the intent head moved past meta.expected_revision; the one-shot decision is not consumable under stale fences — re-read the current intent head and fences before retrying"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

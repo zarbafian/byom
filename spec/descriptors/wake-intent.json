@@ -1,4 +1,5 @@
 {
+  "format": "byom-descriptor/v2",
   "machine": "WakeIntent/ActivationAdmission/ResourceAllocation",
   "states": [
     "submitted",
@@ -21,38 +22,115 @@
       "to": "submitted",
       "via": "wake_intent_submit",
       "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "authored only by the Participant channel against an exact admitted event or bounded schedule; a policy-derived intent atomically consumes an activation-policy ordinal and transitively preserves controller provenance (§11.1)",
+        "UNIQUE(participant_ref, stable_wake_key)"
+      ],
+      "locks": [
+        "direct Participant request or exact ActivationPolicy use ordinal"
+      ],
+      "fences": [
+        "immutable cause and provenance"
+      ],
+      "events": [
+        "wake-intent.submitted"
+      ],
+      "crash_result": "no event/cron/host can author it (§14.8 WakeIntent row)",
       "notes": "Authored only by the Participant channel against an exact admitted event or bounded schedule; a policy-derived intent atomically consumes an activation-policy ordinal and transitively preserves controller provenance; UNIQUE(participant_ref, stable_wake_key); no event, cron, host, attention ranking, or model score can author it (§11.1, §14.8)."
     },
     {
       "from": "submitted",
       "to": "withdrawn",
       "via": "wake_intent_withdraw",
-      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "owning Participant/Manifestation channel (R29)"
+      ],
+      "locks": [
+        "direct Participant request"
+      ],
+      "fences": [],
+      "events": [
+        "wake-intent.withdrawn"
+      ],
+      "crash_result": "no event/cron/host can author it (§14.8 WakeIntent row)"
     },
     {
       "from": "submitted",
       "to": "expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [],
+      "fences": [],
+      "events": [
+        "wake-intent.expired"
+      ],
+      "crash_result": "no event/cron/host can author it (§14.8 WakeIntent row)"
     },
     {
       "from": "absent",
       "to": "admission_admitted",
       "via": "activation_admit",
       "authority": "kernel: deterministic evaluation of a committed WakeIntent over current dependencies and safety policy (§11.1 named internal transition activation_admit, not a callable BPP operation)",
+      "guards": [
+        "deterministic kernel over committed WakeIntent and complete closure; one decision per WakeIntent revision (UNIQUE(wake_intent_ref, wake_intent_revision))",
+        "the kernel may deny but cannot invent an interest (§11.1)"
+      ],
+      "locks": [
+        "committed WakeIntent and complete closure"
+      ],
+      "fences": [
+        "no budget/placement yet"
+      ],
+      "events": [
+        "wake-intent.admission_admitted"
+      ],
+      "crash_result": "retry returns same admission (§14.8 ActivationAdmission row)",
       "notes": "One decision per WakeIntent revision (UNIQUE(wake_intent_ref, wake_intent_revision)); the kernel may deny but cannot invent an interest; no budget or placement yet; retry returns the same admission (§11.1, §14.8). Folded machine — gap note G29."
     },
     {
       "from": "absent",
       "to": "admission_denied",
       "via": "activation_admit",
-      "authority": "kernel: deterministic evaluation of a committed WakeIntent over current dependencies and safety policy (§11.1 named internal transition activation_admit, not a callable BPP operation)"
+      "authority": "kernel: deterministic evaluation of a committed WakeIntent over current dependencies and safety policy (§11.1 named internal transition activation_admit, not a callable BPP operation)",
+      "guards": [
+        "deterministic kernel over committed WakeIntent and complete closure; one decision per WakeIntent revision (UNIQUE(wake_intent_ref, wake_intent_revision))",
+        "the kernel may deny but cannot invent an interest (§11.1)"
+      ],
+      "locks": [
+        "committed WakeIntent and complete closure"
+      ],
+      "fences": [
+        "no budget/placement yet"
+      ],
+      "events": [
+        "wake-intent.admission_denied"
+      ],
+      "crash_result": "retry returns same admission (§14.8 ActivationAdmission row)"
     },
     {
       "from": "admission_admitted",
       "to": "admission_revoked",
       "via": "activation_policy_revoke",
       "authority": "participant (R13): owning Participant only",
+      "guards": [
+        "update CAS: meta.expected_revision equals the current head revision",
+        "cascade of the Participant activation policy machine's owning revoke (§11.1)"
+      ],
+      "locks": [
+        "committed WakeIntent and complete closure"
+      ],
+      "fences": [
+        "queued admissions fence on revoke; queued work fenced without erasing executed Episodes"
+      ],
+      "events": [
+        "wake-intent.admission_revoked"
+      ],
+      "crash_result": "retry returns same admission (§14.8 ActivationAdmission row)",
       "notes": "Cascade of the Participant activation policy machine's owning revoke: queued admissions fence on revoke; revoking activation policy blocks new WakeIntents and fences queued work without erasing executed Episodes (§11.1, §14.8).",
       "cascade": true
     },
@@ -60,13 +138,35 @@
       "from": "admission_admitted",
       "to": "admission_expired",
       "via": "server_time",
-      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "guards": [
+        "authoritative server time at or past the record's expires_at (§10.5)"
+      ],
+      "locks": [],
+      "fences": [],
+      "events": [
+        "wake-intent.admission_expired"
+      ],
+      "crash_result": "retry returns same admission (§14.8 ActivationAdmission row)"
     },
     {
       "from": "absent",
       "to": "allocation_prepared",
       "via": "resource_allocate",
       "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "can only reserve an admitted WakeIntent; UNIQUE(activation_admission_ref, stable_allocation_key) (§11.1)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [],
+      "events": [
+        "wake-intent.allocation_prepared"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)",
       "notes": "Can only reserve an admitted WakeIntent; UNIQUE(activation_admission_ref, stable_allocation_key) (§11.1)."
     },
     {
@@ -74,6 +174,21 @@
       "to": "allocation_reserved",
       "via": "resource_allocate",
       "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "exact Byom reservations under Mandate and rate counters (§14.8)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "exact reservations"
+      ],
+      "events": [
+        "wake-intent.allocation_reserved"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)",
       "notes": "Exact Byom reservations under Mandate and rate counters (§14.8)."
     },
     {
@@ -81,6 +196,21 @@
       "to": "allocation_bridged",
       "via": "resource_allocate",
       "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "Kovee budget saga bridge refs persisted; the queue remains blocked until bridged (§14.8)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "bridge refs; queue remains blocked until bridged"
+      ],
+      "events": [
+        "wake-intent.allocation_bridged"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)",
       "notes": "Kovee budget saga bridge refs; the queue remains blocked until bridged (§14.8)."
     },
     {
@@ -88,55 +218,184 @@
       "to": "allocation_released",
       "via": "resource_allocate",
       "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "reservations and bridge refs released"
+      ],
+      "events": [
+        "wake-intent.allocation_released"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)",
       "notes": "§14.8: any nonterminal → released, uncertain, or revoked via the internal transition and Kovee budget saga; an unknown bridge remains uncertain."
     },
     {
       "from": "allocation_prepared",
       "to": "allocation_uncertain",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [],
+      "events": [
+        "wake-intent.allocation_uncertain"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_prepared",
       "to": "allocation_revoked",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "reservations and bridge refs revoked"
+      ],
+      "events": [
+        "wake-intent.allocation_revoked"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_reserved",
       "to": "allocation_released",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "reservations and bridge refs released"
+      ],
+      "events": [
+        "wake-intent.allocation_released"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_reserved",
       "to": "allocation_uncertain",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [],
+      "events": [
+        "wake-intent.allocation_uncertain"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_reserved",
       "to": "allocation_revoked",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "reservations and bridge refs revoked"
+      ],
+      "events": [
+        "wake-intent.allocation_revoked"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_bridged",
       "to": "allocation_released",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "reservations and bridge refs released"
+      ],
+      "events": [
+        "wake-intent.allocation_released"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_bridged",
       "to": "allocation_uncertain",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [],
+      "events": [
+        "wake-intent.allocation_uncertain"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     },
     {
       "from": "allocation_bridged",
       "to": "allocation_revoked",
       "via": "resource_allocate",
-      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "guards": [
+        "internal transition and Kovee budget saga outcome (§14.8: any nonterminal → released, uncertain, or revoked)"
+      ],
+      "locks": [
+        "admitted activation",
+        "Mandate/rate counters",
+        "Byom and Kovee budgets"
+      ],
+      "fences": [
+        "reservations and bridge refs revoked"
+      ],
+      "events": [
+        "wake-intent.allocation_revoked"
+      ],
+      "crash_result": "unknown bridge remains uncertain (§14.8 ResourceAllocation row)"
     }
   ]
 }

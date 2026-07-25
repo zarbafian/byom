@@ -1,0 +1,48 @@
+{
+  "name": "policy/duplicate-rules-reject",
+  "description": "D-RT-5 (RT-08): duplicate rules REJECT with malformed at the second occurrence in input order — canonical form never silently deduplicates a caller-supplied policy (rules 0 and 2 are identical)",
+  "input": {
+    "policy_op": "canonical",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 10
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "diagnose"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 10
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/2"
+      }
+    }
+  }
+}

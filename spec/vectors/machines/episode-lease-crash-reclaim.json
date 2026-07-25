@@ -1,6 +1,6 @@
 {
   "name": "machines/episode-lease-crash-reclaim",
-  "description": "EpisodeLeaseHead walk (folded lease states, G29): claim, worker crash, expired-head re-claim under a fresh fence (a real transition, not a replay), yield/re-claim, completion settling terminal; a terminal head cannot restart (section 11.2).",
+  "description": "EpisodeLeaseHead walk under D-RT-6 (RT-10): claim, worker crash — which alone enables NOTHING (the immediate re-claim is a rejected row) — then authoritative-time expiry (server_time past the lease deadline), re-claim under a fresh fence from lease_expired only, yield/re-claim, completion settling terminal; a terminal head cannot restart (§11.2).",
   "input": {
     "machine": "episode",
     "steps": [
@@ -15,6 +15,18 @@
       },
       {
         "from": "lease_leased",
+        "via": "episode_claim",
+        "to": "lease_leased",
+        "expect": "rejected"
+      },
+      {
+        "from": "lease_leased",
+        "via": "server_time",
+        "to": "lease_expired",
+        "expect": "accepted"
+      },
+      {
+        "from": "lease_expired",
         "via": "episode_claim",
         "to": "lease_leased",
         "expect": "accepted"
