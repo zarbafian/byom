@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/candidate-self-policy-propose-request.schema.json",
+  "title": "BPP candidate_self_policy_propose request (DESIGN.md §7.3, §7.4; registry R11 candidate)",
+  "description": "Mutation (meta required). Candidate-authored initial self-policy proposal under one onboarding fence; the sole bootstrap path for participant-owned policies — activated only by participant_admit when included in the admission subject, never active before Standing, and the admission decision cannot edit it (§7.3, §14.8). Field names verbatim from the CandidateSelfPolicyProposal shape; candidate_participant_ref, candidate_actor_ref, and onboarding_fence_epoch are channel-derived (§14.3; gap note G16).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "op",
+    "meta",
+    "onboarding_ref",
+    "proposed_policy_kind",
+    "proposed_policy_body",
+    "proposed_policy_digest",
+    "adoption_mode",
+    "adoption_control_domain_ref"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "#/$defs/protocolVersion"
+    },
+    "op": {
+      "const": "candidate_self_policy_propose"
+    },
+    "meta": {
+      "$ref": "#/$defs/mutationMeta"
+    },
+    "onboarding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "proposed_policy_kind": {
+      "enum": [
+        "assent",
+        "activation",
+        "continuity"
+      ]
+    },
+    "proposed_policy_body": {
+      "type": "object",
+      "description": "Opaque body pending the BPA-1 policy-algebra slice (ADR-0001); gap note G10."
+    },
+    "proposed_policy_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "adoption_mode": {
+      "enum": [
+        "direct_candidate",
+        "controller_mediated_candidate"
+      ]
+    },
+    "adoption_control_domain_ref": {
+      "$ref": "#/$defs/identifier"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    },
+    "mutationMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "idempotency_key",
+        "expected_endpoint_incarnation",
+        "expected_recovery_epoch"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_endpoint_incarnation": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_recovery_epoch": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "causation_event_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "correlation_ref": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "MutationMeta (§14.2). Required on every mutation; update operations additionally supply expected_revision (registry rule enforced in code, not expressible here)."
+    }
+  }
+}

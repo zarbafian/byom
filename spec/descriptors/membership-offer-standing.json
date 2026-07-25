@@ -1,0 +1,150 @@
+{
+  "machine": "MembershipOffer/Standing",
+  "states": [
+    "offered",
+    "onboarding",
+    "accepted",
+    "admitted",
+    "refused",
+    "revoked",
+    "expired",
+    "standing_active",
+    "standing_suspended",
+    "standing_ceased",
+    "standing_expired",
+    "standing_superseded"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "offered",
+      "via": "membership_offer",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "MembershipOffer bound to participant, proposed standing, subject digest, offering decision, and expiry (§7.4)."
+    },
+    {
+      "from": "offered",
+      "to": "onboarding",
+      "via": "onboarding_offer",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Cascade of the OnboardingActivationOffer machine's owning absent → offered transition: the same governance decision moves the MembershipOffer to onboarding (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "offered",
+      "to": "accepted",
+      "via": "membership_accept",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "notes": "Only the candidate authors acceptance; acceptance is not Standing (§7.4)."
+    },
+    {
+      "from": "onboarding",
+      "to": "accepted",
+      "via": "membership_accept",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only"
+    },
+    {
+      "from": "accepted",
+      "to": "admitted",
+      "via": "participant_admit",
+      "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "notes": "Admit/refuse/expiry CAS the same offer revision — admission and retraction cannot both win; binds the current MembershipAcceptance and advances the Participant binding epoch (§7.4, §14.3)."
+    },
+    {
+      "from": "absent",
+      "to": "standing_active",
+      "via": "participant_admit",
+      "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "notes": "Admission creates the active StandingRevision bound to the admission decision and exact acceptance (§7.4, §14.8: accepted → admitted plus active Standing)."
+    },
+    {
+      "from": "offered",
+      "to": "refused",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "notes": "One revision-CAS transaction: appends MembershipRefusal, supersedes any prior acceptance, advances the onboarding fence, revokes unused compute authority, rejects pending candidate self-policy proposals, closes the candidate channel; exact retry returns the same receipt (§7.4)."
+    },
+    {
+      "from": "onboarding",
+      "to": "refused",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only"
+    },
+    {
+      "from": "accepted",
+      "to": "refused",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "notes": "Cites and supersedes the stale acceptance (§7.4)."
+    },
+    {
+      "from": "offered",
+      "to": "revoked",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Same authority fencing as refusal without attributing a refusal to the candidate (§7.4)."
+    },
+    {
+      "from": "onboarding",
+      "to": "revoked",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor"
+    },
+    {
+      "from": "accepted",
+      "to": "revoked",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor"
+    },
+    {
+      "from": "offered",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "Silence and stale acceptance expire; silence never becomes acceptance (§7.4, §14.8)."
+    },
+    {
+      "from": "onboarding",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    },
+    {
+      "from": "accepted",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "Expiry applies from accepted as well and races admission through the same CAS (§7.4)."
+    },
+    {
+      "from": "standing_active",
+      "to": "standing_suspended",
+      "via": "participant_suspend",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Cascade of the Participant machine's owning active → suspended transition; the minimum revocation set fences positions, contexts, Mandates, Episodes, effects — no partial revocation (§7.4, §14.8 Standing row).",
+      "cascade": true
+    },
+    {
+      "from": "standing_active",
+      "to": "standing_ceased",
+      "via": "participation_cease",
+      "authority": "participant (R12): affected Participant only; not delegable",
+      "notes": "Cascade of the Participant machine's owning active → retiring transition; cease moves Standing to ceased immediately (§7.4, §14.8 Standing row).",
+      "cascade": true
+    },
+    {
+      "from": "standing_active",
+      "to": "standing_expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "StandingRevision expires_at (§7.4 Standing shape, §14.8 Standing row)."
+    },
+    {
+      "from": "standing_active",
+      "to": "standing_superseded",
+      "via": "standing_replacement",
+      "authority": "governance decision adopting a successor StandingRevision",
+      "notes": "§14.8 Standing row names 'replacement' with no catalog operation; recorded as the named transition standing_replacement pending registry freeze — gap note G12."
+    }
+  ]
+}

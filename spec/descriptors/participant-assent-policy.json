@@ -1,0 +1,39 @@
+{
+  "machine": "Participant assent policy",
+  "states": [
+    "active",
+    "revoked",
+    "superseded",
+    "expired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "active",
+      "via": "assent_policy_adopt",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Adoption only over the authenticated Participant channel, under stricter Charter/host ceilings; never inferred from package, controller, profile claim, Charter, Assembly vote, model output, or runtime configuration. Candidate bootstrap activates through the Candidate self-policy machine (§7.3, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "superseded",
+      "via": "assent_policy_adopt",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Replacement adoption (previous_digest chain) supersedes the prior active revision (§14.8 'adopt/revoke/replace')."
+    },
+    {
+      "from": "active",
+      "to": "revoked",
+      "via": "assent_policy_revoke",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "No Charter fallback or reactivation; derived assent ordinals were counted atomically against the revision (§7.3, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "Policy expires_at (§7.3 shape)."
+    }
+  ]
+}

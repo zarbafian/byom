@@ -1,0 +1,43 @@
+{
+  "machine": "ContinuityRoot",
+  "states": [
+    "active",
+    "sealed",
+    "retired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "active",
+      "via": "continuity_root_update",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "First adoption of the participant-owned private-state handle; compatibility, classification, and retention locked (§7.3, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "active",
+      "via": "continuity_root_update",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "New revision under current-head CAS; old state refs remain private evidence (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "sealed",
+      "via": "continuity_root_update",
+      "authority": "participant (R13): owning Participant only"
+    },
+    {
+      "from": "active",
+      "to": "retired",
+      "via": "continuity_root_update",
+      "authority": "participant (R13): owning Participant only"
+    },
+    {
+      "from": "sealed",
+      "to": "retired",
+      "via": "continuity_root_update",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "The Society never authors or unseals it (§14.8)."
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/onboarding-offer-result.schema.json",
+  "title": "BPP onboarding_offer result (DESIGN.md §7.4; registry R10 governance)",
+  "description": "Success.result for onboarding_offer: the record's invariant constants are pinned — one Episode, candidate operations only, no general effect or child authority (§7.4). membership_offer_state evidences the offered → onboarding cascade on the MembershipOffer (§14.8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "onboarding_id",
+    "revision",
+    "state",
+    "fence_epoch",
+    "max_episodes",
+    "allowed_operations",
+    "general_effect_and_child_authority",
+    "membership_offer_state",
+    "digest"
+  ],
+  "properties": {
+    "onboarding_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "state": {
+      "const": "offered"
+    },
+    "fence_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "max_episodes": {
+      "const": 1
+    },
+    "allowed_operations": {
+      "const": [
+        "membership_refuse",
+        "membership_accept",
+        "candidate_self_policy_propose"
+      ]
+    },
+    "general_effect_and_child_authority": {
+      "const": "none"
+    },
+    "membership_offer_state": {
+      "const": "onboarding"
+    },
+    "digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    }
+  }
+}

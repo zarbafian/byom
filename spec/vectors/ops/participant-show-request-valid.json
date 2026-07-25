@@ -1,0 +1,15 @@
+{
+  "name": "ops/participant-show-request-valid",
+  "description": "projection read of one participant record (R4)",
+  "input": {
+    "schema": "participant-show-request",
+    "value": {
+      "version": "0.2",
+      "op": "participant_show",
+      "participant_ref": "part-9"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

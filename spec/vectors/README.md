@@ -26,4 +26,8 @@ equals `<family>/<file-stem>`. Three input kinds, dispatched by key:
   re-derives both.
 
 `envelope/` covers the §14.2 request/success/failure envelope, MutationMeta,
-and the `bpp-idempotency-domain-v1` digest domain.
+and the `bpp-idempotency-domain-v1` digest domain. `ops/` covers the B0.1
+society + participants/candidates operation schemas
+(`../schemas/ops/`): golden request shapes per op group plus negatives for
+wrong-surface args (fields naming the channel-bound actor/surface), missing
+required fields, and candidate operations without offer scope.

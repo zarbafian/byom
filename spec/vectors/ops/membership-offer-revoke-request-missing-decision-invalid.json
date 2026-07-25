@@ -1,0 +1,23 @@
+{
+  "name": "ops/membership-offer-revoke-request-missing-decision-invalid",
+  "description": "revocation without the deciding governance record fails — R10 requires the exact decided governance actor",
+  "input": {
+    "schema": "membership-offer-revoke-request",
+    "value": {
+      "version": "0.2",
+      "op": "membership_offer_revoke",
+      "meta": {
+        "request_id": "req-0111",
+        "idempotency_key": "idem-0111",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 2
+      },
+      "offer_ref": "offer-4"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "required revoked_by_decision_ref absent"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "ops/manifestation-propose-request-missing-controller-invalid",
+  "description": "a manifestation proposal without its controller domain binding fails — §7.2 requires the controller domain on every revision",
+  "input": {
+    "schema": "manifestation-propose-request",
+    "value": {
+      "version": "0.2",
+      "op": "manifestation_propose",
+      "meta": {
+        "request_id": "req-0131",
+        "idempotency_key": "idem-0131",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "host_kind": "external_runtime",
+      "host_binding_ref": "host-2",
+      "package_or_adapter_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "supported_protocol_versions": [
+        "0.2"
+      ],
+      "feature_set": [],
+      "input_and_output_schema_refs": [],
+      "requested_security_profiles": [],
+      "concurrency_limit": 1
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "required controller_domain_ref absent"
+  }
+}

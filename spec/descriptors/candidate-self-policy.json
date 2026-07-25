@@ -1,0 +1,49 @@
+{
+  "machine": "Candidate self-policy",
+  "states": [
+    "proposed",
+    "activated",
+    "rejected",
+    "expired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "proposed",
+      "via": "candidate_self_policy_propose",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "notes": "Exact candidate channel under the onboarding fence; kinds assent | activation | continuity; the admission decision cannot edit it (§7.3, §7.4)."
+    },
+    {
+      "from": "proposed",
+      "to": "activated",
+      "via": "participant_admit",
+      "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "notes": "Cascade of the MembershipOffer machine's owning admission: activates only candidate-authored proposals included in the admission subject, preserving adoption/control-domain provenance; never active before Standing (§14.3, §14.8).",
+      "cascade": true
+    },
+    {
+      "from": "proposed",
+      "to": "rejected",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "notes": "Cascade of the MembershipOffer machine's owning refusal; every terminal offer transition fences the candidate credential (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "proposed",
+      "to": "rejected",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Cascade of the MembershipOffer machine's owning revocation (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "proposed",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "Expires with the offer/onboarding fence (§14.8)."
+    }
+  ]
+}

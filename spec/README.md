@@ -30,10 +30,10 @@ checked by `../conformance/run.py`.
 | Directory | Contents | Status (B0.1 slice 1) |
 |---|---|---|
 | `adr/` | architecture decision records (format below) | B-ADR-1/2/4 proposed |
-| `schemas/` | JSON Schema 2020-12, one file per schema version | envelope + negotiation |
-| `vectors/` | golden and negative vectors, one JSON file per case | `envelope/` |
-| `registry/` | machine-readable operation registry: one row per `(operation, surface)` with family, mutating flag, closure categories — the freeze source for every bundle | planned (later B0.1 slice) |
-| `descriptors/` | machine-readable transition descriptors, one-to-one with every mutating operation in the bundle plus the named internal kernel transitions (§14.8) | planned (later B0.1 slice) |
+| `schemas/` | JSON Schema 2020-12, one file per schema version | envelope + negotiation; `ops/` society + participants + candidates (26 ops, request/result pairs) |
+| `vectors/` | golden and negative vectors, one JSON file per case | `envelope/`, `ops/` |
+| `registry/` | machine-readable operation registry: one row per `(operation, surface)` with family, mutating flag, closure categories — the freeze source for every bundle | planned (later B0.1 slice); interim §14.6 catalog transcription lives in `../conformance/run.py` |
+| `descriptors/` | machine-readable transition descriptors, one-to-one with every mutating operation in the bundle plus the named internal kernel transitions (§14.8) | society + participant/candidate machines (9 files); parity checked by the runner |
 | `models/` | TLA+ models with crash/replay vectors and per-model proof READMEs (ADR-0003) | planned (later B0.1 slice) |
 | `../conformance/` | runner: schemas compile, every vector validates, digests re-derive | `run.py` |
 

@@ -1,0 +1,39 @@
+{
+  "machine": "Manifestation",
+  "states": [
+    "proposed",
+    "active",
+    "disabled",
+    "superseded"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "proposed",
+      "via": "manifestation_propose",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Owning-Participant proposal; a package, model, adapter, controller, or material security-profile change creates a new revision (§7.2)."
+    },
+    {
+      "from": "proposed",
+      "to": "active",
+      "via": "manifestation_admit",
+      "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "notes": "Exact admission/compatibility decision; the new digest never inherits authority silently (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "disabled",
+      "via": "manifestation_disable",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Active work pauses or follows the recorded manifestation selector (§7.2, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "superseded",
+      "via": "manifestation_admit",
+      "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "notes": "§14.8 'replace': admitting a successor revision supersedes the active one; active Pledges and Mandates follow their recorded selector (§7.2)."
+    }
+  ]
+}

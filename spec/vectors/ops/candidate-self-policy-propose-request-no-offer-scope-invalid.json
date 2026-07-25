@@ -1,0 +1,35 @@
+{
+  "name": "ops/candidate-self-policy-propose-request-no-offer-scope-invalid",
+  "description": "candidate ops without offer scope fail: a self-policy proposal must name its exact onboarding offer (§7.4, R11)",
+  "input": {
+    "schema": "candidate-self-policy-propose-request",
+    "value": {
+      "version": "0.2",
+      "op": "candidate_self_policy_propose",
+      "meta": {
+        "request_id": "req-0144",
+        "idempotency_key": "idem-0144",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "proposed_policy_kind": "activation",
+      "proposed_policy_body": {
+        "activity_kind_set": [
+          "monitoring"
+        ]
+      },
+      "proposed_policy_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "key_id": "k-0001"
+      },
+      "adoption_mode": "controller_mediated_candidate",
+      "adoption_control_domain_ref": "ctrl-7"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "required onboarding_ref absent"
+  }
+}

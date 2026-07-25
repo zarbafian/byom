@@ -1,0 +1,25 @@
+{
+  "name": "ops/participant-propose-request-valid",
+  "description": "agent participant proposal with controller domain and proposed manifestation (§7.1, R5)",
+  "input": {
+    "schema": "participant-propose-request",
+    "value": {
+      "version": "0.2",
+      "op": "participant_propose",
+      "meta": {
+        "request_id": "req-0120",
+        "idempotency_key": "idem-0120",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "kind": "agent",
+      "display_profile_ref": "profile-3",
+      "independence_domain_ref": "indep-2",
+      "controller_domain_ref": "ctrl-7",
+      "proposed_manifestation_ref": "manif-2"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

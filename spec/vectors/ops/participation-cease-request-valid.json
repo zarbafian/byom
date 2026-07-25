@@ -1,0 +1,21 @@
+{
+  "name": "ops/participation-cease-request-valid",
+  "description": "self-only cease: no args beyond the envelope — the affected Participant is channel-derived (§7.4, §14.3, R12)",
+  "input": {
+    "schema": "participation-cease-request",
+    "value": {
+      "version": "0.2",
+      "op": "participation_cease",
+      "meta": {
+        "request_id": "req-0122",
+        "idempotency_key": "idem-0122",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 6
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/participant-admit-result.schema.json",
+  "title": "BPP participant_admit result (DESIGN.md §7.4, §14.3, §14.8; registry R8 governance)",
+  "description": "Success.result for participant_admit: admitted offer, active Participant with advanced binding epoch, active Standing, and the exact activated candidate self-policy revisions (gap notes G4, G7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "participant_ref",
+    "participant_revision",
+    "binding_epoch",
+    "participant_state",
+    "offer_ref",
+    "offer_state",
+    "standing_ref",
+    "standing_status",
+    "activated_self_policy_refs"
+  ],
+  "properties": {
+    "participant_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "participant_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "participant_state": {
+      "const": "active"
+    },
+    "offer_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "offer_state": {
+      "const": "admitted"
+    },
+    "standing_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "standing_status": {
+      "const": "active"
+    },
+    "activated_self_policy_refs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    }
+  }
+}

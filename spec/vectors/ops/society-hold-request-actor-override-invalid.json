@@ -1,0 +1,24 @@
+{
+  "name": "ops/society-hold-request-actor-override-invalid",
+  "description": "wrong-surface args: a request field naming the acting principal can never override the channel binding (§14.3); closed schema rejects it",
+  "input": {
+    "schema": "society-hold-request",
+    "value": {
+      "version": "0.2",
+      "op": "society_hold",
+      "meta": {
+        "request_id": "req-0103",
+        "idempotency_key": "idem-0103",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 4
+      },
+      "society_id": "soc-1",
+      "actor_ref": "human-2"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "actor_ref is server-derived from the channel, not a request field"
+  }
+}

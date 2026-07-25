@@ -1,0 +1,55 @@
+{
+  "machine": "Participant",
+  "states": [
+    "proposed",
+    "active",
+    "suspended",
+    "retiring",
+    "retired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "proposed",
+      "via": "participant_propose",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "notes": "Kind-conditional binding per §7.1: human principal observation, agent controller domain plus proposed ManifestationRevision, collective Assembly epoch."
+    },
+    {
+      "from": "proposed",
+      "to": "active",
+      "via": "participant_admit",
+      "authority": "governance (R8): governance caller requesting deterministic finalization; authors no missing seat",
+      "notes": "Cascade of the MembershipOffer machine's owning admission: requires the Society decision plus the exact MembershipAcceptance; binding epoch advances on identity/control change (§7.4, §14.8).",
+      "cascade": true
+    },
+    {
+      "from": "active",
+      "to": "suspended",
+      "via": "participant_suspend",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Non-optional minimum revocation set; channels fence; dependents re-evaluate; historical authorship survives (§7.4)."
+    },
+    {
+      "from": "active",
+      "to": "retiring",
+      "via": "participation_cease",
+      "authority": "participant (R12): affected Participant only; not delegable",
+      "notes": "Cease at any time; Standing moves to ceased; accepted-Pledge disposition handled independently (§7.4). Reading of §14.8 'cease/retire' recorded as gap note G9."
+    },
+    {
+      "from": "suspended",
+      "to": "retiring",
+      "via": "participation_cease",
+      "authority": "participant (R12): affected Participant only; not delegable",
+      "notes": "§7.4 grants cease 'at any time'; suspended → retiring reading recorded as gap note G9."
+    },
+    {
+      "from": "retiring",
+      "to": "retired",
+      "via": "participant_retire",
+      "authority": "participant (R12): affected Participant only; not delegable",
+      "notes": "Terminal; historical authorship and evidence remain attributable (§7.4, §14.8)."
+    }
+  ]
+}

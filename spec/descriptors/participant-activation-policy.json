@@ -1,0 +1,39 @@
+{
+  "machine": "Participant activation policy",
+  "states": [
+    "active",
+    "revoked",
+    "superseded",
+    "expired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "active",
+      "via": "activation_policy_adopt",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Adoption only over the authenticated Participant channel, under stricter Charter/host ceilings (§7.3, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "superseded",
+      "via": "activation_policy_adopt",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Replacement adoption (previous_digest chain) supersedes the prior active revision (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "revoked",
+      "via": "activation_policy_revoke",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Policy-use ordinals counted; queued admissions fence on revoke; no scheduler fallback (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "Policy expires_at (§7.3 shape)."
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "machine": "Society",
+  "states": [
+    "forming",
+    "active",
+    "held",
+    "dissolving",
+    "dissolved"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "forming",
+      "via": "society_prepare",
+      "authority": "governance (R2): source-qualified human principal filling the bootstrap sovereign seat",
+      "notes": "§14.8 Society row 1: server prepares the canonical bootstrap subject and required sovereign seats (§14.6); crash result is none or complete genesis."
+    },
+    {
+      "from": "forming",
+      "to": "active",
+      "via": "society_bootstrap",
+      "authority": "governance (R2): source-qualified human principal filling the bootstrap sovereign seat",
+      "notes": "One genesis set and event: Society, first CharterRevision, sovereign seats, decision rules, classification binding, budget roots, event genesis (§6.1)."
+    },
+    {
+      "from": "active",
+      "to": "held",
+      "via": "society_hold",
+      "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "notes": "Hold increments the authority fence; old work remains fenced (§14.8 Society row 2)."
+    },
+    {
+      "from": "held",
+      "to": "active",
+      "via": "society_release",
+      "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "notes": "Release creates a new dependency revision after current charter, standing, budget, and security checks (§6.3, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "dissolving",
+      "via": "society_dissolve",
+      "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "notes": "Locks the dissolution decision and retention/key plan; fences all new authority (§14.8 Society row 3)."
+    },
+    {
+      "from": "held",
+      "to": "dissolving",
+      "via": "society_dissolve",
+      "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "notes": "Same dissolution entry from held (§14.8: active or held → dissolving)."
+    },
+    {
+      "from": "dissolving",
+      "to": "dissolved",
+      "via": "society_dissolve",
+      "authority": "governance (R3): human principal filling the exact current human-authority seat",
+      "notes": "Terminal record only after the disposition ledger completes; crash resumes dissolving and never auto-completes (§14.8; reading recorded as gap note G2)."
+    }
+  ]
+}

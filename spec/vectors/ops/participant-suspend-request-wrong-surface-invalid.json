@@ -1,0 +1,25 @@
+{
+  "name": "ops/participant-suspend-request-wrong-surface-invalid",
+  "description": "wrong-surface args: a request field naming the surface can never select or override the channel binding (§14.3)",
+  "input": {
+    "schema": "participant-suspend-request",
+    "value": {
+      "version": "0.2",
+      "op": "participant_suspend",
+      "meta": {
+        "request_id": "req-0123",
+        "idempotency_key": "idem-0123",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 6
+      },
+      "participant_ref": "part-9",
+      "suspended_by_decision_ref": "dec-84",
+      "surface": "governance"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "surface is bound by the channel, not a request field"
+  }
+}

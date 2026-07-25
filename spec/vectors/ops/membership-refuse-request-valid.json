@@ -1,0 +1,30 @@
+{
+  "name": "ops/membership-refuse-request-valid",
+  "description": "candidate refusal from accepted, citing the superseded acceptance (§7.4, R11)",
+  "input": {
+    "schema": "membership-refuse-request",
+    "value": {
+      "version": "0.2",
+      "op": "membership_refuse",
+      "meta": {
+        "request_id": "req-0142",
+        "idempotency_key": "idem-0142",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 3
+      },
+      "offer_ref": "offer-4",
+      "offer_subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "key_id": "k-0001"
+      },
+      "superseded_acceptance_ref": "acc-1",
+      "refusal_reason_ref": "reason-1"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

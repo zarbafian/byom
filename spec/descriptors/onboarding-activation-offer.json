@@ -1,0 +1,110 @@
+{
+  "machine": "OnboardingActivationOffer",
+  "states": [
+    "offered",
+    "active",
+    "completed",
+    "refused",
+    "revoked",
+    "expired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "offered",
+      "via": "onboarding_offer",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Bound to the exact MembershipOffer, candidate Participant, proposed Manifestation digest, minimal disclosed context, one Episode, no general effect/child authority, resource ceiling, and expiry; one zero-general-effect fence and optional one-shot compute receipt (§7.4). Moves the MembershipOffer to onboarding."
+    },
+    {
+      "from": "offered",
+      "to": "active",
+      "via": "onboarding_episode_claim",
+      "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation",
+      "notes": "Runtime-family operation (B0.1 runtime slice); one offer fence (§14.7/R31)."
+    },
+    {
+      "from": "offered",
+      "to": "active",
+      "via": "onboarding_compute_permit_consume",
+      "authority": "runtime (R32): Kovee model broker bound to the exact OnboardingComputeIntent",
+      "notes": "At most one compute use; the one-shot OnboardingComputeIntent/Receipt binds final provider bytes, disclosure manifest, budget, and candidate fence (§7.4)."
+    },
+    {
+      "from": "offered",
+      "to": "completed",
+      "via": "onboarding_episode_complete",
+      "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation",
+      "notes": "Completion is evidence only and is never reinterpreted as acceptance (§14.3, §14.8)."
+    },
+    {
+      "from": "active",
+      "to": "completed",
+      "via": "onboarding_episode_complete",
+      "authority": "runtime (R31): candidate workload bound to the exact offer and proposed Manifestation"
+    },
+    {
+      "from": "offered",
+      "to": "refused",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "notes": "Cascade of the MembershipOffer machine's owning refusal: advances the fence and closes the candidate workload/channel (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "active",
+      "to": "refused",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "cascade": true
+    },
+    {
+      "from": "completed",
+      "to": "refused",
+      "via": "membership_refuse",
+      "authority": "candidate (R11): candidate actor for the exact MembershipOffer only",
+      "cascade": true
+    },
+    {
+      "from": "offered",
+      "to": "revoked",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor",
+      "notes": "Cascade of the MembershipOffer machine's owning revocation; same fence advance without a candidate-attributed refusal (§7.4).",
+      "cascade": true
+    },
+    {
+      "from": "active",
+      "to": "revoked",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor",
+      "cascade": true
+    },
+    {
+      "from": "completed",
+      "to": "revoked",
+      "via": "membership_offer_revoke",
+      "authority": "governance (R10): exact decided governance actor",
+      "cascade": true
+    },
+    {
+      "from": "offered",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "No state authors acceptance; the terminal fence survives retry (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    },
+    {
+      "from": "completed",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "ops/continuity-root-update-request-valid",
+  "description": "ContinuityRoot revision under head CAS: single op, target_status discriminator (§7.3, §14.8, R13)",
+  "input": {
+    "schema": "continuity-root-update-request",
+    "value": {
+      "version": "0.2",
+      "op": "continuity_root_update",
+      "meta": {
+        "request_id": "req-0135",
+        "idempotency_key": "idem-0135",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 2
+      },
+      "target_status": "active",
+      "continuity_root_ref": "croot-1",
+      "opaque_provider_ref": "prov-1",
+      "current_state_ref": "state-9",
+      "current_state_digest": {
+        "class": "ciphertext_public",
+        "algorithm": "sha-256",
+        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "compatibility_selector": {
+        "manifestation_digest_in": [
+          "manif-2"
+        ]
+      },
+      "classification_ref": "class-3",
+      "declared_influence_classes": [
+        "style",
+        "long_term_memory"
+      ],
+      "retention_policy_ref": "retain-2",
+      "adoption_mode": "direct_participant",
+      "adoption_control_domain_ref": "ctrl-7"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}
