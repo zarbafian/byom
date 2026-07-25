@@ -27,7 +27,11 @@ equals `<family>/<file-stem>`. Three input kinds, dispatched by key:
 
 `envelope/` covers the §14.2 request/success/failure envelope, MutationMeta,
 and the `bpp-idempotency-domain-v1` digest domain. `ops/` covers the B0.1
-society + participants/candidates operation schemas
+society + participants/candidates and work-lifecycle (endeavors,
+calls/pledges, activities) operation schemas
 (`../schemas/ops/`): golden request shapes per op group plus negatives for
-wrong-surface args (fields naming the channel-bound actor/surface), missing
-required fields, and candidate operations without offer scope.
+wrong-surface args (fields naming the channel-bound actor/surface — a
+position filling another actor's seat, a non-pledgor delivery), missing
+required fields, candidate operations without offer scope, a finalize
+supplying a missing seat, a wake intent without its ActivityStream, and the
+continuation-head conflict problem shape.

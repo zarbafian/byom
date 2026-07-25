@@ -1,0 +1,36 @@
+{
+  "name": "ops/call-open-request-valid",
+  "description": "call with requested outcome schemas, acceptance criteria, and ceilings; assigns nothing (§9.2, R5)",
+  "input": {
+    "schema": "call-open-request",
+    "value": {
+      "version": "0.2",
+      "op": "call_open",
+      "meta": {
+        "request_id": "req-0210",
+        "idempotency_key": "idem-0210",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "endeavor_id": "endeavor-12",
+      "requested_outcome_schema_refs": [
+        "outcome-schema-2"
+      ],
+      "acceptance_criteria_refs": [
+        "criteria-3"
+      ],
+      "evidence_requirements": [
+        "evreq-1"
+      ],
+      "context_ceiling_ref": "ctx-ceiling-2",
+      "budget_ceiling_ref": "budget-ceiling-4",
+      "eligible_participant_selector": {
+        "bpa1": "pending"
+      },
+      "deadline": "2026-08-15T00:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

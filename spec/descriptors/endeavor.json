@@ -1,0 +1,109 @@
+{
+  "machine": "Endeavor",
+  "states": [
+    "proposed",
+    "active",
+    "held",
+    "reviewing",
+    "fulfilled",
+    "failed",
+    "abandoned",
+    "dissolved"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "proposed",
+      "via": "endeavor_propose",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "notes": "Adopted through its governance rule, not a coordinator's prose; source content immutable and classified (§9.1). §14.8's Endeavor rows begin at proposed — creation transition derived, gap note G17. Stage-capable."
+    },
+    {
+      "from": "proposed",
+      "to": "proposed",
+      "via": "endeavor_position",
+      "authority": "participant (R7): Participant for its exact eligible seat",
+      "notes": "Seat Position record lifecycle (absent → active → withdrawn or superseded) under the §14.8 Position/Decision row, folded here as a proposal-stage self-transition — gap note G19; fills only the authenticated actor's eligible seat (§14.6)."
+    },
+    {
+      "from": "proposed",
+      "to": "active",
+      "via": "endeavor_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "notes": "§14.8 Endeavor row: locks proposal/decision/source/classification/budget roots; exact Endeavor and accounts; crash result is none or complete."
+    },
+    {
+      "from": "active",
+      "to": "held",
+      "via": "endeavor_hold",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Fences affected activities (§14.8)."
+    },
+    {
+      "from": "held",
+      "to": "active",
+      "via": "endeavor_release",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Releases affected activities (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "reviewing",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Closure enters review of the declared acceptance rule (§9.5); endeavor_close is discriminated by target_state — gap note G17."
+    },
+    {
+      "from": "reviewing",
+      "to": "fulfilled",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Only when the declared acceptance rule is satisfied and the required closure decision is recorded; a green dashboard is not a decision (§9.5); no dashboard-derived close (§14.8)."
+    },
+    {
+      "from": "reviewing",
+      "to": "failed",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Terminal outcome event (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "abandoned",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "§14.8: active/held/reviewing → abandoned or dissolved; requires the governing decision."
+    },
+    {
+      "from": "held",
+      "to": "abandoned",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "reviewing",
+      "to": "abandoned",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "active",
+      "to": "dissolved",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Terminal outcome event; fences affected activities (§14.8)."
+    },
+    {
+      "from": "held",
+      "to": "dissolved",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "reviewing",
+      "to": "dissolved",
+      "via": "endeavor_close",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    }
+  ]
+}

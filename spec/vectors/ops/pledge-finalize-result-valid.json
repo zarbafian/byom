@@ -1,0 +1,32 @@
+{
+  "name": "ops/pledge-finalize-result-valid",
+  "description": "formed Pledge with locked slot snapshot, workstream, and assent provenance (§9.3, §14.8, G21)",
+  "input": {
+    "schema": "pledge-finalize-result",
+    "value": {
+      "pledge_id": "pledge-7",
+      "endeavor_id": "endeavor-12",
+      "revision": 1,
+      "state": "active",
+      "source_proposal_ref": "pledge-prop-19",
+      "terms_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "formation_decision_ref": "decision-40",
+      "formation_slot_snapshot_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "pledgor_assent_mode": "direct_participant",
+      "assent_root_control_domain_ref": "ctrl-7",
+      "pledge_workstream_ref": "stream-21",
+      "created_at": "2026-07-25T12:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

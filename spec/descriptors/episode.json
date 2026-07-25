@@ -1,0 +1,164 @@
+{
+  "machine": "Episode/EpisodeLease",
+  "states": [
+    "prepared",
+    "eligible",
+    "queued",
+    "running",
+    "yielded",
+    "completed",
+    "waiting",
+    "interrupted",
+    "failed",
+    "canceled",
+    "ambiguous",
+    "lease_leased",
+    "lease_running",
+    "lease_yielding",
+    "lease_completing",
+    "lease_terminal"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "prepared",
+      "via": "episode_request",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Owner intent plus activation admission; §14.8's Episode row begins at prepared — creation transition derived, gap note G27. Arrival, Kovee Attention, ranking, a host cron, or a model score cannot skip a stage (§11.1)."
+    },
+    {
+      "from": "prepared",
+      "to": "eligible",
+      "via": "episode_request",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Deterministic eligibility: participant pull, admitted event, dependency outcome, decided proposal, manual request, or bounded schedule; no raw message or Kovee attention candidate starts an Episode (§11.2, §14.8: prepared → eligible / request)."
+    },
+    {
+      "from": "eligible",
+      "to": "queued",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "notes": "Queue only after both Byom and Kovee reservations; no lease yet; an uncertain bridge stays unqueued/held (§14.8)."
+    },
+    {
+      "from": "queued",
+      "to": "running",
+      "via": "episode_start",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "yielded",
+      "via": "episode_yield",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "waiting",
+      "via": "episode_yield",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: yield awaiting an admitted event or dependency (§11.2).",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "completed",
+      "via": "episode_complete",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: EpisodeCompletion and conservative settlement; a completion is evidence only — Delivery remains separate and pledgor-authored (§11.2, §14.8).",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "failed",
+      "via": "episode_fail",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "interrupted",
+      "via": "activity_hold",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Cascade of the ActivityStream machine's owning hold: hold fences the running Episode (§14.8: running → interrupted / hold).",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "canceled",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Cascade of the ActivityStream machine's owning close: cancellation honesty — fence advance revokes permits and settlement is conservative (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "running",
+      "to": "ambiguous",
+      "via": "server_time",
+      "authority": "server: lease/deadline expiry with unknown external use (server time)",
+      "notes": "Unknown external use is ambiguous; never blindly repeated (§14.8)."
+    },
+    {
+      "from": "absent",
+      "to": "lease_leased",
+      "via": "episode_claim",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: claim uses compare-and-swap on the one EpisodeLeaseHead (UNIQUE(episode_id, generation)), increments the Byom fence, and creates an immutable EpisodeAttempt (§11.2). Lease head folded into this descriptor — gap note G29.",
+      "cascade": true
+    },
+    {
+      "from": "lease_leased",
+      "to": "lease_leased",
+      "via": "episode_claim",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: expired-head re-claim under a fresh fence and new immutable attempt; lease expiry never deletes the head or reuses a fence; the old worker is stale and cannot submit a Delivery, consume a mandate, create child work, append a continuation, or settle usage (§11.2).",
+      "cascade": true
+    },
+    {
+      "from": "lease_leased",
+      "to": "lease_running",
+      "via": "episode_start",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    },
+    {
+      "from": "lease_running",
+      "to": "lease_yielding",
+      "via": "episode_yield",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: renewals and transitions update the head and append immutable EpisodeAttemptEvents with expected_lease_revision (§11.2).",
+      "cascade": true
+    },
+    {
+      "from": "lease_yielding",
+      "to": "lease_leased",
+      "via": "episode_claim",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: re-claim after yield under a fresh fence; prior attempts remain historical (§11.2).",
+      "cascade": true
+    },
+    {
+      "from": "lease_running",
+      "to": "lease_completing",
+      "via": "episode_complete",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    },
+    {
+      "from": "lease_completing",
+      "to": "lease_terminal",
+      "via": "episode_complete",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    },
+    {
+      "from": "lease_running",
+      "to": "lease_terminal",
+      "via": "episode_fail",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "cascade": true
+    }
+  ]
+}

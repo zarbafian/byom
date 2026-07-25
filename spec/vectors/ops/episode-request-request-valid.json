@@ -1,0 +1,26 @@
+{
+  "name": "ops/episode-request-request-valid",
+  "description": "episode request from the owner intent chain: exact WakeIntent and ActivationAdmission (§11.2, G27, R29)",
+  "input": {
+    "schema": "episode-request-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_request",
+      "meta": {
+        "request_id": "req-0224",
+        "idempotency_key": "idem-0224",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "activity_stream_ref": "stream-21",
+      "generation": 2,
+      "wake_intent_ref": "wake-9",
+      "activation_admission_ref": "admission-4",
+      "pledge_revision": 1,
+      "deadline": "2026-07-25T18:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

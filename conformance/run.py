@@ -122,18 +122,23 @@ CATALOG = {
 }
 ALL_CATALOG_OPS = frozenset(op for ops in CATALOG.values() for op in ops)
 
-# The B0.1 slice under test here: society + participants + candidates.
-SLICE_FAMILIES = ("society", "participants", "candidates")
+# The B0.1 slice under test here: society + participants + candidates
+# (slice 1) plus the work-lifecycle families — endeavors, calls and
+# pledges, activities (slice 2).
+SLICE_FAMILIES = ("society", "participants", "candidates", "endeavors",
+                  "calls_and_pledges", "activities")
 SLICE_OPS = tuple(op for fam in SLICE_FAMILIES for op in CATALOG[fam])
-SLICE_READS = frozenset({"society_show", "participant_show"})
+SLICE_READS = frozenset({"society_show", "participant_show", "activity_show"})
 SLICE_MUTATING = tuple(op for op in SLICE_OPS if op not in SLICE_READS)
 
 # Named non-callable kernel/server transitions that may appear as a
 # descriptor `via` (§14.8, spec/README.md). `standing_replacement` is the
-# gap-note G12 name for the Standing row's operation-less 'replacement'.
+# gap-note G12 name for the Standing row's operation-less 'replacement';
+# `pledge_disposition_decision` is the gap-note G22 name for the Pledge
+# row's operation-less 'decision' (→ canceled/failed).
 NAMED_TRANSITIONS = frozenset({
     "server_time", "activation_admit", "resource_allocate",
-    "standing_replacement",
+    "standing_replacement", "pledge_disposition_decision",
 })
 
 

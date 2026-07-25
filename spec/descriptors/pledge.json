@@ -1,0 +1,293 @@
+{
+  "machine": "Pledge",
+  "states": [
+    "proposed",
+    "active",
+    "waiting",
+    "underway",
+    "submitted",
+    "revision_requested",
+    "fulfilled",
+    "rejected",
+    "relinquished",
+    "canceled",
+    "failed",
+    "superseded",
+    "expired",
+    "disputed"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "proposed",
+      "via": "pledge_propose",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "notes": "New PledgeProposal with server-prepared terms digest and required slots (§9.3, §14.6); §9.3 leaves the proposal's state field unspecified — 'proposed' is the folded pre-formation state of this machine, gap note G20. Stage-capable."
+    },
+    {
+      "from": "proposed",
+      "to": "proposed",
+      "via": "pledge_position",
+      "authority": "participant (R7): Participant for its exact eligible seat",
+      "notes": "Seat Position record lifecycle under the §14.8 Position/Decision row, folded as a proposal-stage self-transition — gap note G19. Formation consumes a separately attributable receipt for every required slot; no Charter, human, coordinator, model, finalizer, collective, or runtime can fill the pledgor seat merely because it controls resources or execution (§9.3)."
+    },
+    {
+      "from": "proposed",
+      "to": "active",
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "notes": "§14.8: proposal + final slots → active or waiting; atomic Pledge, locked slot snapshot, Byom reservations, initial PledgeWorkstream, optional Mandate — derived set all-or-none; prior Positions remain."
+    },
+    {
+      "from": "proposed",
+      "to": "waiting",
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "notes": "Waiting on exact source-qualified dependencies (§9.4)."
+    },
+    {
+      "from": "active",
+      "to": "underway",
+      "via": "activity_open",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Cascade of the ActivityStream machine's owning open: the PledgeWorkstream (committed subtype, §11.1) begins work (§14.8: active/waiting → underway / activity).",
+      "cascade": true
+    },
+    {
+      "from": "waiting",
+      "to": "underway",
+      "via": "activity_open",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Cascade of the ActivityStream machine's owning open: the PledgeWorkstream (committed subtype, §11.1) begins work (§14.8: active/waiting → underway / activity).",
+      "cascade": true
+    },
+    {
+      "from": "underway",
+      "to": "submitted",
+      "via": "delivery_submit",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Cascade of the Delivery/Review machine's owning submission: pledgor-only Delivery moves the Pledge to submitted (§9.5, §14.8).",
+      "cascade": true
+    },
+    {
+      "from": "submitted",
+      "to": "fulfilled",
+      "via": "review_record",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "cascade": true,
+      "notes": "Cascade of the Delivery/Review machine's owning review: the immutable Review outcome drives the Pledge transition, separate but in the same review transaction (§14.8); no runtime or verifier authors acceptance."
+    },
+    {
+      "from": "submitted",
+      "to": "revision_requested",
+      "via": "review_record",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "cascade": true
+    },
+    {
+      "from": "submitted",
+      "to": "rejected",
+      "via": "review_record",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "cascade": true
+    },
+    {
+      "from": "submitted",
+      "to": "disputed",
+      "via": "review_record",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "cascade": true
+    },
+    {
+      "from": "revision_requested",
+      "to": "underway",
+      "via": "pledge_resume",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Each resume starts a new Activity generation under unchanged terms; no effect implied; late result stays on the old delivery/revision (§14.8)."
+    },
+    {
+      "from": "active",
+      "to": "superseded",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "notes": "One compare-and-swap successor slot; the amendment (a new PledgeProposal naming the prior Pledge, revision, and terms digest) needs all currently required seats again, and its acceptance atomically supersedes the old revision, fences incompatible episodes and unstarted effects, reallocates budgets, and creates a new PledgeWorkstream generation where required (§9.5); §14.8 lists amend on this row — one current successor only, gap note G22."
+    },
+    {
+      "from": "waiting",
+      "to": "superseded",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself"
+    },
+    {
+      "from": "underway",
+      "to": "superseded",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself"
+    },
+    {
+      "from": "submitted",
+      "to": "superseded",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself"
+    },
+    {
+      "from": "revision_requested",
+      "to": "superseded",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself"
+    },
+    {
+      "from": "disputed",
+      "to": "superseded",
+      "via": "pledge_amend",
+      "authority": "participant (R5): current Participant acting only as itself"
+    },
+    {
+      "from": "active",
+      "to": "relinquished",
+      "via": "pledge_relinquish",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "The kernel records the request and applies the accepted cancellation terms; it never rewrites that act as success; reservations settle conservatively (§9.5, §14.8)."
+    },
+    {
+      "from": "waiting",
+      "to": "relinquished",
+      "via": "pledge_relinquish",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "underway",
+      "to": "relinquished",
+      "via": "pledge_relinquish",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "submitted",
+      "to": "relinquished",
+      "via": "pledge_relinquish",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "revision_requested",
+      "to": "relinquished",
+      "via": "pledge_relinquish",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "disputed",
+      "to": "relinquished",
+      "via": "pledge_relinquish",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject"
+    },
+    {
+      "from": "active",
+      "to": "canceled",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)",
+      "notes": "§14.8's Pledge row lists 'decision' for → canceled/failed with no catalog operation (the remaining obligation becomes canceled, novated, disputed, failed, or unresolved under its own procedure, §9.5); recorded as the named transition pledge_disposition_decision pending the registry freeze — gap note G22."
+    },
+    {
+      "from": "waiting",
+      "to": "canceled",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "underway",
+      "to": "canceled",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "submitted",
+      "to": "canceled",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "revision_requested",
+      "to": "canceled",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "disputed",
+      "to": "canceled",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "active",
+      "to": "failed",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "waiting",
+      "to": "failed",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "underway",
+      "to": "failed",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "submitted",
+      "to": "failed",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "revision_requested",
+      "to": "failed",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "disputed",
+      "to": "failed",
+      "via": "pledge_disposition_decision",
+      "authority": "governance: the exact deciding record under the obligation's own procedure (§9.5; named transition, gap note G22)"
+    },
+    {
+      "from": "active",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)",
+      "notes": "§14.8: nonterminal → expired / expiry; incompatible Activities and unstarted effects fenced; reservations settled conservatively."
+    },
+    {
+      "from": "waiting",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    },
+    {
+      "from": "underway",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    },
+    {
+      "from": "submitted",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    },
+    {
+      "from": "revision_requested",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    },
+    {
+      "from": "disputed",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    }
+  ]
+}

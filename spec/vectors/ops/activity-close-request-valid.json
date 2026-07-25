@@ -1,0 +1,24 @@
+{
+  "name": "ops/activity-close-request-valid",
+  "description": "close to completed under the generation fence (G25 target_state discriminator, R29)",
+  "input": {
+    "schema": "activity-close-request",
+    "value": {
+      "version": "0.2",
+      "op": "activity_close",
+      "meta": {
+        "request_id": "req-0221",
+        "idempotency_key": "idem-0221",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 8
+      },
+      "activity_stream_ref": "stream-21",
+      "generation": 2,
+      "target_state": "completed"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "machine": "WakeIntent/ActivationAdmission/ResourceAllocation",
+  "states": [
+    "submitted",
+    "withdrawn",
+    "expired",
+    "admission_admitted",
+    "admission_denied",
+    "admission_revoked",
+    "admission_expired",
+    "allocation_prepared",
+    "allocation_reserved",
+    "allocation_bridged",
+    "allocation_released",
+    "allocation_uncertain",
+    "allocation_revoked"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "submitted",
+      "via": "wake_intent_submit",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Authored only by the Participant channel against an exact admitted event or bounded schedule; a policy-derived intent atomically consumes an activation-policy ordinal and transitively preserves controller provenance; UNIQUE(participant_ref, stable_wake_key); no event, cron, host, attention ranking, or model score can author it (§11.1, §14.8)."
+    },
+    {
+      "from": "submitted",
+      "to": "withdrawn",
+      "via": "wake_intent_withdraw",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "submitted",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    },
+    {
+      "from": "absent",
+      "to": "admission_admitted",
+      "via": "activation_admit",
+      "authority": "kernel: deterministic evaluation of a committed WakeIntent over current dependencies and safety policy (§11.1 named internal transition activation_admit, not a callable BPP operation)",
+      "notes": "One decision per WakeIntent revision (UNIQUE(wake_intent_ref, wake_intent_revision)); the kernel may deny but cannot invent an interest; no budget or placement yet; retry returns the same admission (§11.1, §14.8). Folded machine — gap note G29."
+    },
+    {
+      "from": "absent",
+      "to": "admission_denied",
+      "via": "activation_admit",
+      "authority": "kernel: deterministic evaluation of a committed WakeIntent over current dependencies and safety policy (§11.1 named internal transition activation_admit, not a callable BPP operation)"
+    },
+    {
+      "from": "admission_admitted",
+      "to": "admission_revoked",
+      "via": "activation_policy_revoke",
+      "authority": "participant (R13): owning Participant only",
+      "notes": "Cascade of the Participant activation policy machine's owning revoke: queued admissions fence on revoke; revoking activation policy blocks new WakeIntents and fences queued work without erasing executed Episodes (§11.1, §14.8).",
+      "cascade": true
+    },
+    {
+      "from": "admission_admitted",
+      "to": "admission_expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    },
+    {
+      "from": "absent",
+      "to": "allocation_prepared",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "notes": "Can only reserve an admitted WakeIntent; UNIQUE(activation_admission_ref, stable_allocation_key) (§11.1)."
+    },
+    {
+      "from": "allocation_prepared",
+      "to": "allocation_reserved",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "notes": "Exact Byom reservations under Mandate and rate counters (§14.8)."
+    },
+    {
+      "from": "allocation_reserved",
+      "to": "allocation_bridged",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "notes": "Kovee budget saga bridge refs; the queue remains blocked until bridged (§14.8)."
+    },
+    {
+      "from": "allocation_prepared",
+      "to": "allocation_released",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)",
+      "notes": "§14.8: any nonterminal → released, uncertain, or revoked via the internal transition and Kovee budget saga; an unknown bridge remains uncertain."
+    },
+    {
+      "from": "allocation_prepared",
+      "to": "allocation_uncertain",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_prepared",
+      "to": "allocation_revoked",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_reserved",
+      "to": "allocation_released",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_reserved",
+      "to": "allocation_uncertain",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_reserved",
+      "to": "allocation_revoked",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_bridged",
+      "to": "allocation_released",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_bridged",
+      "to": "allocation_uncertain",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    },
+    {
+      "from": "allocation_bridged",
+      "to": "allocation_revoked",
+      "via": "resource_allocate",
+      "authority": "kernel: reservation of an admitted WakeIntent binding current Mandates and Byom budget reservations (§11.1 named internal transition resource_allocate, not a callable BPP operation)"
+    }
+  ]
+}

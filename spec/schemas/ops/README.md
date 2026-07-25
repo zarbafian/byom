@@ -1,10 +1,11 @@
-# Operation schemas — B0.1 society + participants/candidates slice
+# Operation schemas — B0.1 society + participants/candidates + work-lifecycle slices
 
 One closed request and one closed result schema per operation
 (`<op>-request.schema.json`, `<op>-result.schema.json`; the result schema is
 the `Success.result` payload). Field names are verbatim from the DESIGN.md
-record shapes (§6.1, §7.1–§7.4); surface, actor, and closure come from the
-family contract's registry bindings R2/R3/R4/R5/R8/R10/R11/R12/R13
+record shapes (§6.1, §7.1–§7.4, §9.1–§9.5, §10.3, §11.1–§11.3); surface,
+actor, and closure come from the family contract's registry bindings
+R2/R3/R4/R5/R7/R8/R9/R10/R11/R12/R13/R14/R29
 (`design/2026-07-25-family-contract.md` §2.0, reproducing §14.7). Requests
 carry only caller-supplied arguments: the server derives actor, Participant,
 Manifestation, Society, and surface from the channel, and request fields
@@ -109,3 +110,97 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   `accepted_by_actor_ref`, and `authentication_observation_ref` from the
   §7.4 record shapes never appear as request fields: the sender-constrained
   candidate credential supplies them (§14.3).
+- **G17 — endeavor creation and closure encoding.** §14.8's Endeavor rows
+  begin at `proposed`; absent → proposed / `endeavor_propose` is derived
+  from the §14.6 catalog plus the §9.1 state list. The propose result
+  carries the server-prepared canonical subject and seats (§14.6) as
+  `subject_digest` and `required_seat_refs` (derived names).
+  `endeavor_close` is one operation discriminated by `target_state`
+  (`reviewing | fulfilled | failed | abandoned | dissolved`) per the G11
+  precedent; which targets require `closure_decision_ref` /
+  `acceptance_evidence_refs` is a registry rule the schema cannot express.
+- **G18 — seat position payloads (`endeavor_position`,
+  `pledge_position`).** Request fields are verbatim from the §10.3 Position
+  shape minus the server-derived actor fields (`position_id`, `revision`,
+  `participant_ref`, `actor_ref`, `participant_binding_epoch`,
+  `endpoint_incarnation`, `recovery_epoch`,
+  `authentication_observation_ref`, `status`, `digest`); a request naming
+  another participant's identity fails the closed schema (positions fill
+  only the authenticated actor's eligible seat, §14.6). Pre-finalization
+  withdraw/supersede is seat-head CAS via `prior_position_digest` plus a
+  derived `target_status` (`active | withdrawn`) discriminator.
+- **G19 — Position/Decision row folding.** §14.8's generic Position/Decision
+  machine gets no descriptor of its own in this slice: each family's
+  position operation is owned by its subject's descriptor as a
+  proposal-stage self-transition (`proposed → proposed`), with the Position
+  record lifecycle (absent → active → withdrawn or superseded) noted there.
+- **G20 — PledgeProposal folded state.** §9.3 leaves `PledgeProposal.state`
+  unspecified; the Pledge descriptor and the `pledge_propose`/`pledge_amend`
+  results use `proposed` as the folded pre-formation state of the Pledge
+  machine. A lapsed proposal creates no Pledge terminal state, and the Call
+  machine's `forming → open` on linked-proposal lapse is read as server
+  time (§14.8 Call row: "exact linked proposal/outcome/server time").
+- **G21 — pledge formation/resume result extras.** `pledge_workstream_ref`
+  and `initial_mandate_ref` name §14.8's "initial PledgeWorkstream and
+  optional Mandate" atomic effects; `pledge_resume` returns the new
+  workstream generation as `workstream_generation` (§14.8: "each resume
+  starts a new Activity generation").
+- **G22 — pledge disposition 'decision'.** §14.8's Pledge row lists
+  "decision" for nonterminal → canceled/failed with no catalog operation
+  (§9.5: the remaining obligation becomes canceled, novated, disputed,
+  failed, or unresolved under its own procedure); the descriptor records it
+  as the named transition `pledge_disposition_decision` pending the
+  registry freeze (G12 precedent). The same row lists "amend" against
+  → superseded: the descriptor records `pledge_amend` as the driving
+  operation, with supersession committing at the amendment's acceptance
+  (one CAS successor slot).
+- **G23 — pledge_amend payload.** `amendment_of`
+  `{pledge_ref, pledge_revision, prior_terms_digest}` is verbatim §9.3; the
+  amendment restates the full terms ("needs all currently required seats
+  again", §9.5); `proposed_pledgor_ref`/`beneficiary_ref` carry over from
+  the prior revision when absent (registry rule); a successor-slot conflict
+  fails `stale_revision`. `pledge_propose` never carries `amendment_of`.
+- **G24 — delivery pledgor binding and episode fence.** `delivery_id`,
+  `delivered_by_participant`, `actor_ref`, `subject_digest`, `state`, and
+  `submitted_at` are channel/server-derived (a Delivery is submitted only
+  by the authenticated pledgor channel, §9.5). R29's "exact episode fence
+  when cited" is encoded as optional `episode_ref` + `byom_fence_epoch` +
+  `expected_lease_revision` (names from the §11.2 EpisodeAttempt/
+  EpisodeAttemptEvent shapes); `episode_ref` implying the fence fields is a
+  registry rule. A later `delivery_submit` for the same Pledge revision
+  supersedes the prior Delivery (§9.5 state list).
+- **G25 — activity hold/close encoding.** `activity_close` is discriminated
+  by `target_state` (`completed | failed | canceled`) per the G11
+  precedent; `generation` on `activity_hold`/`activity_close` (and the
+  other R29 ops) carries the generation fence explicitly. The catalog has
+  no activity un-hold operation and §14.8's ActivityStream row lists no
+  held → nonterminal transition; none is derived.
+- **G26 — wake intent server-derived provenance.** `wake_intent_id`,
+  `revision`, `participant_ref`, `participant_binding_epoch`, `actor_ref`,
+  `root_activation_mode`, `root_activation_control_domain_ref`/`_digest`,
+  `activation_policy_use_ordinal` (atomically consumed on policy-derived
+  intents), `submitted_at`, `state`, and `digest` from the §11.1 record
+  shape are server-derived; the request supplies `origin` plus the optional
+  exact `activation_policy_ref`/`_digest`.
+- **G27 — episode_request payload.** The caller supplies the owner-intent
+  chain (`activity_stream_ref`, `generation`, `wake_intent_ref`,
+  `activation_admission_ref`, optional `pledge_revision`, `deadline`);
+  manifestation, context-manifest, resource-allocation, and placement
+  fields are kernel/saga-derived — no stage can be skipped (§11.1). §14.8's
+  Episode row begins at `prepared`; the creation transition is derived.
+- **G28 — continuation head CAS fields.** `expected_head_revision` is
+  verbatim §11.3; the result's `head_revision` projects
+  `ContinuationHead.revision`. Predecessor absence exactly at revision zero
+  is a registry rule; the losing concurrent writer receives
+  `stale_revision` with the current opaque head (vector). Optional
+  `episode_ref` + `byom_fence_epoch` pin the current Episode fence when
+  episodic.
+- **G29 — folded work-lifecycle descriptors.** Delivery and Review share
+  one descriptor per their single §14.8 row; WakeIntent, ActivationAdmission,
+  and ResourceAllocation fold into `wake-intent.json` with
+  `admission_`/`allocation_` state prefixes; Episode and its lease head
+  fold into `episode.json` with the `lease_` prefix. Runtime-family vias
+  (`episode_claim`/`start`/`yield`/`complete`/`fail`) and cross-machine
+  activity/pledge effects are `"cascade": true` pending their owning
+  slices; `activation_admit`/`resource_allocate` remain named internal
+  kernel transitions (§11.1), never callable operations.

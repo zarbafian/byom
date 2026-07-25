@@ -1,0 +1,28 @@
+{
+  "name": "ops/endeavor-close-request-valid",
+  "description": "closure to fulfilled with the recorded closure decision and acceptance evidence (§9.5, G17 target_state discriminator, R14)",
+  "input": {
+    "schema": "endeavor-close-request",
+    "value": {
+      "version": "0.2",
+      "op": "endeavor_close",
+      "meta": {
+        "request_id": "req-0205",
+        "idempotency_key": "idem-0205",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 6
+      },
+      "endeavor_id": "endeavor-12",
+      "target_state": "fulfilled",
+      "closure_decision_ref": "decision-31",
+      "acceptance_evidence_refs": [
+        "evidence-5",
+        "evidence-6"
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

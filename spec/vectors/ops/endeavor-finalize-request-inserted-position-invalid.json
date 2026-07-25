@@ -1,0 +1,34 @@
+{
+  "name": "ops/endeavor-finalize-request-inserted-position-invalid",
+  "description": "finalization supplying a missing seat: finalize checks the complete set and cannot insert a position (§14.6); closed schema rejects a positions field",
+  "input": {
+    "schema": "endeavor-finalize-request",
+    "value": {
+      "version": "0.2",
+      "op": "endeavor_finalize",
+      "meta": {
+        "request_id": "req-0204",
+        "idempotency_key": "idem-0204",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 1
+      },
+      "endeavor_id": "endeavor-12",
+      "subject_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "positions": [
+        {
+          "seat_ref": "seat-sponsor-2",
+          "value": "assent"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "the finalizer authors no missing seat; a supplied position is rejected by the closed schema"
+  }
+}

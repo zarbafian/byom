@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/continuation-write-request.schema.json",
+  "title": "BPP continuation_write request (DESIGN.md §11.3, §14.8; registry R29 participant)",
+  "description": "Mutation (meta required). Locks the exact ActivityStream generation and its single ContinuationHead, requires the current head revision (expected_head_revision, verbatim §11.3) and the current Continuation/digest as predecessor — or explicit absence exactly at revision zero (registry rule, gap note G28) — appends one immutable Continuation and advances the head in the same CAS transaction. A losing writer receives stale_revision with the current opaque head; Byom never auto-merges private state or silently selects a branch. episode_ref plus byom_fence_epoch pin the current Episode fence when episodic (R29); a stale Episode/Manifestation cannot advance the head. Byom stores but never authors a Continuation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "op",
+    "meta",
+    "activity_stream_ref",
+    "generation",
+    "summary_ref",
+    "unresolved_refs",
+    "exact_state_refs",
+    "source_event_cursor",
+    "expected_head_revision",
+    "classification_ref"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "#/$defs/protocolVersion"
+    },
+    "op": {
+      "const": "continuation_write"
+    },
+    "meta": {
+      "$ref": "#/$defs/mutationMeta"
+    },
+    "activity_stream_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "generation": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "summary_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "unresolved_refs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    },
+    "exact_state_refs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    },
+    "source_event_cursor": {
+      "$ref": "#/$defs/identifier"
+    },
+    "prior_continuation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "prior_continuation_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "expected_head_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "classification_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "episode_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "byom_fence_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    },
+    "mutationMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "idempotency_key",
+        "expected_endpoint_incarnation",
+        "expected_recovery_epoch"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_endpoint_incarnation": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_recovery_epoch": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "causation_event_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "correlation_ref": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "MutationMeta (§14.2). Required on every mutation; update operations additionally supply expected_revision (registry rule enforced in code, not expressible here)."
+    }
+  }
+}

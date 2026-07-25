@@ -1,0 +1,185 @@
+{
+  "machine": "ActivityStream",
+  "states": [
+    "ready",
+    "active",
+    "waiting",
+    "reviewing",
+    "held",
+    "completed",
+    "failed",
+    "canceled"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "ready",
+      "via": "activity_open",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "ActivityStream belongs to the Participant, not Byom's scheduler; a non-pledged stream still has exact purpose, classification, Mandate, budget, rate, and retention boundaries and may not claim a beneficiary or completion (§11.1). Stage only for the activity proposal (R29)."
+    },
+    {
+      "from": "ready",
+      "to": "active",
+      "via": "episode_request",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "cascade": true,
+      "notes": "Cascade of the Episode machine's owning request (§14.8 ActivityStream row: ready ↔ active; generation fence)."
+    },
+    {
+      "from": "waiting",
+      "to": "active",
+      "via": "episode_request",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "cascade": true
+    },
+    {
+      "from": "active",
+      "to": "ready",
+      "via": "episode_complete",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: episode completion returns the stream to ready; prior outputs remain evidence (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "active",
+      "to": "waiting",
+      "via": "episode_yield",
+      "authority": "runtime (R30): workload identity bound to the exact Episode/Manifestation (owning descriptor lands with the runtime slice)",
+      "notes": "Cascade: yield awaiting an admitted event or dependency outcome (§11.2, §14.8: ready ↔ waiting).",
+      "cascade": true
+    },
+    {
+      "from": "active",
+      "to": "reviewing",
+      "via": "delivery_submit",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "Cascade of the Delivery/Review machine's owning submission: the PledgeWorkstream enters review with the submitted Delivery (§14.8 Pledge row).",
+      "cascade": true
+    },
+    {
+      "from": "reviewing",
+      "to": "ready",
+      "via": "pledge_resume",
+      "authority": "participant (R14): exact Participant or collective authorized by the governing subject",
+      "notes": "Cascade of the Pledge machine's owning resume: each resume starts a new Activity generation under unchanged terms (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "ready",
+      "to": "held",
+      "via": "activity_hold",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "§14.8: any nonterminal → held; hold fences new Episodes; generation CAS."
+    },
+    {
+      "from": "active",
+      "to": "held",
+      "via": "activity_hold",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "waiting",
+      "to": "held",
+      "via": "activity_hold",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "reviewing",
+      "to": "held",
+      "via": "activity_hold",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "ready",
+      "to": "completed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy",
+      "notes": "§14.8: any nonterminal → completed, failed, or canceled; activity_close is discriminated by target_state — gap note G25; cancel fences new Episodes and in-flight work settles conservatively; prior outputs remain evidence."
+    },
+    {
+      "from": "ready",
+      "to": "failed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "ready",
+      "to": "canceled",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "active",
+      "to": "completed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "active",
+      "to": "failed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "active",
+      "to": "canceled",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "waiting",
+      "to": "completed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "waiting",
+      "to": "failed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "waiting",
+      "to": "canceled",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "reviewing",
+      "to": "completed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "reviewing",
+      "to": "failed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "reviewing",
+      "to": "canceled",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "held",
+      "to": "completed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "held",
+      "to": "failed",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    },
+    {
+      "from": "held",
+      "to": "canceled",
+      "via": "activity_close",
+      "authority": "participant (R29): owning Participant/Manifestation, or collective channel inside executive policy"
+    }
+  ]
+}

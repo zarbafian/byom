@@ -1,0 +1,74 @@
+{
+  "machine": "Call",
+  "states": [
+    "open",
+    "forming",
+    "satisfied",
+    "withdrawn",
+    "expired"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "open",
+      "via": "call_open",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "notes": "Visible only to authorized participants; creates no notification, activation, resource reservation, or obligation by itself (§9.2); no obligation or budget is created by Call state (§14.8)."
+    },
+    {
+      "from": "open",
+      "to": "forming",
+      "via": "pledge_propose",
+      "authority": "participant (R5): current Participant acting only as itself",
+      "notes": "Cascade of the Pledge machine's owning proposal: a PledgeProposal citing call_ref moves the Call to forming (§14.8 Call row: exact linked proposal).",
+      "cascade": true
+    },
+    {
+      "from": "forming",
+      "to": "open",
+      "via": "server_time",
+      "authority": "server: deterministic lapse of the exact linked proposal (server time)",
+      "notes": "§14.8 'open ↔ forming' driven by 'exact linked proposal/outcome/server time'; the return to open on linked-proposal lapse is read as server time — gap note G20."
+    },
+    {
+      "from": "open",
+      "to": "satisfied",
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "notes": "Cascade of the Pledge machine's owning finalization: the exact linked outcome satisfies the Call (§14.8).",
+      "cascade": true
+    },
+    {
+      "from": "forming",
+      "to": "satisfied",
+      "via": "pledge_finalize",
+      "authority": "participant (R9): any current Participant requesting deterministic finalization; authors no missing seat",
+      "cascade": true
+    },
+    {
+      "from": "open",
+      "to": "withdrawn",
+      "via": "call_withdraw",
+      "authority": "participant (R14): the opening Participant only (§14.8 Call row: opener for withdraw)",
+      "notes": "Retry returns the same state (§14.8)."
+    },
+    {
+      "from": "forming",
+      "to": "withdrawn",
+      "via": "call_withdraw",
+      "authority": "participant (R14): the opening Participant only (§14.8 Call row: opener for withdraw)"
+    },
+    {
+      "from": "open",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    },
+    {
+      "from": "forming",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's deadline (server time)"
+    }
+  ]
+}
