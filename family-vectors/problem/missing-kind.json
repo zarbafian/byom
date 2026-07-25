@@ -1,0 +1,17 @@
+{
+  "name": "problem/missing-kind",
+  "description": "kind is required",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Forbidden"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "missing-kind"
+  }
+}

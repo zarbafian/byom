@@ -1,0 +1,25 @@
+{
+  "name": "digest-class/neg-authority-subject-public-hash",
+  "description": "authority subjects take local_erasure_safe commitments, never a public hash",
+  "input": {
+    "content": {
+      "kind": "authority_subject",
+      "type_tag": "bpp-authority-subject-v1",
+      "object": {
+        "authority": "mandate",
+        "mandate_ref": "mandate:m-7",
+        "participant_ref": "participant:alice"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "offered": {
+      "class": "structural_public",
+      "algorithm": "sha-256",
+      "value_hex": "a3ad54c115a9cb97f4eef53ca375e9515ce3f44ad01b7a8ac56a10d63d04ae67"
+    }
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "authority_subject_requires_local_erasure_safe"
+  }
+}

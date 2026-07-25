@@ -1,0 +1,15 @@
+{
+  "name": "ijson/over-depth",
+  "description": "65 nested arrays exceed the profile depth cap of 64",
+  "input": {
+    "json_synth": {
+      "repeat": "[",
+      "count": 65,
+      "suffix": "]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "over-depth"
+  }
+}

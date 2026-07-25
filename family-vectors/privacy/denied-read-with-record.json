@@ -1,0 +1,75 @@
+{
+  "name": "privacy/denied-read-with-record",
+  "description": "a denied sensitive read appends a chained record too; no bytes are released",
+  "input": {
+    "records": [
+      {
+        "society_id": "soc-garden",
+        "internal_access_sequence": 7,
+        "access_event_id": "acc-01H0000000000000000000007",
+        "endpoint_incarnation": "inc-1",
+        "recovery_epoch": 0,
+        "actor_binding_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/actor-binding",
+          "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
+        },
+        "operation": "engram_search",
+        "purpose_ref": "purpose:endeavor-support",
+        "query_or_scope_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/query-scope",
+          "value_hex": "47d8915493a3716a82254320e74c75861f24303892d84189749e3e03909db176"
+        },
+        "result_object_count": 2,
+        "result_bytes": 412,
+        "outcome": "allowed",
+        "occurred_at": "2026-07-25T13:00:00Z"
+      },
+      {
+        "society_id": "soc-garden",
+        "internal_access_sequence": 8,
+        "access_event_id": "acc-01H0000000000000000000008",
+        "endpoint_incarnation": "inc-1",
+        "recovery_epoch": 0,
+        "actor_binding_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/actor-binding",
+          "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
+        },
+        "operation": "artifact_fetch",
+        "purpose_ref": "purpose:endeavor-support",
+        "query_or_scope_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/query-scope",
+          "value_hex": "3fd47c4d2a24d57fb98888d99b6dcd6213412f3f28024793f577d69a3e306619"
+        },
+        "result_object_count": 0,
+        "result_bytes": 0,
+        "outcome": "denied",
+        "occurred_at": "2026-07-25T13:00:02Z"
+      }
+    ],
+    "chain_secret_hex": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+    "key_ref": "society-key:soc-garden/privacy-chain",
+    "journal_committed": true
+  },
+  "expected": {
+    "records": [
+      {
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000007\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":7,\"occurred_at\":\"2026-07-25T13:00:00Z\",\"operation\":\"engram_search\",\"outcome\":\"allowed\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":null},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"47d8915493a3716a82254320e74c75861f24303892d84189749e3e03909db176\"},\"recovery_epoch\":0,\"result_bytes\":412,\"result_object_count\":2,\"society_id\":\"soc-garden\"}",
+        "record_digest_hex": "e7ad3c7907c1b51736a0b1092f1b1aeb003118099c5bba18fbb87ba0010cd9b6"
+      },
+      {
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000008\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":8,\"occurred_at\":\"2026-07-25T13:00:02Z\",\"operation\":\"artifact_fetch\",\"outcome\":\"denied\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"e7ad3c7907c1b51736a0b1092f1b1aeb003118099c5bba18fbb87ba0010cd9b6\"},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"3fd47c4d2a24d57fb98888d99b6dcd6213412f3f28024793f577d69a3e306619\"},\"recovery_epoch\":0,\"result_bytes\":0,\"result_object_count\":0,\"society_id\":\"soc-garden\"}",
+        "record_digest_hex": "695719e7da32f8e828bf55b33b98218858e90eeaf3c159f3627e430abeeb3b83"
+      }
+    ],
+    "release_permitted": false,
+    "reason": "access_denied"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "digest-class/neg-disclosed-party-no-recipients",
+  "description": "disclosed_party without named recipients is forbidden",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "meeting notes: discussed the budget ceiling with bob"
+    },
+    "required_class": "disclosed_party",
+    "offered": {
+      "class": "disclosed_party",
+      "algorithm": "sha-256",
+      "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+    },
+    "recipients": []
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "disclosed_party_requires_named_recipients"
+  }
+}

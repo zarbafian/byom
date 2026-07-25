@@ -1,0 +1,11 @@
+{
+  "name": "ijson/syntax-error",
+  "description": "malformed JSON is rejected",
+  "input": {
+    "json_utf8": "{\"a\":}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "syntax"
+  }
+}

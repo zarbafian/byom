@@ -1,0 +1,11 @@
+{
+  "name": "ijson/unsafe-number",
+  "description": "a float literal overflowing to infinity is rejected",
+  "input": {
+    "json_utf8": "{\"n\":1e400}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unsafe-number"
+  }
+}

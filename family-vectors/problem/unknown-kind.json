@@ -1,0 +1,19 @@
+{
+  "name": "problem/unknown-kind",
+  "description": "kinds are a closed enum (byom 14.9); unknown values fail closed",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/teapot",
+        "title": "I'm a teapot",
+        "kind": "teapot",
+        "status": 418
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "unknown-kind"
+  }
+}

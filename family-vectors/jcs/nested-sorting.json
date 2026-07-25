@@ -1,0 +1,28 @@
+{
+  "name": "jcs/nested-sorting",
+  "description": "sorting applies at every nesting level; array order is preserved",
+  "input": {
+    "value": {
+      "z": {
+        "b": [
+          2,
+          1
+        ],
+        "a": {
+          "d": 4,
+          "c": 3
+        }
+      },
+      "a": [
+        {
+          "y": 2,
+          "x": 1
+        }
+      ]
+    }
+  },
+  "expected": {
+    "canonical": "{\"a\":[{\"x\":1,\"y\":2}],\"z\":{\"a\":{\"c\":3,\"d\":4},\"b\":[2,1]}}",
+    "sha256_hex": "026bbbfebf38bbc11a8682b4a564bd206de9d1982708ce1fdff236d057c9e048"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "ijson/invalid-utf8",
+  "description": "request bytes must be valid UTF-8 (0xFF is never valid)",
+  "input": {
+    "json_base64": "eyJhIjoi/yJ9"
+  },
+  "expected": {
+    "valid": false,
+    "error": "invalid-utf8"
+  }
+}

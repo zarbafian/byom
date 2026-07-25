@@ -1,0 +1,79 @@
+{
+  "name": "idempotency/kcp-transport-retry-equal",
+  "description": "a transport retry with fresh request_id/traceparent is the same logical command: identical canonical bytes and digest",
+  "input": {
+    "derivations": [
+      {
+        "kind": "kcp-command-idempotency",
+        "schema_ref": "kcp/contribution_append@0",
+        "raw_command": {
+          "version": 0,
+          "authority_surface": "participant",
+          "op": "contribution_append",
+          "realm_id": "realm-1",
+          "project_id": "proj-9",
+          "expected_revision": 12,
+          "args": {
+            "space_ref": "space:s-3",
+            "content": "note: budget ceiling"
+          },
+          "ext": {},
+          "request_id": "req-A",
+          "traceparent": "00-aaaa-bbbb-01"
+        },
+        "projection_fields": [
+          "version",
+          "authority_surface",
+          "op",
+          "realm_id",
+          "project_id",
+          "expected_revision",
+          "args",
+          "ext"
+        ]
+      },
+      {
+        "kind": "kcp-command-idempotency",
+        "schema_ref": "kcp/contribution_append@0",
+        "raw_command": {
+          "version": 0,
+          "authority_surface": "participant",
+          "op": "contribution_append",
+          "realm_id": "realm-1",
+          "project_id": "proj-9",
+          "expected_revision": 12,
+          "args": {
+            "space_ref": "space:s-3",
+            "content": "note: budget ceiling"
+          },
+          "ext": {},
+          "request_id": "req-B",
+          "traceparent": "00-cccc-dddd-01"
+        },
+        "projection_fields": [
+          "version",
+          "authority_surface",
+          "op",
+          "realm_id",
+          "project_id",
+          "expected_revision",
+          "args",
+          "ext"
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "results": [
+      {
+        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"note: budget ceiling\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"participant\",\"expected_revision\":12,\"ext\":{},\"op\":\"contribution_append\",\"project_id\":\"proj-9\",\"realm_id\":\"realm-1\",\"version\":0},\"protocol_major\":0,\"schema_ref\":\"kcp/contribution_append@0\"}",
+        "sha256_hex": "e5b9cf131702ca1f7b41bd4b791ecc51c461f2be263cd245d1fff897293d23fc"
+      },
+      {
+        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"note: budget ceiling\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"participant\",\"expected_revision\":12,\"ext\":{},\"op\":\"contribution_append\",\"project_id\":\"proj-9\",\"realm_id\":\"realm-1\",\"version\":0},\"protocol_major\":0,\"schema_ref\":\"kcp/contribution_append@0\"}",
+        "sha256_hex": "e5b9cf131702ca1f7b41bd4b791ecc51c461f2be263cd245d1fff897293d23fc"
+      }
+    ],
+    "relation": "equal"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "problem/missing-title",
+  "description": "title is required",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "kind": "forbidden"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "missing-title"
+  }
+}

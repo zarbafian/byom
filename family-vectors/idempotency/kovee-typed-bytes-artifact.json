@@ -1,0 +1,21 @@
+{
+  "name": "idempotency/kovee-typed-bytes-artifact",
+  "description": "kovee dev.kovee.typed-bytes-digest.v1 over artifact bytes: length-framed domain separation (frame = uint64_be(len) || bytes)",
+  "input": {
+    "derivations": [
+      {
+        "kind": "dev.kovee.typed-bytes-digest.v1",
+        "domain": "artifact-bytes",
+        "media_or_schema_ref": "text/markdown",
+        "bytes_utf8": "# plan\n"
+      }
+    ]
+  },
+  "expected": {
+    "results": [
+      {
+        "digest_hex": "a481845d16f2c28a3b1f6bbe9bd4582eec7ff5764f1f47ab220268809b739d03"
+      }
+    ]
+  }
+}

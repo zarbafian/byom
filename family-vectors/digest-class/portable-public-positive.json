@@ -1,0 +1,22 @@
+{
+  "name": "digest-class/portable-public-positive",
+  "description": "portable_public: allowed only after the owner explicitly accepted a durable publicly dictionary-testable identifier",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "meeting notes: discussed the budget ceiling with bob"
+    },
+    "required_class": "portable_public",
+    "disclosure": {
+      "durable_identifier_accepted": true
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "portable_public",
+      "algorithm": "sha-256",
+      "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+    }
+  }
+}

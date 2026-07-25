@@ -1,0 +1,11 @@
+{
+  "name": "ijson/non-finite",
+  "description": "NaN/Infinity literals are not JSON and fail closed",
+  "input": {
+    "json_utf8": "{\"n\":NaN}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "non-finite"
+  }
+}

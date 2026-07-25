@@ -1,0 +1,16 @@
+{
+  "name": "ijson/over-nodes",
+  "description": "65602 JSON values exceed the profile node cap of 65536",
+  "input": {
+    "json_synth": {
+      "prefix": "[",
+      "repeat": "0,",
+      "count": 65600,
+      "suffix": "0]"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "over-nodes"
+  }
+}

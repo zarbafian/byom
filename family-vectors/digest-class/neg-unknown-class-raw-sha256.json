@@ -1,0 +1,29 @@
+{
+  "name": "digest-class/neg-unknown-class-raw-sha256",
+  "description": "kovee's retained plaintext raw_sha256 is not a family digest class (kovee amendment A5); unknown classes fail closed",
+  "input": {
+    "content": {
+      "kind": "protocol_bytes",
+      "type_tag": "bpp-schema-descriptor-v1",
+      "object": {
+        "object_kind": "pledge",
+        "schema_ref": "bpp/pledge@1",
+        "fields": [
+          "society_id",
+          "endeavor_ref",
+          "title"
+        ]
+      }
+    },
+    "required_class": "structural_public",
+    "offered": {
+      "class": "raw_sha256",
+      "algorithm": "sha-256",
+      "value_hex": "cdd8ae67bea39d4b491dea1516694b49442bf393df9c4693350906f37763d6f6"
+    }
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "unknown_digest_class"
+  }
+}

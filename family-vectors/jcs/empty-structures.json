@@ -1,0 +1,20 @@
+{
+  "name": "jcs/empty-structures",
+  "description": "empty objects and arrays canonicalize to {} and []",
+  "input": {
+    "value": {
+      "a": {},
+      "b": [],
+      "c": [
+        []
+      ],
+      "d": {
+        "e": {}
+      }
+    }
+  },
+  "expected": {
+    "canonical": "{\"a\":{},\"b\":[],\"c\":[[]],\"d\":{\"e\":{}}}",
+    "sha256_hex": "2b5c95b7e49364c9bf82552c7ac0297c33fee8d765ac8494e9eb49d7d8b3a193"
+  }
+}

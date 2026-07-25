@@ -1,0 +1,19 @@
+{
+  "name": "digest-class/ciphertext-public-positive",
+  "description": "ciphertext_public: SHA-256 over sealed (encrypted) blob bytes",
+  "input": {
+    "content": {
+      "kind": "sealed_blob",
+      "bytes_base64": "3y7SbgVToMqv8EfIqg3tLsb61HyLzb96AZdCOajbrBJW5UAcBL939HEQXxUivJkp"
+    },
+    "required_class": "ciphertext_public"
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "ciphertext_public",
+      "algorithm": "sha-256",
+      "value_hex": "6f3ca91587b1bed6612a48827c6ad5a3855a78df0604cd15164254618e8efd5e"
+    }
+  }
+}

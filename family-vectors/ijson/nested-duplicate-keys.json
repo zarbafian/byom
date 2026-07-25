@@ -1,0 +1,11 @@
+{
+  "name": "ijson/nested-duplicate-keys",
+  "description": "duplicate member names after escape decoding, in a nested object",
+  "input": {
+    "json_utf8": "{\"outer\":{\"a\":1,\"\\u0061\":2}}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "duplicate"
+  }
+}

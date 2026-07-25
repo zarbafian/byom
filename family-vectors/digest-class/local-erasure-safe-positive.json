@@ -1,0 +1,27 @@
+{
+  "name": "digest-class/local-erasure-safe-positive",
+  "description": "local_erasure_safe: HMAC-SHA-256 over type-tagged canonical bytes with a random per-object secret; the DigestRef carries key_ref, never the key",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+    "key_ref": "society-key:soc-garden/object:engram-42"
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "local_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/object:engram-42",
+      "value_hex": "adb08c756d29a31e1108b22c6c3177464179b3031dd18838239b17cd7e2635c3"
+    },
+    "canonical": "{\"$domain\":\"bpp-engram-v1\",\"participant_ref\":\"participant:alice\",\"text\":\"call alice about the garden fence\"}"
+  }
+}

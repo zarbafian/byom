@@ -1,0 +1,19 @@
+{
+  "name": "problem/status-out-of-range",
+  "description": "status must be 400..599 on a failure envelope",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Forbidden",
+        "kind": "forbidden",
+        "status": 200
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "status-out-of-range"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "problem/valid-minimal",
+  "description": "status is optional; type, title, kind suffice",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/stale_revision",
+        "title": "Stale revision",
+        "kind": "stale_revision"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

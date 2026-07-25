@@ -1,0 +1,31 @@
+{
+  "name": "digest-class/neg-class-mismatch-typed",
+  "description": "a well-constructed digest of the wrong class never satisfies a field, even with a byte-identical value space",
+  "input": {
+    "content": {
+      "kind": "protocol_bytes",
+      "type_tag": "bpp-schema-descriptor-v1",
+      "object": {
+        "object_kind": "pledge",
+        "schema_ref": "bpp/pledge@1",
+        "fields": [
+          "society_id",
+          "endeavor_ref",
+          "title"
+        ]
+      }
+    },
+    "required_class": "structural_public",
+    "offered": {
+      "class": "local_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/subject:mandate-7",
+      "value_hex": "b327582797899b37a2a847c3b791a4a3443904d585768da415482d64158ce6f9"
+    },
+    "object_secret_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "digest_class_mismatch"
+  }
+}

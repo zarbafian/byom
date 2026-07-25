@@ -1,0 +1,24 @@
+{
+  "name": "digest-class/disclosed-party-positive",
+  "description": "disclosed_party: SHA-256 over exact bytes already disclosed to named recipients; always accompanied by the external-copy obligation",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "meeting notes: discussed the budget ceiling with bob"
+    },
+    "required_class": "disclosed_party",
+    "recipients": [
+      "participant:reviewer-a",
+      "akson-peer:endpoint-b"
+    ]
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "disclosed_party",
+      "algorithm": "sha-256",
+      "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+    },
+    "external_copy_obligation": true
+  }
+}

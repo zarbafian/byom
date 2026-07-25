@@ -1,0 +1,11 @@
+{
+  "name": "ijson/unpaired-surrogate",
+  "description": "an escaped lone surrogate is rejected after decoding",
+  "input": {
+    "json_utf8": "{\"s\":\"\\ud800\"}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unpaired-surrogate"
+  }
+}

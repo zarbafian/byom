@@ -1,0 +1,18 @@
+{
+  "name": "jcs/basic-ordering",
+  "description": "object keys serialize in sorted order regardless of input order",
+  "input": {
+    "value": {
+      "b": 2,
+      "a": 1,
+      "c": [
+        3,
+        "x"
+      ]
+    }
+  },
+  "expected": {
+    "canonical": "{\"a\":1,\"b\":2,\"c\":[3,\"x\"]}",
+    "sha256_hex": "7f26f35fd8404944dd9a2441528c810b6c55fb2ae7b569b0438d309d81806acf"
+  }
+}

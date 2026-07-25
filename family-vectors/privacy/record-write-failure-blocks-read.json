@@ -1,0 +1,46 @@
+{
+  "name": "privacy/record-write-failure-blocks-read",
+  "description": "if the record cannot commit to the non-rollbackable access journal the read fails; unlogged bytes are never served",
+  "input": {
+    "records": [
+      {
+        "society_id": "soc-garden",
+        "internal_access_sequence": 9,
+        "access_event_id": "acc-01H0000000000000000000009",
+        "endpoint_incarnation": "inc-1",
+        "recovery_epoch": 0,
+        "actor_binding_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/actor-binding",
+          "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
+        },
+        "operation": "engram_read",
+        "purpose_ref": "purpose:endeavor-support",
+        "query_or_scope_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/query-scope",
+          "value_hex": "da6a5a5c9bf6cb96d4ccbd659a3fe01480ba2a0d3649df66d8bda2a530690dc5"
+        },
+        "result_object_count": 1,
+        "result_bytes": 180,
+        "outcome": "allowed",
+        "occurred_at": "2026-07-25T14:00:00Z"
+      }
+    ],
+    "chain_secret_hex": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+    "key_ref": "society-key:soc-garden/privacy-chain",
+    "journal_committed": false
+  },
+  "expected": {
+    "records": [
+      {
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000009\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":9,\"occurred_at\":\"2026-07-25T14:00:00Z\",\"operation\":\"engram_read\",\"outcome\":\"allowed\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":null},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"da6a5a5c9bf6cb96d4ccbd659a3fe01480ba2a0d3649df66d8bda2a530690dc5\"},\"recovery_epoch\":0,\"result_bytes\":180,\"result_object_count\":1,\"society_id\":\"soc-garden\"}",
+        "record_digest_hex": "74e4d3ff9aae41c2b70d1cbc72ea3fe247c02a98b91f537e2f019731e0a6215a"
+      }
+    ],
+    "release_permitted": false,
+    "reason": "privacy_access_record_commit_failed"
+  }
+}

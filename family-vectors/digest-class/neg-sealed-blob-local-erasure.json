@@ -1,0 +1,22 @@
+{
+  "name": "digest-class/neg-sealed-blob-local-erasure",
+  "description": "content addressing for sealed blobs is ciphertext_public, not local_erasure_safe",
+  "input": {
+    "content": {
+      "kind": "sealed_blob",
+      "bytes_base64": "3y7SbgVToMqv8EfIqg3tLsb61HyLzb96AZdCOajbrBJW5UAcBL939HEQXxUivJkp"
+    },
+    "required_class": "ciphertext_public",
+    "offered": {
+      "class": "local_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/object:engram-42",
+      "value_hex": "f86a46189693c2fad0708990360dc513134dc2e430814798d877c8fe6f7ea59b"
+    },
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "sealed_blob_requires_ciphertext_public"
+  }
+}

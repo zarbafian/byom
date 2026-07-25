@@ -1,0 +1,16 @@
+{
+  "name": "ijson/oversize",
+  "description": "request bodies above 256 KiB are rejected before parsing",
+  "input": {
+    "json_synth": {
+      "prefix": "{\"pad\":\"",
+      "repeat": "x",
+      "count": 262144,
+      "suffix": "\"}"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "oversize"
+  }
+}

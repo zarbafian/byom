@@ -1,0 +1,11 @@
+{
+  "name": "ijson/unsafe-integer",
+  "description": "integers beyond 2^53-1 are rejected (I-JSON safe range)",
+  "input": {
+    "json_utf8": "{\"n\":9007199254740992}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unsafe-integer"
+  }
+}

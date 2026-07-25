@@ -1,0 +1,39 @@
+{
+  "name": "idempotency/bpp-domain-basic",
+  "description": "byom bpp-idempotency-domain-v1: HMAC-SHA-256 (local_erasure_safe) over the $domain-tagged JCS of the IdempotencyDomain; the actor binding digest is opaque input material",
+  "input": {
+    "derivations": [
+      {
+        "kind": "bpp-idempotency-domain-v1",
+        "domain_object": {
+          "actor_binding_digest": {
+            "class": "local_erasure_safe",
+            "algorithm": "hmac-sha-256",
+            "key_ref": "society-key:soc-garden/actor-binding",
+            "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
+          },
+          "operation": "pledge_open",
+          "endpoint_incarnation": "inc-1",
+          "society_id": "soc-garden",
+          "society_recovery_epoch": 0,
+          "idempotency_key": "idem-4711"
+        },
+        "index_secret_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+        "key_ref": "society-key:soc-garden/idempotency-index"
+      }
+    ]
+  },
+  "expected": {
+    "results": [
+      {
+        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_open\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
+        "digest_ref": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/idempotency-index",
+          "value_hex": "4088084261c41087c8d3c9a74d21862bdce4105649604f4761c55fd98907cf47"
+        }
+      }
+    ]
+  }
+}

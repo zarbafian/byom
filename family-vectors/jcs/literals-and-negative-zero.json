@@ -1,0 +1,17 @@
+{
+  "name": "jcs/literals-and-negative-zero",
+  "description": "true/false/null keywords; -0.0 serializes as 0 (ES Number::toString)",
+  "input": {
+    "value": {
+      "t": true,
+      "f": false,
+      "n": null,
+      "negzero": -0.0,
+      "intzero": 0
+    }
+  },
+  "expected": {
+    "canonical": "{\"f\":false,\"intzero\":0,\"n\":null,\"negzero\":0,\"t\":true}",
+    "sha256_hex": "1df7a06b9f2ab92887acee25ff441d95da2d9555beda5fecaeaaf81bdc1a3e99"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "digest-class/neg-portable-without-disclosure",
+  "description": "portable_public without an explicit durable-identifier disclosure is forbidden",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "offered": {
+      "class": "portable_public",
+      "algorithm": "sha-256",
+      "value_hex": "e3564af308b54e55c511cd1d4c41904e78e12bf4b39212c28588ea8210064fef"
+    }
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "portable_requires_durable_identifier_disclosure"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "problem/missing-type",
+  "description": "type is required",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "title": "Forbidden",
+        "kind": "forbidden"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "missing-type"
+  }
+}

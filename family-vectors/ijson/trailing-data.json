@@ -1,0 +1,11 @@
+{
+  "name": "ijson/trailing-data",
+  "description": "exactly one JSON text per request body",
+  "input": {
+    "json_utf8": "{\"a\":1} {}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "trailing-data"
+  }
+}

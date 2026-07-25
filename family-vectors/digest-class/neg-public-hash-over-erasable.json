@@ -1,0 +1,24 @@
+{
+  "name": "digest-class/neg-public-hash-over-erasable",
+  "description": "public SHA-256 over ordinary erasable low-entropy content is forbidden",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "offered": {
+      "class": "structural_public",
+      "algorithm": "sha-256",
+      "value_hex": "e3564af308b54e55c511cd1d4c41904e78e12bf4b39212c28588ea8210064fef"
+    }
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "public_hash_over_erasable_content_forbidden"
+  }
+}

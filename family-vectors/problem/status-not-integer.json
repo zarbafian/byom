@@ -1,0 +1,19 @@
+{
+  "name": "problem/status-not-integer",
+  "description": "status must be a JSON integer (not a string, not a bool)",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Forbidden",
+        "kind": "forbidden",
+        "status": "403"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "status-not-integer"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "problem/valid-forbidden",
+  "description": "a complete problem: type/title/kind agree, status in 400-599",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Forbidden",
+        "kind": "forbidden",
+        "status": 403
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

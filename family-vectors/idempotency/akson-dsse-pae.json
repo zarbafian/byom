@@ -1,0 +1,21 @@
+{
+  "name": "idempotency/akson-dsse-pae",
+  "description": "akson DSSE pre-authentication encoding: the payload type is the domain discriminator (mirrors akson spec/vectors/dsse/hello-world)",
+  "input": {
+    "derivations": [
+      {
+        "kind": "akson-dsse-pae",
+        "payload_type": "application/vnd.akson.test+json",
+        "payload_utf8": "{\"hello\":\"world\"}"
+      }
+    ]
+  },
+  "expected": {
+    "results": [
+      {
+        "pae_utf8": "DSSEv1 31 application/vnd.akson.test+json 17 {\"hello\":\"world\"}",
+        "sha256_hex": "7bbba5e36890f66d8fc400352878f53676182113622d1ce93336a3c47639ed00"
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "digest-class/neg-portable-disclosure-refused",
+  "description": "an explicit refusal is not a disclosure; the system never silently upgrades erasable content to portability",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "meeting notes: discussed the budget ceiling with bob"
+    },
+    "required_class": "portable_public",
+    "offered": {
+      "class": "portable_public",
+      "algorithm": "sha-256",
+      "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+    },
+    "disclosure": {
+      "durable_identifier_accepted": false
+    }
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "portable_requires_durable_identifier_disclosure"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "jcs/string-escapes",
+  "description": "short escapes for control chars, quote and backslash; \\u00XX for other C0; U+007F and non-ASCII stay literal UTF-8",
+  "input": {
+    "value": {
+      "controls": "\b\t\n\f\r",
+      "quote-backslash": "\"\\",
+      "low": "\u0001\u001f",
+      "del": "\u007f",
+      "unicode": "\u00e9\u2603"
+    }
+  },
+  "expected": {
+    "canonical": "{\"controls\":\"\\b\\t\\n\\f\\r\",\"del\":\"\u007f\",\"low\":\"\\u0001\\u001f\",\"quote-backslash\":\"\\\"\\\\\",\"unicode\":\"\u00e9\u2603\"}",
+    "sha256_hex": "87365ecac245f5537766a46f08e59c86158ac3323e299b434d7f2a3b96b4d672"
+  }
+}

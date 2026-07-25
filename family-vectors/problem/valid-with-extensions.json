@@ -1,0 +1,21 @@
+{
+  "name": "problem/valid-with-extensions",
+  "description": "RFC 9457 extension members (detail, instance, domain extensions) are allowed",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/budget_exceeded",
+        "title": "Budget exceeded",
+        "kind": "budget_exceeded",
+        "status": 422,
+        "detail": "episode budget ceiling reached",
+        "instance": "urn:byom:problem:01H0000000000000000000002",
+        "budget_ref": "budget:b-9"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

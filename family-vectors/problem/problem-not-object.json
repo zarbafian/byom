@@ -1,0 +1,14 @@
+{
+  "name": "problem/problem-not-object",
+  "description": "the problem member must be a JSON object",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": "forbidden"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "problem-not-object"
+  }
+}

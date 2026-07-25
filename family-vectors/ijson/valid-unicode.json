@@ -1,0 +1,10 @@
+{
+  "name": "ijson/valid-unicode",
+  "description": "well-formed non-ASCII text and escaped astral pairs are accepted",
+  "input": {
+    "json_utf8": "{\"name\":\"\\u540d\\u524d\",\"emoji\":\"\\ud83c\\udf89\",\"euro\":\"\\u20ac\"}"
+  },
+  "expected": {
+    "valid": true
+  }
+}

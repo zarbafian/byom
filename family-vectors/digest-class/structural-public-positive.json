@@ -1,0 +1,29 @@
+{
+  "name": "digest-class/structural-public-positive",
+  "description": "structural_public: SHA-256 over knowingly non-sensitive, non-erasable protocol/schema bytes ($domain-tagged JCS)",
+  "input": {
+    "content": {
+      "kind": "protocol_bytes",
+      "type_tag": "bpp-schema-descriptor-v1",
+      "object": {
+        "object_kind": "pledge",
+        "schema_ref": "bpp/pledge@1",
+        "fields": [
+          "society_id",
+          "endeavor_ref",
+          "title"
+        ]
+      }
+    },
+    "required_class": "structural_public"
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "structural_public",
+      "algorithm": "sha-256",
+      "value_hex": "cdd8ae67bea39d4b491dea1516694b49442bf393df9c4693350906f37763d6f6"
+    },
+    "canonical": "{\"$domain\":\"bpp-schema-descriptor-v1\",\"fields\":[\"society_id\",\"endeavor_ref\",\"title\"],\"object_kind\":\"pledge\",\"schema_ref\":\"bpp/pledge@1\"}"
+  }
+}

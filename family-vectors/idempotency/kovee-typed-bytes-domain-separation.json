@@ -1,0 +1,31 @@
+{
+  "name": "idempotency/kovee-typed-bytes-domain-separation",
+  "description": "identical bytes under provider-request-bytes and provider-response-bytes domains produce different digests; domains never satisfy each other",
+  "input": {
+    "derivations": [
+      {
+        "kind": "dev.kovee.typed-bytes-digest.v1",
+        "domain": "provider-request-bytes",
+        "media_or_schema_ref": "application/json",
+        "bytes_utf8": "{\"q\":\"hi\"}"
+      },
+      {
+        "kind": "dev.kovee.typed-bytes-digest.v1",
+        "domain": "provider-response-bytes",
+        "media_or_schema_ref": "application/json",
+        "bytes_utf8": "{\"q\":\"hi\"}"
+      }
+    ]
+  },
+  "expected": {
+    "results": [
+      {
+        "digest_hex": "a0bb03828041df43510479b303292cd7937b9582566233e02b33082f6925575b"
+      },
+      {
+        "digest_hex": "7f7b2ae7fe24cf994d879615f4cf46d05d3d9fe71e8ac934b5463b2f0920adb7"
+      }
+    ],
+    "relation": "distinct"
+  }
+}

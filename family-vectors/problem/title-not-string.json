@@ -1,0 +1,18 @@
+{
+  "name": "problem/title-not-string",
+  "description": "title must be a string",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/invalid",
+        "title": 42,
+        "kind": "invalid"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "title-not-string"
+  }
+}

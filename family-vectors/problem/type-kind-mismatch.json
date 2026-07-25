@@ -1,0 +1,18 @@
+{
+  "name": "problem/type-kind-mismatch",
+  "description": "type URI must be the problems prefix + kind, exactly",
+  "input": {
+    "envelope": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Not found",
+        "kind": "not_found"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "type-kind-mismatch"
+  }
+}

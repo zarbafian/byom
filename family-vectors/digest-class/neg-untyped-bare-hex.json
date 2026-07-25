@@ -1,0 +1,20 @@
+{
+  "name": "digest-class/neg-untyped-bare-hex",
+  "description": "a bare 32-byte hex value is never a digest: every digest field is a typed DigestRef",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "offered": "e3564af308b54e55c511cd1d4c41904e78e12bf4b39212c28588ea8210064fef"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "untyped_digest_forbidden"
+  }
+}
