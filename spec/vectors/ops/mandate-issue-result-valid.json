@@ -13,7 +13,7 @@
       "purpose_digest": {
         "class": "structural_public",
         "algorithm": "sha-256",
-        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "allowed_operations": [
         "act_intent_prepare",
@@ -45,13 +45,13 @@
         {
           "class": "structural_public",
           "algorithm": "sha-256",
-          "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
         }
       ],
       "root_authority_trace_digest": {
         "class": "structural_public",
         "algorithm": "sha-256",
-        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "dependency_set_ref": "depset-77",
       "issued_at": "2026-07-25T12:00:00Z",

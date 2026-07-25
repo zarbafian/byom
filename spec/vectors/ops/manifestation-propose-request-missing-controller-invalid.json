@@ -17,7 +17,7 @@
       "package_or_adapter_digest": {
         "class": "structural_public",
         "algorithm": "sha-256",
-        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        "value_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "supported_protocol_versions": [
         "0.2"

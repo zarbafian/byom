@@ -18,15 +18,15 @@
       "proposed_manifestation_digest": {
         "class": "local_erasure_safe",
         "algorithm": "hmac-sha-256",
-        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-        "key_id": "k-0001"
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "key_ref": "k-0001"
       },
       "exact_context_ref": "ctx-5",
       "exact_context_digest": {
         "class": "local_erasure_safe",
         "algorithm": "hmac-sha-256",
-        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
-        "key_id": "k-0001"
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "key_ref": "k-0001"
       },
       "resource_reservation_ref": "resv-6",
       "onboarding_compute_intent_ref": "oci-1",

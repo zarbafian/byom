@@ -20,7 +20,7 @@
       "current_state_digest": {
         "class": "ciphertext_public",
         "algorithm": "sha-256",
-        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        "value_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "compatibility_selector": {
         "manifestation_digest_in": [

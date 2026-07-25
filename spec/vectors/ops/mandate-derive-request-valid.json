@@ -17,7 +17,7 @@
       "parent_mandate_digest": {
         "class": "structural_public",
         "algorithm": "sha-256",
-        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
       },
       "grantee_participant_ref": "part-agent-12",
       "purpose_ref": "purpose-web-research",
