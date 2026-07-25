@@ -1,2 +1,7 @@
+# Any Cargo build dir.
+target/
+**/*.rs.bk
+*.pdb
 .cargo/
 __pycache__/
+*.pyc

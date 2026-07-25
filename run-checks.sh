@@ -29,4 +29,14 @@ python3 family-vectors/xcheck.py
 echo "== family vectors (TypeScript independent rederiver)"
 node family-vectors/tscheck/check.mjs
 
+echo "== cargo fmt (workspace formatting)"
+cargo fmt --check
+
+echo "== cargo clippy (workspace lints, warnings denied)"
+cargo clippy --workspace --all-targets --locked -- -D warnings
+
+echo "== cargo test (workspace: vector round-trips, journal fault injection,"
+echo "   onboarding negatives, crash matrix, e2e over real sockets)"
+cargo test --workspace --locked
+
 echo "run-checks: OK"

@@ -1,0 +1,18 @@
+[package]
+name = "bpp-core"
+publish = false
+description = "BPP wire types: envelopes, problems, digests, idempotency domain, registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }

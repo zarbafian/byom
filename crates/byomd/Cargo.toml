@@ -1,0 +1,29 @@
+[package]
+name = "byomd"
+publish = false
+description = "The byom daemon: per-surface UDS sockets, BPP dispatch, society kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "byomd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "byomd"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+bpp-core = { workspace = true }
+byom-store = { workspace = true }
+libc = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

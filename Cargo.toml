@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bpp-core",
+    "crates/byom-store",
+    "crates/byomd",
+    "crates/byom-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/zarbafian/byom"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Internal crates
+bpp-core = { path = "crates/bpp-core" }
+byom-store = { path = "crates/byom-store" }
+byomd = { path = "crates/byomd" }
+
+# External (pinned minor versions; exact pins live in Cargo.lock, committed).
+# Same pins as kovee (mirrored workspace conventions); policy enforced by
+# cargo-deny.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# `bundled` compiles the vendored SQLite: pure-Rust-workspace build posture
+# (no system library probing, no network at build time) — the family choice.
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+thiserror = "2.0"
+libc = "0.2"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
