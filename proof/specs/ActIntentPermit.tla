@@ -256,3 +256,43 @@ SpentBindsKey == (consumptions = 1) <=> (spent # None)
 \* @parity transition: executing -> ambiguous via effect_outcome_admit
 \* @parity transition: ambiguous -> succeeded via effect_outcome_admit
 \* @parity transition: ambiguous -> failed via effect_outcome_admit
+\* @parity crash: absent -> prepared via act_intent_prepare = none or recoverable authorized intent (§14.8 ActIntent row 1)
+\* @parity fences: absent -> prepared via act_intent_prepare = exact subject and one-shot use slot created
+\* @parity crash: prepared -> awaiting_decision via act_intent_position = none or recoverable authorized intent (§14.8 ActIntent row 1); prior Position inputs remain (§14.8 Position/Decision row)
+\* @parity fences: prepared -> awaiting_decision via act_intent_position = one current seat head (§14.8 Position/Decision row)
+\* @parity crash: awaiting_decision -> awaiting_decision via act_intent_position = none or recoverable authorized intent (§14.8 ActIntent row 1); prior Position inputs remain (§14.8 Position/Decision row)
+\* @parity fences: awaiting_decision -> awaiting_decision via act_intent_position = one current seat head (§14.8 Position/Decision row)
+\* @parity crash: awaiting_decision -> authorized via act_intent_finalize = none or recoverable authorized intent (§14.8 ActIntent row 1)
+\* @parity fences: awaiting_decision -> authorized via act_intent_finalize = one GovernanceDecision bound to the intent digest; exact subject and one-shot use slot locked
+\* @parity crash: prepared -> denied via act_intent_finalize = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: prepared -> denied via act_intent_finalize = unspent reservations released only when unambiguous
+\* @parity crash: awaiting_decision -> denied via act_intent_finalize = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: awaiting_decision -> denied via act_intent_finalize = unspent reservations released only when unambiguous
+\* @parity crash: authorized -> denied via act_intent_finalize = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: authorized -> denied via act_intent_finalize = unspent reservations released only when unambiguous
+\* @parity crash: prepared -> expired via server_time = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: prepared -> expired via server_time = unspent reservations released only when unambiguous
+\* @parity crash: awaiting_decision -> expired via server_time = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: awaiting_decision -> expired via server_time = unspent reservations released only when unambiguous
+\* @parity crash: authorized -> expired via server_time = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: authorized -> expired via server_time = unspent reservations released only when unambiguous
+\* @parity crash: prepared -> canceled via act_intent_cancel = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: prepared -> canceled via act_intent_cancel = unspent reservations released only when unambiguous
+\* @parity crash: awaiting_decision -> canceled via act_intent_cancel = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: awaiting_decision -> canceled via act_intent_cancel = unspent reservations released only when unambiguous
+\* @parity crash: authorized -> canceled via act_intent_cancel = terminal; replay does not execute (§14.8 ActIntent denial row)
+\* @parity fences: authorized -> canceled via act_intent_cancel = unspent reservations released only when unambiguous
+\* @parity crash: authorized -> consumed via execution_permit_consume = never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)
+\* @parity fences: authorized -> consumed via execution_permit_consume = MandateUse inserted once; one immutable ExecutionConsumptionReceipt
+\* @parity crash: consumed -> executing via host_effect_attempt = never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)
+\* @parity fences: consumed -> executing via host_effect_attempt = (none)
+\* @parity crash: executing -> succeeded via effect_outcome_admit = never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)
+\* @parity fences: executing -> succeeded via effect_outcome_admit = source-qualified admission once; conservative settlement
+\* @parity crash: executing -> failed via effect_outcome_admit = never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)
+\* @parity fences: executing -> failed via effect_outcome_admit = source-qualified admission once; conservative settlement
+\* @parity crash: executing -> ambiguous via effect_outcome_admit = never blindly repeats non-idempotent effect (§14.8 ActIntent row 2)
+\* @parity fences: executing -> ambiguous via effect_outcome_admit = source-qualified admission once; conservative settlement
+\* @parity crash: ambiguous -> succeeded via effect_outcome_admit = remains ambiguous on stale/unknown/conflicting source; no GovernanceDecision invented and no disposition can block the source fact (§14.8 ActIntent source reconciliation row)
+\* @parity fences: ambiguous -> succeeded via effect_outcome_admit = source EOA revision and Byom source-head CAS; conservative budget settles once; any active disposition head becomes source_advanced and late result use is quarantined
+\* @parity crash: ambiguous -> failed via effect_outcome_admit = remains ambiguous on stale/unknown/conflicting source; no GovernanceDecision invented and no disposition can block the source fact (§14.8 ActIntent source reconciliation row)
+\* @parity fences: ambiguous -> failed via effect_outcome_admit = source EOA revision and Byom source-head CAS; conservative budget settles once; any active disposition head becomes source_advanced and late result use is quarantined

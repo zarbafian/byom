@@ -326,3 +326,21 @@ ExternalMonotonic ==
 \* @parity transition: prepared -> abandoned via journal_abandon
 \* @parity transition: witness_unknown -> abandoned via journal_abandon
 \* @parity transition: witnessed -> finalized via journal_sql_finalize
+\* @parity crash: absent -> prepared via journal_sql_prepare = SQL prepare before witness leaves inert pending state that is retried or abandoned after proving no journal entry (§15.3 crash semantics)
+\* @parity fences: absent -> prepared via journal_sql_prepare = no visible authority before finalize
+\* @parity crash: prepared -> prepared via journal_sql_prepare = a competing CAS requires complete dependency revalidation and a new proposed generation; the old pending transition stays inert (§15.3 crash semantics)
+\* @parity fences: prepared -> prepared via journal_sql_prepare = no visible authority before finalize
+\* @parity crash: prepared -> witnessed via journal_witness_cas = witness success before SQL finalize is recovered by the exact receipt and finalized once (§15.3 crash semantics)
+\* @parity fences: prepared -> witnessed via journal_witness_cas = no visible authority before finalize
+\* @parity crash: prepared -> witness_unknown via journal_witness_cas = a witness timeout is queried by transaction id and never guessed (§15.3 crash semantics; problem kind authority_witness_unknown, §14.9)
+\* @parity fences: prepared -> witness_unknown via journal_witness_cas = no visible authority before finalize
+\* @parity crash: witness_unknown -> witnessed via journal_witness_cas = witness success before SQL finalize is recovered by the exact receipt and finalized once (§15.3 crash semantics)
+\* @parity fences: witness_unknown -> witnessed via journal_witness_cas = no visible authority before finalize
+\* @parity crash: witness_unknown -> prepared via journal_sql_prepare = a witness timeout is queried by transaction id and never guessed (§15.3 crash semantics)
+\* @parity fences: witness_unknown -> prepared via journal_sql_prepare = no visible authority before finalize
+\* @parity crash: prepared -> abandoned via journal_abandon = inert pending state is retried or abandoned after proving no journal entry; a witnessed entry is never orphaned (§15.3 crash semantics)
+\* @parity fences: prepared -> abandoned via journal_abandon = no visible authority before finalize
+\* @parity crash: witness_unknown -> abandoned via journal_abandon = inert pending state is retried or abandoned after proving no journal entry; a witnessed entry is never orphaned (§15.3 crash semantics)
+\* @parity fences: witness_unknown -> abandoned via journal_abandon = no visible authority before finalize
+\* @parity crash: witnessed -> finalized via journal_sql_finalize = SQL loss or rollback after witness creates a journal/database mismatch and cannot be skipped or re-created under a new transaction id (§15.3 crash semantics)
+\* @parity fences: witnessed -> finalized via journal_sql_finalize = marks the exact pending set finalized/visible, advances the local journal mirror, and makes the retained result readable; only then may Byom return success, release a credential or permit, publish an event, or allow a dependent transition

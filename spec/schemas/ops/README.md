@@ -390,4 +390,15 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   row carries structured `guards`, `locks`, `fences`, `events`, and
   `crash_result` (§14.8's mandated columns), validated by the runner and
   by `proof/check-descriptors.py`, with the negative mutation suite
-  proving neither validator is vacuous.
+  proving neither validator is vacuous. RT-09 closes the columns
+  SEMANTICALLY: `spec/descriptors/vocabulary.json` is the frozen v2
+  vocabulary — the closed per-column value sets (the distinct §14.8
+  column values in use across all committed descriptors) plus the event
+  grammar `^[a-z0-9-]+\.[a-z0-9_-]+$` — and the runner rejects any
+  descriptor column entry outside it (semantic erasure to arbitrary
+  nonempty prose fails closed; extending a column is a change to the
+  vocabulary file). For modeled machines, `proof/check-descriptors.py`
+  additionally compares the `crash_result` and `fences` columns against
+  the model's `@parity crash:` / `@parity fences:` transcriptions both
+  ways, so a modeled row's crash/fence semantics cannot be swapped even
+  for another legal value.

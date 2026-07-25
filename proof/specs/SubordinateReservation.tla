@@ -257,3 +257,29 @@ NoChargeWithoutCommit ==
 \* @parity transition: confirmed -> released via subordinate_release
 \* @parity transition: denied -> released via subordinate_release
 \* @parity transition: settled -> released via subordinate_release
+\* @parity crash: absent -> requested via subordinate_reserve_request = timeout queries; unknown remains uncertain (§14.8 ExternalBudgetBridge row)
+\* @parity fences: absent -> requested via subordinate_reserve_request = (none)
+\* @parity crash: requested -> requested via subordinate_reserve_request = timeout queries; unknown remains uncertain (§14.8 ExternalBudgetBridge row)
+\* @parity fences: requested -> requested via subordinate_reserve_request = (none)
+\* @parity crash: requested -> confirmed via subordinate_reserved = source ref/revision/digest persisted; Episode queues only if confirmed (§14.8 ExternalBudgetBridge row)
+\* @parity fences: requested -> confirmed via subordinate_reserved = subordinate ref/revision/digest persisted on the bridge; the byom parent stays reserved (no parallel charge, no early release)
+\* @parity crash: requested -> denied via subordinate_denied = timeout queries; unknown remains uncertain (§14.8 ExternalBudgetBridge row)
+\* @parity fences: requested -> denied via subordinate_denied = releases only demonstrably unspent Byom reservations
+\* @parity crash: requested -> uncertain via subordinate_outcome_unknown = unknown remains uncertain; the byom reservation is not released and spend stays blocked until the stable query or the R38 seat resolves it (§11.4, family contract L33)
+\* @parity fences: requested -> uncertain via subordinate_outcome_unknown = the byom reservation is NOT released; spend stays blocked
+\* @parity crash: uncertain -> uncertain via subordinate_query_unknown = conservative hold; nothing releases (§11.4)
+\* @parity fences: uncertain -> uncertain via subordinate_query_unknown = (none)
+\* @parity crash: uncertain -> confirmed via subordinate_query_confirmed = the recovery query surfaces Kovee's durable truth, never invents one (ResolutionIsReal; §11.4)
+\* @parity fences: uncertain -> confirmed via subordinate_query_confirmed = bridge persists the recovered ref/revision/digest
+\* @parity crash: uncertain -> denied via subordinate_query_denied = the recovery query surfaces Kovee's durable truth, never invents one (ResolutionIsReal; §11.4)
+\* @parity fences: uncertain -> denied via subordinate_query_denied = released amount is exactly the demonstrably unspent byom reservation
+\* @parity crash: uncertain -> released via budget_reconcile = unknown quantity never returns to remaining without the R38 decision (§14.8 BudgetReservationSet row; family contract L33)
+\* @parity fences: uncertain -> released via budget_reconcile = release applied under account locks
+\* @parity crash: confirmed -> settled via subordinate_settle = changed request id cannot double settle (§14.8 UsageSettlement row)
+\* @parity fences: confirmed -> settled via subordinate_settle = settlement applied once on both sides; unknown or underivable cost keeps the reservation or settles to the conservative maximum
+\* @parity crash: confirmed -> released via subordinate_release = unknown quantity never returns to remaining (§14.8 BudgetReservationSet row)
+\* @parity fences: confirmed -> released via subordinate_release = releases only demonstrably unspent quantity; the parent bucket returns in the same accounting step
+\* @parity crash: denied -> released via subordinate_release = unknown quantity never returns to remaining (§14.8 BudgetReservationSet row)
+\* @parity fences: denied -> released via subordinate_release = (none)
+\* @parity crash: settled -> released via subordinate_release = terminal: a released bridge never revives — new work is a fresh saga row under a fresh stable key (§11.4)
+\* @parity fences: settled -> released via subordinate_release = released_lifetime is a monotonic audit counter, not an available bucket (§11.4)

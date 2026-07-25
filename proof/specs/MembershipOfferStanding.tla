@@ -251,6 +251,44 @@ CompletionIsNotAcceptance ==
 \* @parity transition: standing_active -> standing_ceased via participation_cease
 \* @parity transition: standing_active -> standing_expired via server_time
 \* @parity transition: standing_active -> standing_superseded via standing_replacement
+\* @parity crash: absent -> offered via membership_offer = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: absent -> offered via membership_offer = (none)
+\* @parity crash: offered -> onboarding via onboarding_offer = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: offered -> onboarding via onboarding_offer = onboarding has one zero-general-effect fence and optional one-shot compute receipt
+\* @parity crash: offered -> accepted via membership_accept = silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)
+\* @parity fences: offered -> accepted via membership_accept = (none)
+\* @parity crash: onboarding -> accepted via membership_accept = silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)
+\* @parity fences: onboarding -> accepted via membership_accept = (none)
+\* @parity crash: accepted -> admitted via participant_admit = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: accepted -> admitted via participant_admit = admission binds current acceptance and Standing; Participant binding epoch advances
+\* @parity crash: absent -> standing_active via participant_admit = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: absent -> standing_active via participant_admit = admission binds current acceptance and Standing
+\* @parity crash: offered -> refused via membership_refuse = exact refusal retry returns its receipt (§14.8 MembershipOffer/Standing row)
+\* @parity fences: offered -> refused via membership_refuse = refusal advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs; retraction cites prior acceptance
+\* @parity crash: onboarding -> refused via membership_refuse = exact refusal retry returns its receipt (§14.8 MembershipOffer/Standing row)
+\* @parity fences: onboarding -> refused via membership_refuse = refusal advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs; retraction cites prior acceptance
+\* @parity crash: accepted -> refused via membership_refuse = exact refusal retry returns its receipt (§14.8 MembershipOffer/Standing row)
+\* @parity fences: accepted -> refused via membership_refuse = refusal advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs; retraction cites prior acceptance
+\* @parity crash: offered -> revoked via membership_offer_revoke = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: offered -> revoked via membership_offer_revoke = revoke advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs
+\* @parity crash: onboarding -> revoked via membership_offer_revoke = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: onboarding -> revoked via membership_offer_revoke = revoke advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs
+\* @parity crash: accepted -> revoked via membership_offer_revoke = no terminal offer can later admit (§14.8 MembershipOffer/Standing row)
+\* @parity fences: accepted -> revoked via membership_offer_revoke = revoke advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs
+\* @parity crash: offered -> expired via server_time = silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)
+\* @parity fences: offered -> expired via server_time = expiry advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs
+\* @parity crash: onboarding -> expired via server_time = silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)
+\* @parity fences: onboarding -> expired via server_time = expiry advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs
+\* @parity crash: accepted -> expired via server_time = silence and stale acceptance expire (§14.8 MembershipOffer/Standing row)
+\* @parity fences: accepted -> expired via server_time = expiry advances the fence, closes the candidate channel, and invalidates unused compute/self-policy inputs
+\* @parity crash: standing_active -> standing_suspended via participant_suspend = no partial revocation (§14.8 Standing row)
+\* @parity fences: standing_active -> standing_suspended via participant_suspend = minimum revocation set fences positions, contexts, Mandates, Episodes, effects
+\* @parity crash: standing_active -> standing_ceased via participation_cease = no partial revocation (§14.8 Standing row)
+\* @parity fences: standing_active -> standing_ceased via participation_cease = minimum revocation set fences positions, contexts, Mandates, Episodes, effects
+\* @parity crash: standing_active -> standing_expired via server_time = no partial revocation (§14.8 Standing row)
+\* @parity fences: standing_active -> standing_expired via server_time = minimum revocation set fences positions, contexts, Mandates, Episodes, effects
+\* @parity crash: standing_active -> standing_superseded via standing_replacement = no partial revocation (§14.8 Standing row)
+\* @parity fences: standing_active -> standing_superseded via standing_replacement = minimum revocation set fences positions, contexts, Mandates, Episodes, effects
 \* @parity descriptor: onboarding-activation-offer.json
 \* @parity state: offered
 \* @parity state: active
@@ -272,3 +310,31 @@ CompletionIsNotAcceptance ==
 \* @parity transition: offered -> expired via server_time
 \* @parity transition: active -> expired via server_time
 \* @parity transition: completed -> expired via server_time
+\* @parity crash: absent -> offered via onboarding_offer = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: absent -> offered via onboarding_offer = one zero-general-effect fence; optional one-shot compute receipt
+\* @parity crash: offered -> active via onboarding_episode_claim = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: offered -> active via onboarding_episode_claim = one fence
+\* @parity crash: offered -> active via onboarding_compute_permit_consume = runtime output never becomes acceptance (§14.8 Onboarding compute row)
+\* @parity fences: offered -> active via onboarding_compute_permit_consume = at most one compute use; one-shot receipt; output reaches candidate surface only
+\* @parity crash: offered -> completed via onboarding_episode_complete = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: offered -> completed via onboarding_episode_complete = completion is evidence only
+\* @parity crash: active -> completed via onboarding_episode_complete = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: active -> completed via onboarding_episode_complete = completion is evidence only
+\* @parity crash: offered -> refused via membership_refuse = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: offered -> refused via membership_refuse = refusal advances the fence and closes the candidate workload/channel
+\* @parity crash: active -> refused via membership_refuse = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: active -> refused via membership_refuse = refusal advances the fence and closes the candidate workload/channel
+\* @parity crash: completed -> refused via membership_refuse = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: completed -> refused via membership_refuse = refusal advances the fence and closes the candidate workload/channel
+\* @parity crash: offered -> revoked via membership_offer_revoke = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: offered -> revoked via membership_offer_revoke = revoke advances the fence and closes the candidate workload/channel
+\* @parity crash: active -> revoked via membership_offer_revoke = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: active -> revoked via membership_offer_revoke = revoke advances the fence and closes the candidate workload/channel
+\* @parity crash: completed -> revoked via membership_offer_revoke = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: completed -> revoked via membership_offer_revoke = revoke advances the fence and closes the candidate workload/channel
+\* @parity crash: offered -> expired via server_time = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: offered -> expired via server_time = expiry advances the fence and closes the candidate workload/channel
+\* @parity crash: active -> expired via server_time = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: active -> expired via server_time = expiry advances the fence and closes the candidate workload/channel
+\* @parity crash: completed -> expired via server_time = no state authors acceptance; terminal fence survives retry (§14.8 OnboardingActivationOffer row)
+\* @parity fences: completed -> expired via server_time = expiry advances the fence and closes the candidate workload/channel

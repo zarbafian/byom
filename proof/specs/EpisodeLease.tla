@@ -23,7 +23,9 @@
 EXTENDS Naturals
 
 CONSTANTS Workers,   \* competing workload identities, e.g. {w1, w2}
-          MaxFence   \* bound on Byom fence epochs (= claim attempts)
+          MaxFence,  \* bound on Byom fence epochs (= claim attempts)
+          LeaseTTL,  \* lease time-to-live: deadline = claim time + LeaseTTL (RT-10)
+          MaxTime    \* bound on the authoritative clock for the finite check (RT-10)
 
 None == "none"
 
@@ -41,11 +43,13 @@ VARIABLES
   expiries,   \* history: authoritative lease expiries (D-RT-6)
   yields,     \* history: voluntary lease yields (D-RT-6)
   completedFence, \* history: fence under which completion committed (0 = none)
-  everSubmitted, everAdmitted, everBridged  \* pipeline history flags
+  everSubmitted, everAdmitted, everBridged,  \* pipeline history flags
+  now,        \* authoritative server clock, a monotone natural (RT-10)
+  deadline    \* current lease deadline, minted at claim: now + LeaseTTL (RT-10)
 
 vars == <<act, wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
           expiries, yields, completedFence, everSubmitted, everAdmitted,
-          everBridged>>
+          everBridged, now, deadline>>
 
 ActStates == {"absent", "ready", "active", "waiting", "reviewing", "held",
               "completed", "failed", "canceled"}
@@ -79,6 +83,8 @@ TypeOK ==
   /\ everSubmitted \in BOOLEAN
   /\ everAdmitted \in BOOLEAN
   /\ everBridged \in BOOLEAN
+  /\ now \in 0..MaxTime
+  /\ deadline \in 0..(MaxTime + LeaseTTL)
 
 Init ==
   /\ act = "absent" /\ wi = "absent" /\ adm = "absent" /\ alloc = "absent"
@@ -86,6 +92,7 @@ Init ==
   /\ fence = 0 /\ holder = None /\ wfence = [w \in Workers |-> 0]
   /\ attempts = 0 /\ expiries = 0 /\ yields = 0 /\ completedFence = 0
   /\ everSubmitted = FALSE /\ everAdmitted = FALSE /\ everBridged = FALSE
+  /\ now = 0 /\ deadline = 0
 
 \* The current lease holder with a current (non-stale) fence.
 CurrentHolder(w) == holder = w /\ wfence[w] = fence
@@ -98,7 +105,7 @@ ActivityOpen ==
   /\ act = "absent"
   /\ act' = "ready"
   /\ UNCHANGED <<wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* activity_hold (R29): any nonterminal -> held; hold fences a running     *)
 (* Episode (episode row running -> interrupted, one transaction).          *)
@@ -107,7 +114,7 @@ Hold ==
   /\ act' = "held"
   /\ ep' = IF ep = "running" THEN "interrupted" ELSE ep
   /\ UNCHANGED <<wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* activity_close (R29, target_state-discriminated, G25): cancel fences a  *)
 (* running Episode (episode row running -> canceled); in-flight work       *)
@@ -117,21 +124,21 @@ Close ==
   /\ \E target \in {"completed", "failed", "canceled"} : act' = target
   /\ ep' = IF ep = "running" THEN "canceled" ELSE ep
   /\ UNCHANGED <<wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* delivery_submit cascade: the PledgeWorkstream enters review.            *)
 DeliverySubmit ==
   /\ act = "active"
   /\ act' = "reviewing"
   /\ UNCHANGED <<wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* pledge_resume cascade: a new Activity generation under unchanged terms. *)
 PledgeResume ==
   /\ act = "reviewing"
   /\ act' = "ready"
   /\ UNCHANGED <<wi, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* ------------------ WakeIntent / admission / allocation ---------------- *)
 
@@ -143,19 +150,19 @@ WakeSubmit ==
   /\ wi' = "submitted"
   /\ everSubmitted' = TRUE
   /\ UNCHANGED <<act, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 WakeWithdraw ==
   /\ wi = "submitted"
   /\ wi' = "withdrawn"
   /\ UNCHANGED <<act, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 WakeExpire ==
   /\ wi = "submitted"
   /\ wi' = "expired"
   /\ UNCHANGED <<act, adm, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* activation_admit (kernel, non-callable): deterministic evaluation of a  *)
 (* COMMITTED WakeIntent - the kernel may deny but cannot invent an         *)
@@ -166,7 +173,7 @@ ActivationAdmit ==
   /\ \E d \in {"admission_admitted", "admission_denied"} : adm' = d
   /\ everAdmitted' = (adm' = "admission_admitted")
   /\ UNCHANGED <<act, wi, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everBridged, expiries, yields, now, deadline>>
 
 (* activation_policy_revoke cascade (R13): queued admissions fence on      *)
 (* revoke without erasing executed Episodes.                               *)
@@ -174,13 +181,13 @@ AdmissionRevoke ==
   /\ adm = "admission_admitted"
   /\ adm' = "admission_revoked"
   /\ UNCHANGED <<act, wi, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 AdmissionExpire ==
   /\ adm = "admission_admitted"
   /\ adm' = "admission_expired"
   /\ UNCHANGED <<act, wi, alloc, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* resource_allocate (kernel, non-callable): can only reserve an ADMITTED  *)
 (* WakeIntent (section 11.1); prepared -> reserved -> bridged, with the    *)
@@ -190,20 +197,20 @@ AllocPrepare ==
   /\ adm = "admission_admitted"
   /\ alloc' = "allocation_prepared"
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 AllocReserve ==
   /\ alloc = "allocation_prepared"
   /\ alloc' = "allocation_reserved"
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 AllocBridge ==
   /\ alloc = "allocation_reserved"
   /\ alloc' = "allocation_bridged"
   /\ everBridged' = TRUE
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, expiries, yields, now, deadline>>
 
 (* An unknown Kovee bridge stays uncertain; releases/revocations settle    *)
 (* conservatively (section 14.8).                                          *)
@@ -214,7 +221,7 @@ AllocSettle ==
                     "allocation_revoked"} :
        alloc' = target
   /\ UNCHANGED <<act, wi, adm, ep, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* ------------------------------ Episode -------------------------------- *)
 
@@ -226,7 +233,7 @@ EpisodeCreate ==
   /\ ep' = "prepared"
   /\ act' = "active"
   /\ UNCHANGED <<wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* episode_request: deterministic eligibility - no raw message or Kovee    *)
 (* attention candidate starts an Episode (section 11.2).                   *)
@@ -234,7 +241,7 @@ EpisodeEligible ==
   /\ ep = "prepared"
   /\ ep' = "eligible"
   /\ UNCHANGED <<act, wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* resource_allocate: queue ONLY after both Byom and Kovee reservations    *)
 (* (the bridged allocation); an uncertain bridge stays unqueued.           *)
@@ -243,7 +250,7 @@ Queue ==
   /\ alloc = "allocation_bridged"
   /\ ep' = "queued"
   /\ UNCHANGED <<act, wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* episode_claim (R30): compare-and-swap on the ONE EpisodeLeaseHead -     *)
 (* increments the Byom fence and creates an immutable EpisodeAttempt.      *)
@@ -256,22 +263,26 @@ Claim(w) ==
   /\ fence' = fence + 1
   /\ wfence' = [wfence EXCEPT ![w] = fence + 1]
   /\ attempts' = attempts + 1
+  /\ deadline' = now + LeaseTTL
   /\ UNCHANGED <<act, wi, adm, alloc, ep, completedFence, everSubmitted,
-                 everAdmitted, everBridged, expiries, yields>>
+                 everAdmitted, everBridged, expiries, yields, now>>
 
-(* server_time (D-RT-6, RT-10): authoritative expiry - the server clock    *)
-(* passes the lease deadline and moves the head to lease_expired.  This    *)
-(* is the ONLY thing that makes a leased head re-claimable: worker crash   *)
-(* or silence is stuttering and enables nothing.  Expiry never deletes     *)
-(* the head or reuses a fence (section 11.2).                              *)
+(* server_time (D-RT-6, RT-10): authoritative expiry - enabled ONLY when   *)
+(* the server clock has strictly passed the lease deadline minted at       *)
+(* claim (now > deadline), and moves the head to lease_expired.  This is   *)
+(* the ONLY thing that makes a leased head re-claimable: worker crash or   *)
+(* silence is stuttering and enables nothing, and without Tick steps the   *)
+(* immediate claim -> expire -> reclaim trace is impossible.  Expiry       *)
+(* never deletes the head or reuses a fence (section 11.2).                *)
 LeaseExpire ==
   /\ lease = "lease_leased"
+  /\ now > deadline
   /\ expiries < MaxFence
   /\ expiries' = expiries + 1
   /\ lease' = "lease_expired"
   /\ UNCHANGED <<act, wi, adm, alloc, ep, fence, holder, wfence, attempts,
                  completedFence, everSubmitted, everAdmitted, everBridged,
-                 yields>>
+                 yields, now, deadline>>
 
 (* episode_claim: expired-head re-claim (lease_expired -> lease_leased)    *)
 (* under a FRESH fence and a new immutable attempt - enabled ONLY from     *)
@@ -285,8 +296,9 @@ ReClaim(w) ==
   /\ fence' = fence + 1
   /\ wfence' = [wfence EXCEPT ![w] = fence + 1]
   /\ attempts' = attempts + 1
+  /\ deadline' = now + LeaseTTL
   /\ UNCHANGED <<act, wi, adm, alloc, ep, completedFence, everSubmitted,
-                 everAdmitted, everBridged, expiries, yields>>
+                 everAdmitted, everBridged, expiries, yields, now>>
 
 (* episode_claim: re-claim after yield (lease_yielding -> lease_leased);   *)
 (* prior attempts remain historical.                                       *)
@@ -298,8 +310,9 @@ YieldReClaim(w) ==
   /\ fence' = fence + 1
   /\ wfence' = [wfence EXCEPT ![w] = fence + 1]
   /\ attempts' = attempts + 1
+  /\ deadline' = now + LeaseTTL
   /\ UNCHANGED <<act, wi, adm, alloc, ep, completedFence, everSubmitted,
-                 everAdmitted, everBridged, expiries, yields>>
+                 everAdmitted, everBridged, expiries, yields, now>>
 
 (* episode_start (R30): only the current holder under the current fence.   *)
 Start(w) ==
@@ -309,7 +322,7 @@ Start(w) ==
   /\ ep' = "running"
   /\ lease' = "lease_running"
   /\ UNCHANGED <<act, wi, adm, alloc, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* episode_yield (R30): yield to yielded, or to waiting on an admitted     *)
 (* event/dependency; the stream returns to waiting (activity cascade).     *)
@@ -324,7 +337,7 @@ Yield(w) ==
   /\ act' = IF act = "active" THEN "waiting" ELSE act
   /\ UNCHANGED <<wi, adm, alloc, fence, holder, wfence, attempts,
                  completedFence, everSubmitted, everAdmitted, everBridged,
-                 expiries>>
+                 expiries, now, deadline>>
 
 (* episode_complete (R30): completion is evidence only - Delivery remains  *)
 (* separate and pledgor-authored; conservative settlement; the stream      *)
@@ -338,14 +351,14 @@ Complete(w) ==
   /\ act' = IF act = "active" THEN "ready" ELSE act
   /\ completedFence' = fence
   /\ UNCHANGED <<wi, adm, alloc, fence, holder, wfence, attempts,
-                 everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* episode_complete: the completing head settles terminal.                 *)
 CompleteSettle ==
   /\ lease = "lease_completing"
   /\ lease' = "lease_terminal"
   /\ UNCHANGED <<act, wi, adm, alloc, ep, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* episode_fail (R30): only the current holder under the current fence.    *)
 Fail(w) ==
@@ -355,7 +368,7 @@ Fail(w) ==
   /\ ep' = "failed"
   /\ lease' = "lease_terminal"
   /\ UNCHANGED <<act, wi, adm, alloc, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
 
 (* server_time: lease/deadline expiry with unknown external use is         *)
 (* ambiguous - never blindly repeated (section 14.8).                      *)
@@ -364,7 +377,19 @@ AmbiguousTimeout ==
   /\ lease = "lease_running"
   /\ ep' = "ambiguous"
   /\ UNCHANGED <<act, wi, adm, alloc, lease, fence, holder, wfence, attempts,
-                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields>>
+                 completedFence, everSubmitted, everAdmitted, everBridged, expiries, yields, now, deadline>>
+
+(* server_time (RT-10): the authoritative clock advances one unit.  Time   *)
+(* is bounded by MaxTime for the finite check; nothing else moves.  Tick   *)
+(* is what stands between a claim and its expiry: LeaseExpire demands      *)
+(* now > deadline = claim time + LeaseTTL, so at least LeaseTTL + 1 Tick   *)
+(* steps separate every claim from the expiry that supersedes it.          *)
+Tick ==
+  /\ now < MaxTime
+  /\ now' = now + 1
+  /\ UNCHANGED <<act, wi, adm, alloc, ep, lease, fence, holder, wfence,
+                 attempts, expiries, yields, completedFence, everSubmitted,
+                 everAdmitted, everBridged, deadline>>
 
 Next ==
   \/ ActivityOpen \/ Hold \/ Close \/ DeliverySubmit \/ PledgeResume
@@ -372,7 +397,7 @@ Next ==
   \/ ActivationAdmit \/ AdmissionRevoke \/ AdmissionExpire
   \/ AllocPrepare \/ AllocReserve \/ AllocBridge \/ AllocSettle
   \/ EpisodeCreate \/ EpisodeEligible \/ Queue
-  \/ CompleteSettle \/ AmbiguousTimeout \/ LeaseExpire
+  \/ CompleteSettle \/ AmbiguousTimeout \/ LeaseExpire \/ Tick
   \/ \E w \in Workers :
        \/ Claim(w) \/ ReClaim(w) \/ YieldReClaim(w)
        \/ Start(w) \/ Yield(w) \/ Complete(w) \/ Fail(w)
@@ -431,6 +456,18 @@ ReclaimNeedsExpiryOrYield == attempts <= 1 + expiries + yields
 ExpiryKeepsHead ==
   lease = "lease_expired" => holder # None /\ fence > 0
 
+(* RT-10: expiry is an authoritative-CLOCK fact.  A head is expired only   *)
+(* strictly after the deadline minted at its claim - if LeaseExpire ever   *)
+(* fired without the clock guard, an expired head with now <= deadline     *)
+(* would be reachable and TLC would report it here.                        *)
+NoPrematureExpiry == lease = "lease_expired" => now > deadline
+
+(* RT-10: expiry consumes real time.  Each of the n expiries waited out a  *)
+(* full deadline (claim time + LeaseTTL, strictly passed), so the clock    *)
+(* has strictly passed n * LeaseTTL - the immediate                        *)
+(* claim -> expire -> reclaim trace with no Tick steps is impossible.      *)
+ExpiryConsumesTime == expiries = 0 \/ now > expiries * LeaseTTL
+
 =============================================================================
 \* Descriptor-model parity annotations (proof/check-descriptors.py).
 \* @parity module: EpisodeLease
@@ -472,6 +509,46 @@ ExpiryKeepsHead ==
 \* @parity transition: lease_running -> lease_completing via episode_complete
 \* @parity transition: lease_completing -> lease_terminal via episode_complete
 \* @parity transition: lease_running -> lease_terminal via episode_fail
+\* @parity crash: absent -> prepared via episode_request = uncertain bridge stays unqueued/held (§14.8 Episode request row; creation derived, gap note G27)
+\* @parity fences: absent -> prepared via episode_request = (none)
+\* @parity crash: prepared -> eligible via episode_request = uncertain bridge stays unqueued/held (§14.8 Episode request row)
+\* @parity fences: prepared -> eligible via episode_request = (none)
+\* @parity crash: eligible -> queued via resource_allocate = uncertain bridge stays unqueued/held (§14.8 Episode request row)
+\* @parity fences: eligible -> queued via resource_allocate = (none)
+\* @parity crash: queued -> running via episode_start = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: queued -> running via episode_start = (none)
+\* @parity crash: running -> yielded via episode_yield = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> yielded via episode_yield = EpisodeCompletion/event and conservative settlement; Delivery remains separate
+\* @parity crash: running -> waiting via episode_yield = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> waiting via episode_yield = EpisodeCompletion/event and conservative settlement; Delivery remains separate
+\* @parity crash: running -> completed via episode_complete = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> completed via episode_complete = EpisodeCompletion/event and conservative settlement; Delivery remains separate
+\* @parity crash: running -> failed via episode_fail = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> failed via episode_fail = EpisodeCompletion/event and conservative settlement; Delivery remains separate
+\* @parity crash: running -> interrupted via activity_hold = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> interrupted via activity_hold = hold fences the running Episode
+\* @parity crash: running -> canceled via activity_close = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> canceled via activity_close = fence advance revokes permits; settlement is conservative
+\* @parity crash: running -> ambiguous via server_time = unknown external use is ambiguous (§14.8 Episode running row)
+\* @parity fences: running -> ambiguous via server_time = conservative settlement
+\* @parity crash: absent -> lease_leased via episode_claim = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: absent -> lease_leased via episode_claim = claim increments Byom fence and appends immutable attempt; CAS head
+\* @parity crash: lease_leased -> lease_expired via server_time = old worker is stale; lease expiry never deletes the head or reuses a fence (§14.8 Episode lease row, §11.2)
+\* @parity fences: lease_leased -> lease_expired via server_time = expiry never deletes the head or reuses a fence (§11.2)
+\* @parity crash: lease_expired -> lease_leased via episode_claim = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_expired -> lease_leased via episode_claim = claim increments Byom fence and appends new immutable attempt; the old worker is stale and cannot submit a Delivery, consume a mandate, create child work, append a continuation, or settle usage (§11.2)
+\* @parity crash: lease_leased -> lease_running via episode_start = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_leased -> lease_running via episode_start = head update with immutable EpisodeAttemptEvent
+\* @parity crash: lease_running -> lease_yielding via episode_yield = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_running -> lease_yielding via episode_yield = head update with immutable EpisodeAttemptEvent
+\* @parity crash: lease_yielding -> lease_leased via episode_claim = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_yielding -> lease_leased via episode_claim = claim increments Byom fence and appends new immutable attempt; CAS head
+\* @parity crash: lease_running -> lease_completing via episode_complete = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_running -> lease_completing via episode_complete = head update with immutable EpisodeAttemptEvent
+\* @parity crash: lease_completing -> lease_terminal via episode_complete = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_completing -> lease_terminal via episode_complete = head update with immutable EpisodeAttemptEvent
+\* @parity crash: lease_running -> lease_terminal via episode_fail = old worker is stale (§14.8 Episode lease row)
+\* @parity fences: lease_running -> lease_terminal via episode_fail = head update with immutable EpisodeAttemptEvent
 \* @parity descriptor: activity-stream.json
 \* @parity state: ready
 \* @parity state: active
@@ -507,6 +584,58 @@ ExpiryKeepsHead ==
 \* @parity transition: held -> completed via activity_close
 \* @parity transition: held -> failed via activity_close
 \* @parity transition: held -> canceled via activity_close
+\* @parity crash: absent -> ready via activity_open = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: absent -> ready via activity_open = generation CAS
+\* @parity crash: ready -> active via episode_request = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: ready -> active via episode_request = generation CAS
+\* @parity crash: waiting -> active via episode_request = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: waiting -> active via episode_request = generation CAS
+\* @parity crash: active -> ready via episode_complete = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> ready via episode_complete = generation CAS
+\* @parity crash: active -> waiting via episode_yield = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> waiting via episode_yield = generation CAS
+\* @parity crash: active -> reviewing via delivery_submit = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> reviewing via delivery_submit = generation CAS
+\* @parity crash: reviewing -> ready via pledge_resume = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: reviewing -> ready via pledge_resume = new Activity generation under unchanged terms; generation CAS
+\* @parity crash: ready -> held via activity_hold = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: ready -> held via activity_hold = hold fences new Episodes; generation CAS
+\* @parity crash: active -> held via activity_hold = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> held via activity_hold = hold fences new Episodes; generation CAS
+\* @parity crash: waiting -> held via activity_hold = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: waiting -> held via activity_hold = hold fences new Episodes; generation CAS
+\* @parity crash: reviewing -> held via activity_hold = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: reviewing -> held via activity_hold = hold fences new Episodes; generation CAS
+\* @parity crash: ready -> completed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: ready -> completed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: ready -> failed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: ready -> failed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: ready -> canceled via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: ready -> canceled via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: active -> completed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> completed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: active -> failed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> failed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: active -> canceled via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: active -> canceled via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: waiting -> completed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: waiting -> completed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: waiting -> failed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: waiting -> failed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: waiting -> canceled via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: waiting -> canceled via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: reviewing -> completed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: reviewing -> completed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: reviewing -> failed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: reviewing -> failed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: reviewing -> canceled via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: reviewing -> canceled via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: held -> completed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: held -> completed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: held -> failed via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: held -> failed via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
+\* @parity crash: held -> canceled via activity_close = prior outputs remain evidence (§14.8 ActivityStream row)
+\* @parity fences: held -> canceled via activity_close = cancel fences new Episodes; in-flight work settles conservatively; generation CAS
 \* @parity descriptor: wake-intent.json
 \* @parity state: submitted
 \* @parity state: withdrawn
@@ -540,3 +669,41 @@ ExpiryKeepsHead ==
 \* @parity transition: allocation_bridged -> allocation_released via resource_allocate
 \* @parity transition: allocation_bridged -> allocation_uncertain via resource_allocate
 \* @parity transition: allocation_bridged -> allocation_revoked via resource_allocate
+\* @parity crash: absent -> submitted via wake_intent_submit = no event/cron/host can author it (§14.8 WakeIntent row)
+\* @parity fences: absent -> submitted via wake_intent_submit = immutable cause and provenance
+\* @parity crash: submitted -> withdrawn via wake_intent_withdraw = no event/cron/host can author it (§14.8 WakeIntent row)
+\* @parity fences: submitted -> withdrawn via wake_intent_withdraw = (none)
+\* @parity crash: submitted -> expired via server_time = no event/cron/host can author it (§14.8 WakeIntent row)
+\* @parity fences: submitted -> expired via server_time = (none)
+\* @parity crash: absent -> admission_admitted via activation_admit = retry returns same admission (§14.8 ActivationAdmission row)
+\* @parity fences: absent -> admission_admitted via activation_admit = no budget/placement yet
+\* @parity crash: absent -> admission_denied via activation_admit = retry returns same admission (§14.8 ActivationAdmission row)
+\* @parity fences: absent -> admission_denied via activation_admit = no budget/placement yet
+\* @parity crash: admission_admitted -> admission_revoked via activation_policy_revoke = retry returns same admission (§14.8 ActivationAdmission row)
+\* @parity fences: admission_admitted -> admission_revoked via activation_policy_revoke = queued admissions fence on revoke; queued work fenced without erasing executed Episodes
+\* @parity crash: admission_admitted -> admission_expired via server_time = retry returns same admission (§14.8 ActivationAdmission row)
+\* @parity fences: admission_admitted -> admission_expired via server_time = (none)
+\* @parity crash: absent -> allocation_prepared via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: absent -> allocation_prepared via resource_allocate = (none)
+\* @parity crash: allocation_prepared -> allocation_reserved via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_prepared -> allocation_reserved via resource_allocate = exact reservations
+\* @parity crash: allocation_reserved -> allocation_bridged via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_reserved -> allocation_bridged via resource_allocate = bridge refs; queue remains blocked until bridged
+\* @parity crash: allocation_prepared -> allocation_released via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_prepared -> allocation_released via resource_allocate = reservations and bridge refs released
+\* @parity crash: allocation_prepared -> allocation_uncertain via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_prepared -> allocation_uncertain via resource_allocate = (none)
+\* @parity crash: allocation_prepared -> allocation_revoked via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_prepared -> allocation_revoked via resource_allocate = reservations and bridge refs revoked
+\* @parity crash: allocation_reserved -> allocation_released via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_reserved -> allocation_released via resource_allocate = reservations and bridge refs released
+\* @parity crash: allocation_reserved -> allocation_uncertain via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_reserved -> allocation_uncertain via resource_allocate = (none)
+\* @parity crash: allocation_reserved -> allocation_revoked via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_reserved -> allocation_revoked via resource_allocate = reservations and bridge refs revoked
+\* @parity crash: allocation_bridged -> allocation_released via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_bridged -> allocation_released via resource_allocate = reservations and bridge refs released
+\* @parity crash: allocation_bridged -> allocation_uncertain via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_bridged -> allocation_uncertain via resource_allocate = (none)
+\* @parity crash: allocation_bridged -> allocation_revoked via resource_allocate = unknown bridge remains uncertain (§14.8 ResourceAllocation row)
+\* @parity fences: allocation_bridged -> allocation_revoked via resource_allocate = reservations and bridge refs revoked

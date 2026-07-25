@@ -194,3 +194,17 @@ OwnerMatchesPhase ==
 \* @parity transition: bindings_created -> rolled_back via governance_enable_rollback
 \* @parity transition: rolled_back -> bindings_created via governance_enable
 \* @parity transition: active -> disabled via governance_disable
+\* @parity crash: absent -> bindings_created via governance_enable = durable saga state: a restarted or restored Kovee re-enters at the recorded state; retry returns the identical pending bindings, never a second row (greenfield-saga §5)
+\* @parity fences: absent -> bindings_created via governance_enable = (none)
+\* @parity crash: bindings_created -> bindings_created via governance_enable = durable saga state: retry returns the identical pending bindings, never a second creation (greenfield-saga §5)
+\* @parity fences: bindings_created -> bindings_created via governance_enable = (none)
+\* @parity crash: bindings_created -> active via owner_cas_none_to_byom = crash between the CAS send and its durable record leaves bindings_created with unknown CAS outcome, resolved query-first — only a verified answer drives retry or rollback; guessing is not a transition (greenfield-saga §5)
+\* @parity fences: bindings_created -> active via owner_cas_none_to_byom = binding and mapping activated atomically with the owner CAS
+\* @parity crash: active -> active via governance_enable = the owner CAS outcome is never silently redone or undone by a restore; an active binding stays active at its recorded epoch (greenfield-saga §5)
+\* @parity fences: active -> active via governance_enable = (none)
+\* @parity crash: bindings_created -> rolled_back via governance_enable_rollback = a rolled-back epoch stays spent across restore; it can never activate (greenfield-saga §5, ActiveEpochNeverRolledBack)
+\* @parity fences: bindings_created -> rolled_back via governance_enable_rollback = the binding epoch is spent — the rolled-back epoch can never activate (NoActivationAfterRollback)
+\* @parity crash: rolled_back -> bindings_created via governance_enable = durable saga state: the rolled-back epoch stays spent; the fresh epoch re-enters at its recorded state (greenfield-saga §5)
+\* @parity fences: rolled_back -> bindings_created via governance_enable = (none)
+\* @parity crash: active -> disabled via governance_disable = the frozen owner row survives restore; re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine (greenfield-saga §5)
+\* @parity fences: active -> disabled via governance_disable = owner binding frozen (status active→frozen, owner arm retained for audit); derived channels and permits invalidate

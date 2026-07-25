@@ -28,9 +28,13 @@ Checks, in order:
 3. every descriptor in spec/descriptors/ is a structurally valid v2
    descriptor ({format: byom-descriptor/v2, machine, states, transitions}
    with per-row structured guards/locks/fences/events/crash_result —
-   §14.8's mandated columns, RT-09), every via references a real catalog
-   operation or a named kernel/server transition, and descriptor parity
-   holds: every mutating operation in the slice appears in exactly one
+   §14.8's mandated columns, RT-09) whose every structured column value
+   is a member of the FROZEN v2 semantic vocabulary
+   (spec/descriptors/vocabulary.json, gap note G45) with events matching
+   the vocabulary's event grammar — an arbitrary nonempty string is
+   semantic erasure and fails closed (RT-09); every via references a real
+   catalog operation or a named kernel/server transition, and descriptor
+   parity holds: every mutating operation in the slice appears in exactly one
    descriptor's owning (non-cascade) transitions (§14.8 one-to-one rule);
    cascade transitions must cite an operation owned by another descriptor;
 4. every vector in spec/vectors/ passes: schema vectors match their expected
@@ -48,8 +52,19 @@ Checks, in order:
    field-complete PreparationTrace whose output_subject_digest equals the
    projected subject digest, whose dependency_set_ref matches the
    result's, and whose field_sources give COMPLETE output-pointer
-   provenance in both directions (RT-04); pledge slot records are unique
-   per kind with multiplicity equal to the concrete seat count (RT-03);
+   provenance in both directions with every output_pointer RESOLVING as
+   an RFC 6901 pointer against the actual result instance (RT-04);
+   pledge slot records are unique per kind with multiplicity equal to
+   the concrete seat count and every slot's subject_digest equal to the
+   result's terms digest (the RT-03 subject binding). Permit-probe
+   vectors (input.permit_probe — RT-05) replay a constructed
+   execution_permit_consume request against recorded prior intent state
+   (head revision, dual fences, stored consumption) through the §13.1
+   steps 4-6 / G37 decision oracle over the committed act-intent
+   descriptor and assert the SPECIFIC rejection problem kind
+   (idempotency_mismatch for a changed binding under the same key;
+   stale_revision for a superseded fence or a different key on the spent
+   decision);
 5. machine state-walk vectors (spec/vectors/machines/) replay crash/replay
    transition sequences through a small interpreter over the committed
    descriptor JSON: accepted steps must be exact descriptor rows, rejected
@@ -554,14 +569,40 @@ def _timestamps_ok(value) -> bool:
     return True
 
 
+def _json_pointer_resolves(root, pointer: str) -> bool:
+    """RFC 6901 evaluation against the actual instance (RT-04): every
+    reference token must land — object members by exact (unescaped) name,
+    array elements by a canonical decimal index in range. '-' (the
+    past-the-end token) and any other miss do not resolve."""
+    node = root
+    for token in pointer.split("/")[1:]:
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            if token not in node:
+                return False
+            node = node[token]
+        elif isinstance(node, list):
+            if not re.fullmatch(r"0|[1-9][0-9]*", token):
+                return False
+            index = int(token)
+            if index >= len(node):
+                return False
+            node = node[index]
+        else:
+            return False
+    return True
+
+
 def _preparation_trace_ok(value, subject_field, dep_field) -> bool:
     """RT-04 cross-member checks on a prepared result (applied only where
     the members carry their schema-checked shapes): the trace's
     output_subject_digest equals the projected subject digest, its
     dependency_set_ref matches the result's dependency field, and its
     field_sources give complete output-pointer provenance — every
-    projected member has at least one source row and every output_pointer
-    targets a projected member."""
+    projected member has at least one source row, every output_pointer
+    targets a projected member, and every output_pointer RESOLVES as an
+    RFC 6901 JSON pointer against the actual result instance (a
+    well-shaped pointer into nothing is not provenance)."""
     if not isinstance(value, dict):
         return True
     trace = value.get("preparation_trace")
@@ -587,6 +628,8 @@ def _preparation_trace_ok(value, subject_field, dep_field) -> bool:
             ptr = s.get("output_pointer")
             if isinstance(ptr, str) and ptr.startswith("/"):
                 firsts.add(ptr.split("/")[1])
+                if not _json_pointer_resolves(value, ptr):
+                    return False  # RT-04: the pointer must resolve
         members = set(value) - {"preparation_trace"}
         if members - firsts:      # a projected member without provenance
             return False
@@ -595,15 +638,20 @@ def _preparation_trace_ok(value, subject_field, dep_field) -> bool:
     return True
 
 
-def _slot_records_ok(value) -> bool:
+def _slot_records_ok(value, subject_field) -> bool:
     """RT-03 cross-member checks on concrete slot/seat records: at most one
-    slot per §9.3 kind, and multiplicity equals the number of concrete
-    prepared seats (JSON Schema cannot compare a member to a length)."""
+    slot per §9.3 kind, multiplicity equals the number of concrete
+    prepared seats (JSON Schema cannot compare a member to a length), and
+    the subject binding holds — every slot record's subject_digest equals
+    the prepared pledge subject's terms digest (the result member named by
+    PREPARED_RESULTS), so a seat can never collect assent on a subject
+    other than the one this result projects."""
     if not isinstance(value, dict):
         return True
     slots = value.get("required_slots")
     if not isinstance(slots, list):
         return True
+    subject = value.get(subject_field)
     kinds = []
     for slot in slots:
         if not isinstance(slot, dict):
@@ -618,6 +666,11 @@ def _slot_records_ok(value) -> bool:
         if isinstance(mult, int) and not isinstance(mult, bool) \
                 and isinstance(seats, list) and mult != len(seats):
             return False
+        slot_subject = slot.get("subject_digest")
+        if isinstance(subject, dict) and isinstance(slot_subject, dict) \
+                and json.dumps(subject, sort_keys=True) != \
+                json.dumps(slot_subject, sort_keys=True):
+            return False  # RT-03: the slot binds a different subject
     return True
 
 
@@ -1952,14 +2005,74 @@ class Runner:
 
     # -- transition descriptors --
 
-    def _descriptor_shape_errors(self, body) -> list[str]:
+    DESCRIPTOR_VOCAB_COLUMNS = ("guards", "locks", "fences", "events",
+                                "crash_result")
+
+    def _load_descriptor_vocabulary(self):
+        """RT-09: load and validate the frozen descriptor-v2 semantic
+        vocabulary (spec/descriptors/vocabulary.json, gap note G45): the
+        closed value set per structured §14.8 column plus the event-type
+        grammar. Returns (columns dict of frozensets, compiled event
+        regex) or None after failing."""
+        path = self.spec_dir / "descriptors" / "vocabulary.json"
+        if not path.is_file():
+            self.fail("descriptor-vocabulary: spec/descriptors/"
+                      "vocabulary.json is missing (RT-09: the v2 semantic "
+                      "vocabulary is part of the format spec)")
+            return None
+        try:
+            body = strict_parse(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            self.fail(f"descriptor-vocabulary: not strict I-JSON: {exc}")
+            return None
+        ok = True
+        if body.get("format") != "byom-descriptor-vocabulary/v2":
+            self.fail("descriptor-vocabulary: format must be "
+                      "'byom-descriptor-vocabulary/v2'")
+            ok = False
+        try:
+            event_re = re.compile(body.get("event_grammar", ""))
+        except re.error as exc:
+            self.fail(f"descriptor-vocabulary: bad event_grammar: {exc}")
+            return None
+        if not body.get("event_grammar"):
+            self.fail("descriptor-vocabulary: event_grammar is required")
+            return None
+        columns = body.get("columns")
+        if not isinstance(columns, dict) or \
+                set(columns) != set(self.DESCRIPTOR_VOCAB_COLUMNS):
+            self.fail("descriptor-vocabulary: columns must be exactly "
+                      f"{sorted(self.DESCRIPTOR_VOCAB_COLUMNS)}")
+            return None
+        out = {}
+        for key, values in columns.items():
+            if not (isinstance(values, list) and values
+                    and all(isinstance(v, str) and v for v in values)
+                    and len(set(values)) == len(values)):
+                self.fail(f"descriptor-vocabulary: columns.{key} must be a "
+                          "non-empty list of unique non-empty strings")
+                ok = False
+                continue
+            if key == "events":
+                for v in values:
+                    if not event_re.fullmatch(v):
+                        self.fail(f"descriptor-vocabulary: event {v!r} "
+                                  "does not match the event grammar")
+                        ok = False
+            out[key] = frozenset(values)
+        return (out, event_re) if ok else None
+
+    def _descriptor_shape_errors(self, body, vocab=None) -> list[str]:
         """Descriptor format v2 (RT-09): §14.8 mandates machine-readable
         descriptors carrying, per transition, the actor/registry key,
         locks, guards, fence effects, emitted event types, and crash
         outcome — 'Specification CI fails on a missing operation, state,
         actor/surface registry key, lock, closure category, reservation
         action, fence effect, journal behavior, event, or crash result'.
-        v2 makes these structured row members, not prose."""
+        v2 makes these structured row members, not prose, and every
+        structured column value must be a member of the frozen v2
+        vocabulary (spec/descriptors/vocabulary.json) — an arbitrary
+        nonempty string is semantic erasure and fails closed."""
         errs = []
         keys = set(body) if isinstance(body, dict) else set()
         if not isinstance(body, dict) or not (
@@ -2030,6 +2143,31 @@ class Runner:
                     and row.get("crash_result")):
                 errs.append(f"{where}: crash_result must be a non-empty "
                             "string (§14.8 crash-outcome column, RT-09)")
+            if vocab is not None:
+                columns, event_re = vocab
+                for key in ("guards", "locks", "fences", "events"):
+                    val = row.get(key)
+                    if not isinstance(val, list):
+                        continue  # shape failure already reported above
+                    for entry in val:
+                        if not isinstance(entry, str):
+                            continue
+                        if key == "events" and not event_re.fullmatch(entry):
+                            errs.append(f"{where}: event {entry!r} does not "
+                                        "match the v2 event grammar (RT-09)")
+                        if entry not in columns[key]:
+                            errs.append(f"{where}: {key} entry {entry!r} is "
+                                        "not in the frozen v2 vocabulary "
+                                        "(spec/descriptors/vocabulary.json, "
+                                        "RT-09 — semantic erasure fails "
+                                        "closed)")
+                cr = row.get("crash_result")
+                if isinstance(cr, str) and cr \
+                        and cr not in columns["crash_result"]:
+                    errs.append(f"{where}: crash_result {cr!r} is not in "
+                                "the frozen v2 vocabulary (spec/"
+                                "descriptors/vocabulary.json, RT-09 — "
+                                "semantic erasure fails closed)")
             if "notes" in row and not (isinstance(row["notes"], str)
                                        and row["notes"]):
                 errs.append(f"{where}: notes must be a non-empty string")
@@ -2047,7 +2185,9 @@ class Runner:
         desc_dir = self.spec_dir / "descriptors"
         counts = {"files": 0, "states": 0, "transitions": 0, "owned": 0,
                   "kovee": 0}
-        paths = sorted(desc_dir.glob("*.json"))
+        vocab = self._load_descriptor_vocabulary()
+        paths = sorted(p for p in desc_dir.glob("*.json")
+                       if p.name != "vocabulary.json")
         if not paths:
             self.fail(f"no descriptors found under {desc_dir}")
             return counts
@@ -2061,7 +2201,7 @@ class Runner:
             except ValueError as exc:
                 self.fail(f"{name}: descriptor is not strict I-JSON: {exc}")
                 continue
-            errs = self._descriptor_shape_errors(body)
+            errs = self._descriptor_shape_errors(body, vocab)
             for err in errs:
                 self.fail(f"{name}: {err}")
             if errs:
@@ -2132,7 +2272,7 @@ class Runner:
         vector_dir = self.spec_dir / "vectors"
         counts = {"schema-valid": 0, "schema-invalid": 0, "acceptance": 0,
                   "digest": 0, "machine-walk": 0, "policy": 0,
-                  "tool-call": 0, "taxonomy-bpa1": 0}
+                  "tool-call": 0, "permit-probe": 0, "taxonomy-bpa1": 0}
         paths = sorted(p for p in vector_dir.rglob("*.json"))
         if not paths:
             self.fail(f"no vectors found under {vector_dir}")
@@ -2156,6 +2296,8 @@ class Runner:
                 self._run_policy_vector(rel, inp, expected, counts)
             elif "tool_call" in inp:
                 self._run_tool_call_vector(rel, inp, expected, counts)
+            elif "permit_probe" in inp:
+                self._run_permit_probe_vector(rel, inp, expected, counts)
             elif "domain" in inp:
                 self._run_digest_vector(rel, inp, expected, counts)
             elif "machine" in inp:
@@ -2197,8 +2339,11 @@ class Runner:
         if verdict and schema_name in ("pledge-propose-result",
                                        "pledge-amend-result") \
                 and inp.get("ref") is None:
-            # RT-03: unique slot kinds; multiplicity == concrete seat count.
-            verdict = _slot_records_ok(inp["value"])
+            # RT-03: unique slot kinds; multiplicity == concrete seat
+            # count; every slot's subject_digest equals the prepared
+            # subject's terms digest (subject binding).
+            verdict = _slot_records_ok(inp["value"],
+                                       PREPARED_RESULTS[schema_name][1])
         if schema_name == "act-class-subject" and inp.get("ref") is None:
             # Dynamic taxonomy<->BPA-1 cross-validation (Δ4): the subject
             # atoms must decide through the BPA-1 reference evaluator
@@ -2403,6 +2548,107 @@ class Runner:
             return
         counts["tool-call"] += 1
 
+    def _permit_consume_decision(self, request, prior):
+        """The §13.1 steps 4-6 / gap note G37 consume decision as an
+        executable oracle over a schema-valid execution_permit_consume
+        request and the RECORDED prior state of its ActIntent. Returns
+        None on acceptance (first consumption, or exact replay returning
+        the retained receipt) or the exact bpp-failure problem kind the
+        kernel must reject with:
+
+        - the one-shot decision already consumed (prior.consumed records
+          the stored stable_execution_key and canonical request): the
+          same key with the byte-identical canonical request (JCS) is the
+          replay and returns the same receipt; the same key with a
+          CHANGED canonical request is idempotency_mismatch (a changed
+          host_effect_digest binding cannot reuse the key); a DIFFERENT
+          key can never claim the spent decision — stale_revision;
+        - otherwise consumption must be a committed act-intent descriptor
+          row from the recorded state (only authorized -> consumed via
+          execution_permit_consume exists; §14.8 closed machine), else
+          stale_revision;
+        - the intent-revision CAS: meta.expected_revision must equal the
+          recorded current head revision, else stale_revision;
+        - the R34 dual fences: the request's byom_fence_epoch and
+          host_fence_epoch must equal the recorded current fences — a
+          superseded fence is stale_revision."""
+        consumed = prior.get("consumed")
+        if consumed is not None:
+            stored = consumed["canonical_request"]
+            if request["stable_execution_key"] == \
+                    stored["stable_execution_key"]:
+                if jcs(request) == jcs(stored):
+                    return None  # exact replay -> the retained receipt
+                return "idempotency_mismatch"
+            return "stale_revision"
+        rows = self._descriptor_rows("act-intent")
+        if rows is None or (prior["state"], "consumed",
+                            "execution_permit_consume") not in rows:
+            return "stale_revision"
+        if request["meta"]["expected_revision"] != prior["intent_revision"]:
+            return "stale_revision"
+        if request["byom_fence_epoch"] != prior["byom_fence_epoch"] \
+                or request["host_fence_epoch"] != prior["host_fence_epoch"]:
+            return "stale_revision"
+        return None
+
+    def _run_permit_probe_vector(self, rel, inp, expected, counts):
+        """RT-05 permit-consume probes (spec/vectors/ops/): a REAL
+        rejection test, not a free-standing bpp-failure example. The
+        vector carries the constructed execution_permit_consume request
+        plus the recorded prior state of the intent (head revision,
+        current dual fences, and any stored consumption); the runner
+        replays the request through the §13.1 decision oracle against
+        that prior state and the committed act-intent descriptor and
+        asserts the SPECIFIC rejection kind. The probe request (and any
+        stored canonical request) must itself be schema-valid — the
+        rejection under test is semantic, never shape — and the stored
+        canonical request must replay to the retained receipt, so the
+        probe demonstrates the accept/reject boundary, not a vacuous
+        reject."""
+        probe = inp["permit_probe"]
+        request, prior = probe["request"], probe["prior_state"]
+        if "execution-permit-consume-request" not in self.schemas:
+            self.fail(f"{rel}: execution-permit-consume-request schema "
+                      "did not load")
+            return
+        if not self._validate("execution-permit-consume-request", None,
+                              request):
+            self.fail(f"{rel}: probe request is not schema-valid — the "
+                      "rejection under test must be semantic, not shape")
+            return
+        consumed = prior.get("consumed")
+        if consumed is not None:
+            stored = consumed["canonical_request"]
+            if not self._validate("execution-permit-consume-request", None,
+                                  stored):
+                self.fail(f"{rel}: stored canonical request is not "
+                          "schema-valid")
+                return
+            if self._permit_consume_decision(stored, prior) is not None:
+                self.fail(f"{rel}: the stored canonical request must "
+                          "replay to the retained receipt (§13.1 step 6) "
+                          "— the recorded prior state is inconsistent")
+                return
+        kind = self._permit_consume_decision(request, prior)
+        verdict = kind is None
+        if verdict != expected["valid"]:
+            self.fail(f"{rel}: expected valid={expected['valid']}, got "
+                      f"{verdict} (problem kind {kind!r})")
+            return
+        want_kind = expected.get("problem_kind")
+        if not verdict:
+            if kind != want_kind:
+                self.fail(f"{rel}: expected rejection kind {want_kind!r}, "
+                          f"got {kind!r}")
+                return
+            if not self._validate("bpp-failure", "#/$defs/problemKind",
+                                  kind):
+                self.fail(f"{rel}: derived kind {kind!r} is not a closed "
+                          "§14.9 problem kind")
+                return
+        counts["permit-probe"] += 1
+
     def _descriptor_rows(self, machine: str):
         """Load spec/descriptors/<machine>.json once and return its
         transition rows as a set of (from, to, via) triples."""
@@ -2562,7 +2808,8 @@ class Runner:
               f"{counts['digest']} digest, "
               f"{counts['machine-walk']} machine-walk, "
               f"{counts['policy']} policy, "
-              f"{counts['tool-call']} tool-call")
+              f"{counts['tool-call']} tool-call, "
+              f"{counts['permit-probe']} permit-probe")
         print(f"policy:   {policy_note}")
         if self.failures:
             print(f"result:   FAIL ({len(self.failures)} failure(s))")

@@ -11,6 +11,8 @@ after its ``====`` terminator (TLA+ ignores everything past it):
     \\* @parity descriptor: pledge.json
     \\* @parity state: proposed
     \\* @parity transition: absent -> proposed via pledge_propose
+    \\* @parity crash: absent -> proposed via pledge_propose = <crash_result>
+    \\* @parity fences: absent -> proposed via pledge_propose = <f1> | <f2>
     ...
 
 A module that models several committed descriptors repeats the
@@ -18,6 +20,11 @@ A module that models several committed descriptors repeats the
 MembershipOfferStanding folds two). A model with no committed descriptor
 machine declares ``@parity none:`` with its reason (BudgetConservation: the
 section 11.4 ledger is not a section 14.8 transition machine).
+
+``@parity crash:`` and ``@parity fences:`` transcribe the structured
+section 14.8 columns per transition row (RT-09): the value after ``=`` is
+the row's exact crash_result, respectively its fences list joined with
+`` | `` (an empty fences list is written ``(none)``).
 
 Checked, failing on any divergence (ADR-0003: a descriptor row with no model
 transition, or vice versa, is a CI failure, not a review catch):
@@ -37,7 +44,12 @@ transition, or vice versa, is a CI failure, not a review catch):
    ``byom-descriptor/v2`` and, per transition row, the structured §14.8
    columns — guards (non-empty), locks, fences, events (non-empty), and a
    non-empty crash_result — so a modeled machine can never bind a
-   descriptor that lost its guard/lock/fence/event/crash contract.
+   descriptor that lost its guard/lock/fence/event/crash contract;
+6. structured-column parity (RT-09): per claimed descriptor, every
+   transition row's crash_result and fences columns equal the module's
+   ``@parity crash:`` / ``@parity fences:`` transcriptions exactly (both
+   directions) — a modeled machine's crash/fence semantics cannot be
+   silently swapped for another legal value, let alone erased.
 
 Honesty (ADR-0003, plan section 3): the parity block is a transcription of
 the model's transition relation, compared mechanically against the committed
@@ -55,8 +67,11 @@ import sys
 from pathlib import Path
 
 TERMINATOR = re.compile(r"^====+\s*$", re.M)
-TAG = re.compile(r"^\\\* @parity (module|descriptor|state|transition|none):\s*(.*)$")
+TAG = re.compile(r"^\\\* @parity (module|descriptor|state|transition|"
+                 r"crash|fences|none):\s*(.*)$")
 TRANSITION = re.compile(r"^(\S+) -> (\S+) via (\S+)$")
+COLUMN = re.compile(r"^(\S+) -> (\S+) via (\S+) = (.+)$")
+NO_FENCES = "(none)"  # annotation spelling of an empty fences list
 
 
 class Checker:
@@ -66,7 +81,7 @@ class Checker:
         self.failures: list[str] = []
         self.claimed: dict[str, str] = {}  # descriptor file -> module
         self.counts = {"modules": 0, "descriptors": 0, "states": 0,
-                       "transitions": 0, "columns": 0}
+                       "transitions": 0, "columns": 0, "column_parity": 0}
 
     def fail(self, message: str) -> None:
         self.failures.append(message)
@@ -76,7 +91,9 @@ class Checker:
 
     def parse_module(self, path: Path):
         """Return (body, module_name, groups, none_reason) where groups is
-        [(descriptor_file, states, transitions)] in annotation order."""
+        [(descriptor_file, states, transitions, crash, fences)] in
+        annotation order; crash and fences map (from, to, via) to the
+        annotated column transcription (RT-09)."""
         text = path.read_text(encoding="utf-8")
         m = TERMINATOR.search(text)
         if m is None:
@@ -85,7 +102,7 @@ class Checker:
         body, tail = text[:m.start()], text[m.end():]
         module = None
         none_reason = None
-        groups: list[tuple[str, list[str], list[tuple[str, str, str]]]] = []
+        groups: list[tuple] = []
         current = None
         for line_no, line in enumerate(tail.splitlines(), 1):
             tag = TAG.match(line.strip())
@@ -99,25 +116,33 @@ class Checker:
             elif kind == "none":
                 none_reason = value
             elif kind == "descriptor":
-                current = (value, [], [])
+                current = (value, [], [], {}, {})
                 groups.append(current)
+            elif current is None:
+                self.fail(f"{path.name}: '@parity {kind}:' before any "
+                          "'@parity descriptor:'")
             elif kind == "state":
-                if current is None:
-                    self.fail(f"{path.name}: '@parity state:' before any "
-                              "'@parity descriptor:'")
-                    continue
                 current[1].append(value)
             elif kind == "transition":
-                if current is None:
-                    self.fail(f"{path.name}: '@parity transition:' before "
-                              "any '@parity descriptor:'")
-                    continue
                 t = TRANSITION.match(value)
                 if t is None:
                     self.fail(f"{path.name}: unparseable transition "
                               f"annotation {value!r}")
                     continue
                 current[2].append((t.group(1), t.group(2), t.group(3)))
+            else:  # crash / fences column transcription (RT-09)
+                t = COLUMN.match(value)
+                if t is None:
+                    self.fail(f"{path.name}: unparseable '@parity {kind}:' "
+                              f"annotation {value!r}")
+                    continue
+                row = (t.group(1), t.group(2), t.group(3))
+                target = current[3] if kind == "crash" else current[4]
+                if row in target:
+                    self.fail(f"{path.name}: duplicate '@parity {kind}:' "
+                              f"for {row}")
+                    continue
+                target[row] = t.group(4).strip()
         if module is None:
             self.fail(f"{path.name}: missing '@parity module:' annotation")
         elif module != path.stem:
@@ -134,7 +159,8 @@ class Checker:
     # -- checks --
 
     def check_group(self, name: str, body: str, desc_file: str,
-                    states: list[str], transitions):
+                    states: list[str], transitions, crash: dict,
+                    fences: dict):
         if desc_file in self.claimed:
             self.fail(f"{name}: descriptor {desc_file} already claimed by "
                       f"{self.claimed[desc_file]}")
@@ -180,10 +206,13 @@ class Checker:
                           "a quoted literal in the module body")
 
         # Descriptor format v2 (RT-09): the structured §14.8 columns must
-        # be present on every row of a modeled machine.
+        # be present on every row of a modeled machine, AND the crash and
+        # fence columns must equal the model's transcription exactly.
         if descriptor.get("format") != "byom-descriptor/v2":
             self.fail(f"{name}: descriptor {desc_file} is not format "
                       "byom-descriptor/v2 (RT-09)")
+        desc_crash: dict[tuple, str] = {}
+        desc_fences: dict[tuple, str] = {}
         for i, r in enumerate(descriptor["transitions"]):
             where = f"{name}: {desc_file} transitions[{i}]"
             for key, min_items in (("guards", 1), ("locks", 0),
@@ -203,6 +232,35 @@ class Checker:
                           "string (RT-09)")
             else:
                 self.counts["columns"] += 1
+            row = (r["from"], r["to"], r["via"])
+            if isinstance(r.get("crash_result"), str):
+                desc_crash[row] = r["crash_result"]
+            if isinstance(r.get("fences"), list):
+                desc_fences[row] = " | ".join(r["fences"]) or NO_FENCES
+        # Structured-column parity (RT-09), both directions: every
+        # descriptor row carries a crash/fences transcription that
+        # matches, and every transcription names a descriptor row.
+        for kind, desc_map, ann_map in (("crash", desc_crash, crash),
+                                        ("fences", desc_fences, fences)):
+            for row in sorted(desc_map):
+                got = ann_map.get(row)
+                if got is None:
+                    self.fail(f"{name}: {desc_file} row {row[0]} -> "
+                              f"{row[1]} via {row[2]} has no '@parity "
+                              f"{kind}:' transcription (RT-09)")
+                elif got != desc_map[row]:
+                    self.fail(f"{name}: {desc_file} row {row[0]} -> "
+                              f"{row[1]} via {row[2]} {kind} column "
+                              f"diverges from the model transcription "
+                              f"(RT-09)\n      descriptor: "
+                              f"{desc_map[row]!r}\n      model:      "
+                              f"{got!r}")
+                else:
+                    self.counts["column_parity"] += 1
+            for row in sorted(set(ann_map) - set(desc_map)):
+                self.fail(f"{name}: '@parity {kind}:' transcription for "
+                          f"{row[0]} -> {row[1]} via {row[2]} is not a "
+                          f"row of descriptor {desc_file}")
 
         self.counts["descriptors"] += 1
         self.counts["states"] += len(ann_states & desc_states)
@@ -219,19 +277,21 @@ class Checker:
                 continue
             body, _module, groups, none_reason = parsed
             self.counts["modules"] += 1
-            for desc_file, states, transitions in groups:
+            for desc_file, states, transitions, crash, fences in groups:
                 self.check_group(path.name, body, desc_file, states,
-                                 transitions)
+                                 transitions, crash, fences)
             if none_reason is not None:
                 modeled_none.append(path.stem)
         unmodeled = sorted(p.name for p in self.desc_dir.glob("*.json")
-                           if p.name not in self.claimed)
+                           if p.name not in self.claimed
+                           and p.name != "vocabulary.json")
         print(f"parity:   {self.counts['modules']} modules, "
               f"{self.counts['descriptors']} descriptors bound, "
               f"{self.counts['states']} states and "
               f"{self.counts['transitions']} transitions in exact "
               f"agreement ({self.counts['columns']} v2 structured columns "
-              "checked)")
+              f"checked; {self.counts['column_parity']} crash/fence "
+              "column transcriptions in exact agreement)")
         if modeled_none:
             print(f"no-descriptor models (declared '@parity none'): "
                   f"{', '.join(modeled_none)}")

@@ -17,7 +17,7 @@ authored-only.
 |---|---:|---:|---:|
 | `specs/MembershipOfferStanding.tla` | 93 | 189 | 8 |
 | `specs/Pledge.tla` | 40 | 101 | 14 |
-| `specs/EpisodeLease.tla` | 33,488 | 176,434 | 20 |
+| `specs/EpisodeLease.tla` | 513,776 | 3,063,256 | 28 |
 | `specs/ActIntentPermit.tla` | 61 | 116 | 10 |
 | `specs/MandateChain.tla` | 7,988 | 18,011 | 11 |
 | `specs/BudgetConservation.tla` | 600 | 2,937 | 12 |
@@ -134,21 +134,33 @@ nothing completes except under the current lease fence (§11.2).
 | `RunningHasRunningLease` | §11.2 the Episode runs only under a running head | `episode_start` |
 | `ReclaimNeedsExpiryOrYield` | D-RT-6 (RT-10): crash alone never enables reclaim — every attempt beyond the first consumed an authoritative-time expiry or a voluntary yield | `server_time` expiry row, `episode_claim` re-claim rows |
 | `ExpiryKeepsHead` | §11.2 lease expiry never deletes the head or reuses a fence | `server_time` expiry row |
+| `NoPrematureExpiry` | RT-10: expiry is an authoritative-clock fact — an expired head exists only strictly past the deadline minted at its claim | `server_time` expiry row |
+| `ExpiryConsumesTime` | RT-10: each of the n expiries waited out a full `LeaseTTL` deadline, so `now > n * LeaseTTL` — the immediate claim → expire → reclaim trace with no time advancing is impossible | `server_time` expiry row, `episode_claim` rows |
 
 **Projection**: one ActivityStream, one WakeIntent revision, one admission,
-one allocation, one Episode, one lease head, `Workers` competing for it.
-D-RT-6 (RT-10): worker crash/silence is STUTTERING and enables nothing —
-a leased head becomes re-claimable only through the explicit `LeaseExpire`
-transition, guarded by authoritative server time past the lease deadline
-(the `server_time`-driven `lease_leased → lease_expired` row), and
-`ReClaim` is enabled only from `lease_expired`; a live leased head is not
-stealable (the negative walk vector pins the absent row). Daemon state
+one allocation, one Episode, one lease head, `Workers` competing for it,
+and an explicit authoritative clock (RT-10): a monotone natural `now`
+advanced only by the `Tick` action (bounded by `MaxTime` for the finite
+check) and a `deadline` minted at every claim/re-claim as
+`now + LeaseTTL`. D-RT-6 (RT-10): worker crash/silence is STUTTERING and
+enables nothing — a leased head becomes re-claimable only through the
+explicit `LeaseExpire` transition, guarded by `now > deadline`
+(authoritative server time strictly past the lease deadline, the
+`server_time`-driven `lease_leased → lease_expired` row), and `ReClaim`
+is enabled only from `lease_expired`; a live leased head is not stealable
+(the negative walk vector pins the absent row), and the immediate
+claim → expire → reclaim trace without time advancing is impossible
+(`NoPrematureExpiry`, `ExpiryConsumesTime`; negative-checks mutation 14
+drops the clock guard and demands the counterexample). Daemon state
 durable, byomd crash = stuttering. **Refinement boundary**: the three
-descriptors above (exact, machine-checked); Kovee's placement/attention side
+descriptors above (exact, machine-checked); the clock/deadline variables
+are model-side refinements of the descriptor's `server_time` expiry row
+(the descriptor row set is unchanged); Kovee's placement/attention side
 is out of scope (only its committed outcomes — bridge, deny, unknown —
-appear); no code yet. **Fairness**: none; safety only (expiry is modeled
-as always possible, never required). **Coverage**: `Workers = {w1, w2}`,
-`MaxFence = 3`; 41,552 distinct states, exhaustive.
+appear); no code yet. **Fairness**: none; safety only (Tick and expiry
+are modeled as always possible, never required). **Coverage**:
+`Workers = {w1, w2}`, `MaxFence = 3`, `LeaseTTL = 1`, `MaxTime = 6`;
+513,776 distinct states (3,063,256 generated, depth 28), exhaustive.
 
 ### specs/ActIntentPermit.tla — one-shot execution permit
 
@@ -395,11 +407,15 @@ terminal, and the witness-unknown query/abandon-after-proof recovery paths.
    models, annotations, and schemas and requires every mutant to be
    caught: dropped/invented/renamed descriptor rows and states, lost v2
    structured columns, a de-versioned format tag, dropped parity
-   annotations, model-only literal renames, a widened update meta, and
-   two TLC guard-weakening mutations that must yield counterexamples
-   (Pledge finalize without the seat set; EpisodeLease reclaim of a live
-   head — D-RT-6). The RT-16 MCP widening mutations run inside
-   `conformance/run.py` on every invocation.
+   annotations, model-only literal renames, semantic erasure of the
+   structured columns (a crash_result swapped to another in-vocabulary
+   value must fail the RT-09 column-transcription parity; arbitrary
+   nonempty prose must fail the RT-09 frozen vocabulary), a widened
+   update meta, and three TLC guard-weakening mutations that must yield
+   counterexamples (Pledge finalize without the seat set; EpisodeLease
+   reclaim of a live head — D-RT-6; EpisodeLease expiry without the
+   clock having passed the deadline — RT-10). The RT-16 MCP widening
+   mutations run inside `conformance/run.py` on every invocation.
 2. **Induction.** All seven models are TLC-bounded (exhaustive at their
    configured constants). BudgetConservation (arbitrary `Cap`) and
    MandateChain (arbitrary chain depth) are the flagged Apalache candidates.

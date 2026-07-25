@@ -11,14 +11,20 @@ Mutation classes:
   parity      descriptor/model drift must fail proof/check-descriptors.py
               (a dropped or invented row, a renamed state, a lost v2
               structured column, a de-versioned format tag, a model-only
-              literal rename);
+              literal rename, a modeled row's crash_result swapped to a
+              DIFFERENT in-vocabulary value — semantic drift the column
+              transcription parity must see, RT-09);
   conformance a widened schema or descriptor must fail conformance/run.py
               (update meta no longer requiring expected_revision; a
-              descriptor row losing its crash_result);
+              descriptor row losing its crash_result; a structured column
+              semantically erased to an arbitrary nonempty string outside
+              the frozen v2 vocabulary, RT-09);
   tlc         a weakened model guard must yield a TLC counterexample
               (finalize without the full seat set violates
               FinalizedHasAllSeats; reclaiming a LIVE leased head violates
-              ReclaimNeedsExpiryOrYield — D-RT-6).
+              ReclaimNeedsExpiryOrYield — D-RT-6; expiring a lease without
+              the clock having passed its deadline violates
+              NoPrematureExpiry — RT-10).
 
 The MCP widening mutations (RT-16) run inside conformance/run.py itself
 (check_mcp_mutations) on every run and are not duplicated here.
@@ -152,11 +158,28 @@ def parity_mutations():
            parity_fails(tmp))
     shutil.rmtree(tmp)
 
+    # 8. semantic erasure by legal-value swap (RT-09): a modeled row's
+    # crash_result replaced with a DIFFERENT value that IS in the frozen
+    # vocabulary — the conformance vocabulary check alone cannot see it;
+    # the crash-column transcription parity must.
+    tmp = copy_tree("proof/specs", "spec/descriptors")
+
+    def swap_crash(b):
+        row = b["transitions"][0]
+        assert row["crash_result"] != \
+            "terminal; replay does not execute (§14.8 ActIntent denial row)"
+        row["crash_result"] = \
+            "terminal; replay does not execute (§14.8 ActIntent denial row)"
+    mutate_descriptor(tmp, "episode.json", swap_crash)
+    report("parity: crash_result swapped to another in-vocabulary value "
+           "(episode — RT-09 column transcription)", parity_fails(tmp))
+    shutil.rmtree(tmp)
+
 
 # -------------------------------------------------------- conformance ----
 
 def conformance_mutations():
-    # 8. widen an update meta back to optional expected_revision
+    # 9. widen an update meta back to optional expected_revision
     tmp = Path(tempfile.mkdtemp(prefix="byom-neg-"))
     shutil.copytree(ROOT / "spec", tmp / "spec")
     path = (tmp / "spec" / "schemas" / "ops"
@@ -171,7 +194,7 @@ def conformance_mutations():
            "(membership_accept expected_revision optional)", rc != 0)
     shutil.rmtree(tmp)
 
-    # 9. descriptor row loses its guards
+    # 10. descriptor row loses its guards
     tmp = Path(tempfile.mkdtemp(prefix="byom-neg-"))
     shutil.copytree(ROOT / "spec", tmp / "spec")
     path = tmp / "spec" / "descriptors" / "society.json"
@@ -181,6 +204,21 @@ def conformance_mutations():
     rc = run([PY, str(ROOT / "conformance" / "run.py"),
               str(tmp / "spec")])
     report("conformance: descriptor guards emptied (society)", rc != 0)
+    shutil.rmtree(tmp)
+
+    # 11. semantic erasure to arbitrary nonempty prose (RT-09): a
+    # crash_result outside the frozen v2 vocabulary must fail the runner
+    # — before the vocabulary landed, any nonempty string passed.
+    tmp = Path(tempfile.mkdtemp(prefix="byom-neg-"))
+    shutil.copytree(ROOT / "spec", tmp / "spec")
+    path = tmp / "spec" / "descriptors" / "society.json"
+    body = json.loads(path.read_text())
+    body["transitions"][0]["crash_result"] = "state may or may not change"
+    path.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n")
+    rc = run([PY, str(ROOT / "conformance" / "run.py"),
+              str(tmp / "spec")])
+    report("conformance: crash_result semantically erased to arbitrary "
+           "prose (society — RT-09 frozen vocabulary)", rc != 0)
     shutil.rmtree(tmp)
 
 
@@ -196,7 +234,7 @@ def tlc_fails(tmp: Path, spec: str) -> bool:
 
 
 def tlc_mutations():
-    # 10. finalize without the complete seat set (R9 determinism)
+    # 12. finalize without the complete seat set (R9 determinism)
     tmp = Path(tempfile.mkdtemp(prefix="byom-neg-"))
     for suffix in (".tla", ".cfg"):
         shutil.copy(ROOT / "proof" / "specs" / f"Pledge{suffix}",
@@ -209,7 +247,7 @@ def tlc_mutations():
            "(FinalizedHasAllSeats counterexample)", tlc_fails(tmp, "Pledge"))
     shutil.rmtree(tmp)
 
-    # 11. reclaim a LIVE leased head (D-RT-6 must catch it)
+    # 13. reclaim a LIVE leased head (D-RT-6 must catch it)
     tmp = Path(tempfile.mkdtemp(prefix="byom-neg-"))
     for suffix in (".tla", ".cfg"):
         shutil.copy(ROOT / "proof" / "specs" / f"EpisodeLease{suffix}",
@@ -221,6 +259,25 @@ def tlc_mutations():
         needle, 'ReClaim(w) ==\n  /\\ lease = "lease_leased"', 1))
     report("tlc: EpisodeLease reclaim guard weakened to the live head "
            "(ReclaimNeedsExpiryOrYield counterexample)",
+           tlc_fails(tmp, "EpisodeLease"))
+    shutil.rmtree(tmp)
+
+    # 14. expire without the clock (RT-10): dropping the now > deadline
+    # guard re-admits the immediate claim -> expire -> reclaim trace with
+    # no time advancing; NoPrematureExpiry/ExpiryConsumesTime must yield
+    # a counterexample.
+    tmp = Path(tempfile.mkdtemp(prefix="byom-neg-"))
+    for suffix in (".tla", ".cfg"):
+        shutil.copy(ROOT / "proof" / "specs" / f"EpisodeLease{suffix}",
+                    tmp / f"EpisodeLease{suffix}")
+    text = (tmp / "EpisodeLease.tla").read_text()
+    needle = ('LeaseExpire ==\n  /\\ lease = "lease_leased"\n'
+              '  /\\ now > deadline\n')
+    assert needle in text
+    (tmp / "EpisodeLease.tla").write_text(text.replace(
+        needle, 'LeaseExpire ==\n  /\\ lease = "lease_leased"\n', 1))
+    report("tlc: EpisodeLease clock guard dropped — immediate expiry "
+           "(NoPrematureExpiry counterexample, RT-10)",
            tlc_fails(tmp, "EpisodeLease"))
     shutil.rmtree(tmp)
 

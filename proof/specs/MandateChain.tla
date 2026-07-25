@@ -208,3 +208,21 @@ NoUseUnderInactiveChain ==
 \* @parity transition: active -> exhausted via execution_permit_consume
 \* @parity transition: active -> revoked via mandate_revoke
 \* @parity transition: active -> expired via server_time
+\* @parity crash: absent -> prepared via mandate_prepare = no bearer authority escapes commit (§14.8 Mandate row)
+\* @parity fences: absent -> prepared via mandate_prepare = (none)
+\* @parity crash: absent -> prepared via mandate_derive = child delegated quantity conserved (§14.8 Mandate row)
+\* @parity fences: absent -> prepared via mandate_derive = budget reserved from the parent atomically
+\* @parity crash: prepared -> prepared via mandate_position = prior Position inputs remain (§14.8 Position/Decision row)
+\* @parity fences: prepared -> prepared via mandate_position = one current seat head (§14.8 Position/Decision row)
+\* @parity crash: prepared -> active via mandate_issue = no bearer authority escapes commit; child delegated quantity conserved (§14.8 Mandate row)
+\* @parity fences: prepared -> active via mandate_issue = (none)
+\* @parity crash: active -> superseded via mandate_issue = no bearer authority escapes commit (§14.8 Mandate row)
+\* @parity fences: active -> superseded via mandate_issue = successor issuance supersedes the prior active revision atomically
+\* @parity crash: active -> held via mandate_hold = no bearer authority escapes commit (§14.8 Mandate row)
+\* @parity fences: active -> held via mandate_hold = hold fences new uses
+\* @parity crash: active -> exhausted via execution_permit_consume = child delegated quantity conserved (§14.8 Mandate row)
+\* @parity fences: active -> exhausted via execution_permit_consume = MandateUse ordinal slots created on consumption
+\* @parity crash: active -> revoked via mandate_revoke = child delegated quantity conserved (§14.8 Mandate row)
+\* @parity fences: active -> revoked via mandate_revoke = revocation fences new uses
+\* @parity crash: active -> expired via server_time = no bearer authority escapes commit (§14.8 Mandate row)
+\* @parity fences: active -> expired via server_time = (none)

@@ -1,0 +1,111 @@
+{
+  "name": "ops/pledge-propose-result-slot-subject-mismatch-invalid",
+  "description": "RT-03 subject binding: every prepared slot record's subject_digest must equal the prepared pledge subject's terms_digest (runner-enforced equality) — a slot binding a DIFFERENT subject digest cannot collect assent on this proposal. This exact instance was schema-valid and passed the pre-fix _slot_records_ok.",
+  "input": {
+    "schema": "pledge-propose-result",
+    "value": {
+      "proposal_id": "proposal-71",
+      "proposal_revision": 1,
+      "terms_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:terms",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "required_slots": [
+        {
+          "slot_ref": "slot-pledgor",
+          "kind": "pledgor_assent",
+          "multiplicity": 1,
+          "seat_refs": [
+            "seat-pledgor-1"
+          ],
+          "subject_digest": {
+            "class": "local_erasure_safe",
+            "algorithm": "hmac-sha-256",
+            "key_ref": "society-key:soc-1/object:terms",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        },
+        {
+          "slot_ref": "slot-reviewers",
+          "kind": "reviewer_independence",
+          "multiplicity": 2,
+          "seat_refs": [
+            "seat-reviewer-1",
+            "seat-reviewer-2"
+          ],
+          "subject_digest": {
+            "class": "local_erasure_safe",
+            "algorithm": "hmac-sha-256",
+            "key_ref": "society-key:soc-1/object:other-terms",
+            "value_hex": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+          }
+        }
+      ],
+      "state": "proposed",
+      "preparation_trace": {
+        "trace_id": "trace-88",
+        "operation": "pledge_propose",
+        "actor_binding_ref": "binding-5",
+        "input_ref": "input-90",
+        "input_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:input",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "output_subject_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:terms",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "field_sources": [
+          {
+            "output_pointer": "/proposal_id",
+            "source_ref": "server-state-7",
+            "source_pointer": "/proposal_id",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/proposal_revision",
+            "source_ref": "server-state-7",
+            "source_pointer": "/proposal_revision",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/terms_digest",
+            "source_ref": "server-state-7",
+            "source_pointer": "/terms_digest",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/required_slots",
+            "source_ref": "server-state-7",
+            "source_pointer": "/required_slots",
+            "transform_id": "canonical-projection-v1"
+          },
+          {
+            "output_pointer": "/state",
+            "source_ref": "server-state-7",
+            "source_pointer": "/state",
+            "transform_id": "canonical-projection-v1"
+          }
+        ],
+        "policy_algebra_version": "bpa-1",
+        "dependency_set_ref": "depset-81",
+        "created_at": "2026-07-25T12:00:00Z",
+        "digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-1/object:trace",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}
