@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "== conformance (schemas + envelope/machine/policy vectors)"
+echo "== conformance (schemas + envelope/machine/policy vectors + C3a mcp tool bindings)"
 python3 conformance/run.py
 
 echo "== BPA-1 policy evaluator (independent TypeScript-side vector agreement)"

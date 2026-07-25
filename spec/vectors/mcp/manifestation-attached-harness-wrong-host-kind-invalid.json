@@ -1,0 +1,36 @@
+{
+  "name": "mcp/manifestation-attached-harness-wrong-host-kind-invalid",
+  "description": "the attached_harness profile pins host_kind: a kovee_deployment revision does not validate against this profile (host_kind const)",
+  "input": {
+    "schema": "manifestation-attached-harness",
+    "value": {
+      "manifestation_id": "manifestation-ada-kd",
+      "participant_id": "participant-ada",
+      "revision": 1,
+      "host_kind": "kovee_deployment",
+      "host_binding_ref": "kovee-realm-3",
+      "package_or_adapter_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "supported_protocol_versions": ["0.2"],
+      "feature_set": [],
+      "input_and_output_schema_refs": [],
+      "requested_security_profiles": [],
+      "observed_assurance_refs": [],
+      "controller_domain_ref": "control-domain-ada",
+      "concurrency_limit": 1,
+      "status": "proposed",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "7d793037a0760186574b0282f2f435e7d793037a0760186574b0282f2f435e77"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "host_kind is const attached_harness in this profile; other host kinds have their own admission path"
+  }
+}

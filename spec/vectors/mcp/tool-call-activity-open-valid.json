@@ -1,0 +1,24 @@
+{
+  "name": "mcp/tool-call-activity-open-valid",
+  "description": "participant-profile byom_activity_open call: exploration stream under exact purpose, no mandates cited, one budget account set",
+  "input": {
+    "tool_call": {
+      "profile": "participant",
+      "tool": "byom_activity_open",
+      "input": {
+        "kind": "exploration",
+        "purpose_ref": "purpose-114",
+        "purpose_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+        },
+        "mandate_refs": [],
+        "budget_account_set_ref": "budget-set-2"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

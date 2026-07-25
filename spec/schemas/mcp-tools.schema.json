@@ -1,0 +1,336 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/mcp/v0/mcp-tools.schema.json",
+  "title": "byom-mcp tool-schema document (C3a; amendment A4)",
+  "description": "Closed meta-schema for mcp/byom-mcp.tools.json — the versioned MCP tool bundle binding the C3a sheet's exact candidate and participant op lists (plan/sheets/C3a.md; candidate profile normative via design/2026-07-25-amendment-family-contract.md A4). Tool names are closed per-profile enums, so a governance, runtime, or admin operation as a tool name fails this schema (deny-by-absence); the profiles object is itself closed — no third profile can exist. Per-tool input schemas are derived from the spec/schemas/ops request schemas minus the channel/bridge envelope {version, op, meta}; the field-level subset, access, and channel-derived-field rules that JSON Schema cannot express are enforced by conformance/run.py's c3a check.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "document",
+    "version",
+    "bpp_protocol_version",
+    "source",
+    "profiles",
+    "excluded_surfaces"
+  ],
+  "properties": {
+    "document": {
+      "const": "byom-mcp.tools"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Version of this tool-schema document (a lock-manifest row per the C3a sheet)."
+    },
+    "bpp_protocol_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "The BPP protocol minor version whose op schemas these tools bind (§14.1)."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet", "amendment", "op_schemas"],
+      "properties": {
+        "sheet": {
+          "const": "plan/sheets/C3a.md"
+        },
+        "amendment": {
+          "const": "design/2026-07-25-amendment-family-contract.md A4"
+        },
+        "op_schemas": {
+          "const": "spec/schemas/ops/"
+        }
+      },
+      "description": "Provenance pins: the closed op lists come from the C3a sheet, the candidate binding semantics from amendment A4, the input schemas from the committed op request schemas."
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "participant"],
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/candidateProfile"
+        },
+        "participant": {
+          "$ref": "#/$defs/participantProfile"
+        }
+      },
+      "description": "Exactly the two C3a profiles; closed — no governance, runtime, admin, or any other profile exists."
+    },
+    "excluded_surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion", "surfaces"],
+      "properties": {
+        "assertion": {
+          "const": "No governance, runtime, or admin tool exists in either profile, ever."
+        },
+        "surfaces": {
+          "const": ["governance", "runtime", "admin", "human_authority"]
+        }
+      },
+      "description": "The deny-by-absence assertion (C3a sheet; A4: no human-authority, governance, or admin tool on the candidate binding). The exact-list checks make it structural; this records it in the document itself."
+    }
+  },
+  "$defs": {
+    "candidateToolName": {
+      "enum": [
+        "byom_membership_refuse",
+        "byom_membership_accept",
+        "byom_candidate_self_policy_propose"
+      ],
+      "description": "The exact candidate-profile tool set (A4: exposing exactly membership_refuse, membership_accept, candidate_self_policy_propose)."
+    },
+    "participantToolName": {
+      "enum": [
+        "byom_activity_open",
+        "byom_activity_show",
+        "byom_activity_hold",
+        "byom_activity_close",
+        "byom_wake_intent_submit",
+        "byom_wake_intent_withdraw",
+        "byom_episode_request",
+        "byom_continuation_write",
+        "byom_endeavor_propose",
+        "byom_endeavor_position",
+        "byom_endeavor_finalize",
+        "byom_call_open",
+        "byom_call_withdraw",
+        "byom_pledge_propose",
+        "byom_pledge_position",
+        "byom_pledge_finalize",
+        "byom_pledge_amend",
+        "byom_pledge_resume",
+        "byom_pledge_relinquish",
+        "byom_delivery_submit",
+        "byom_delivery_withdraw",
+        "byom_mandate_prepare",
+        "byom_mandate_position",
+        "byom_act_intent_prepare",
+        "byom_act_intent_position",
+        "byom_act_intent_cancel",
+        "byom_engram_propose",
+        "byom_engram_read",
+        "byom_engram_search",
+        "byom_participant_show",
+        "byom_society_show",
+        "byom_budget_show",
+        "byom_snapshot_get",
+        "byom_events_read",
+        "byom_events_wait",
+        "byom_event_payload",
+        "byom_idempotency_result",
+        "byom_cursor_recover"
+      ],
+      "description": "The exact participant-profile tool set — the C3a sheet's participant list in sheet order, deduplicated (the sheet lists activity_show twice; one tool binds it). Participant/projection surfaces only."
+    },
+    "candidateProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "binding", "tools"],
+      "properties": {
+        "profile": {
+          "const": "candidate"
+        },
+        "binding": {
+          "$ref": "#/$defs/candidateBinding"
+        },
+        "tools": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/toolEntry",
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/candidateToolName"
+              },
+              "access": {
+                "const": "gated"
+              }
+            }
+          }
+        }
+      }
+    },
+    "participantProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "binding", "tools"],
+      "properties": {
+        "profile": {
+          "const": "participant"
+        },
+        "binding": {
+          "$ref": "#/$defs/participantBinding"
+        },
+        "tools": {
+          "type": "array",
+          "minItems": 38,
+          "maxItems": 38,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/toolEntry",
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/participantToolName"
+              }
+            }
+          }
+        }
+      }
+    },
+    "candidateBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sender_constraint",
+        "scope",
+        "closed_server_side_on",
+        "converts_in_place",
+        "elicitation_is_assent"
+      ],
+      "properties": {
+        "sender_constraint": {
+          "const": "one_membership_offer"
+        },
+        "scope": {
+          "const": [
+            "membership_offer",
+            "proposed_manifestation",
+            "control_domain_binding",
+            "onboarding_fence"
+          ]
+        },
+        "closed_server_side_on": {
+          "const": ["admission", "refusal", "revocation", "expiry"]
+        },
+        "converts_in_place": {
+          "const": false
+        },
+        "elicitation_is_assent": {
+          "const": false
+        }
+      },
+      "description": "A4 verbatim: sender-constrained to exactly one MembershipOffer, its proposed Manifestation, its control-domain binding, and its onboarding fence; closed server-side on admission, refusal, revocation, or expiry (terminal offer fencing per §7.4); never converts in place — the participant channel is a new credential minted at admission; elicitation through the binding is never assent."
+    },
+    "participantBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sender_constraint",
+        "minted_at",
+        "surfaces",
+        "elicitation_is_assent"
+      ],
+      "properties": {
+        "sender_constraint": {
+          "const": "participant_channel_credential"
+        },
+        "minted_at": {
+          "const": "participant_admit"
+        },
+        "surfaces": {
+          "const": ["participant", "projection"]
+        },
+        "elicitation_is_assent": {
+          "const": false
+        }
+      },
+      "description": "The §14.10 participant/harness binding: a participant channel credential minted at admission (A4), participant and projection surfaces only; elicitation is never assent."
+    },
+    "toolEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "op",
+        "op_request_schema",
+        "access",
+        "description",
+        "input_schema"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^byom_[a-z][a-z0-9_]*$"
+        },
+        "op": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "The §14.6 catalog operation this tool binds; name must equal byom_<op> (conformance-checked)."
+        },
+        "op_request_schema": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9-]*-request$",
+          "description": "The committed spec/schemas/ops request schema the input schema derives from; null exactly when no op schema is committed yet (the tool then exposes zero args — conformance-checked)."
+        },
+        "access": {
+          "enum": ["safe_to_allow", "gated"],
+          "description": "The akson-mcp marking: read-only tools are safe to allow; authority-bearing (mutating) tools stay gated so each call is a deliberate yes."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "input_schema": {
+          "$ref": "#/$defs/inputSchema"
+        }
+      }
+    },
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "additionalProperties", "properties"],
+      "properties": {
+        "type": {
+          "const": "object"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
+        "properties": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "propertyNames": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pattern"],
+          "properties": {
+            "pattern": {
+              "type": "string"
+            }
+          },
+          "description": "Optional propertyNames keyword an embedded closed schema may carry (also satisfies the spec convention that a member bag containing schema-keyword names declares its extension names)."
+        },
+        "$defs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+          },
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      },
+      "description": "A closed embedded JSON Schema: the op request schema minus the channel/bridge envelope {version, op, meta} (the bridge derives protocol version from negotiation and MutationMeta from channel state; channel-derived fields per gap note G16 never appear). additionalProperties false is mandatory — an input carrying an undeclared or channel-derived field fails the tool call."
+    }
+  }
+}

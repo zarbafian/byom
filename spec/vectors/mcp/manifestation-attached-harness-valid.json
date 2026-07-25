@@ -1,0 +1,40 @@
+{
+  "name": "mcp/manifestation-attached-harness-valid",
+  "description": "attached_harness ManifestationRevision: pinned adapter digest, protocol feature set, requested developer security profile with honestly-empty observed assurance, controller domain (§7.2; C3a sheet)",
+  "input": {
+    "schema": "manifestation-attached-harness",
+    "value": {
+      "manifestation_id": "manifestation-ada-cc",
+      "participant_id": "participant-ada",
+      "revision": 4,
+      "previous_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+      },
+      "host_kind": "attached_harness",
+      "host_binding_ref": "harness-claude-code-dev-1",
+      "package_or_adapter_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "supported_protocol_versions": ["0.2"],
+      "feature_set": ["bpp-core", "mcp-participant-binding"],
+      "input_and_output_schema_refs": [],
+      "requested_security_profiles": ["developer"],
+      "observed_assurance_refs": [],
+      "controller_domain_ref": "control-domain-ada",
+      "concurrency_limit": 1,
+      "status": "active",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "7d793037a0760186574b0282f2f435e7d793037a0760186574b0282f2f435e77"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "mcp/tool-call-input-actor-ref-channel-derived-invalid",
+  "description": "an input carrying a channel-derived field: actor_ref is supplied by the sender-constrained credential, never by the caller (§14.3; gap note G16/G18) — the closed input schema rejects the undeclared member",
+  "input": {
+    "tool_call": {
+      "profile": "participant",
+      "tool": "byom_activity_open",
+      "input": {
+        "kind": "exploration",
+        "purpose_ref": "purpose-114",
+        "purpose_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+        },
+        "mandate_refs": [],
+        "budget_account_set_ref": "budget-set-2",
+        "actor_ref": "actor-77"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "request fields naming channel-derived identity can never override the binding (§14.3); actor_ref is not a caller argument on any tool"
+  }
+}

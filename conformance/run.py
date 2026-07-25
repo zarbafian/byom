@@ -48,7 +48,18 @@ Checks, in order:
    in one batch and every result must agree byte-for-byte (JCS) with the
    Python result — the B0.1 "two independent policy evaluators" gate;
    without node, run-checks.sh's dedicated eval.mjs and differential steps
-   still enforce it.
+   still enforce it;
+7. the C3a MCP tool bundle (mcp/byom-mcp.tools.json) validates against the
+   closed meta-schema spec/schemas/mcp-tools.schema.json; each profile's op
+   list EXACTLY equals the C3a sheet list transcribed below
+   (plan/sheets/C3a.md; candidate binding normative via byom amendment A4);
+   every tool's input-schema fields are a subset of its committed op request
+   schema's args (envelope {version, op, meta} excluded — the byom-mcp
+   bridge derives them from the channel) with no invented and no
+   channel-derived (G16) fields; reads are safe_to_allow and mutations
+   gated (the akson-mcp marking); and zero governance, runtime, or admin
+   operations are bound. Tool-call vectors (spec/vectors/mcp/) replay
+   call shapes against the committed document.
 
 Exit code 0 only when everything passes. Self-contained: Python stdlib only,
 with `jsonschema` used opportunistically when installed and `node` used
@@ -230,6 +241,55 @@ NAMED_TRANSITIONS = frozenset({
     # (activation_admit, resource_allocate, journal mutation protocol)").
     "journal_sql_prepare", "journal_witness_cas", "journal_abandon",
     "journal_sql_finalize",
+})
+
+# ------------------------------------------------------ C3a MCP bundle ------
+# The C3a MCP tool op lists, transcribed verbatim from plan/sheets/C3a.md
+# (closed — these exact lists, nothing else; candidate profile normative via
+# byom amendment A4). The document mcp/byom-mcp.tools.json must bind exactly
+# these and check_mcp_tools fails on any drift.
+C3A_CANDIDATE_OPS = ("membership_refuse", "membership_accept",
+                     "candidate_self_policy_propose")
+C3A_PARTICIPANT_OPS = (
+    "activity_open", "activity_show", "activity_hold", "activity_close",
+    "wake_intent_submit", "wake_intent_withdraw", "episode_request",
+    "continuation_write", "endeavor_propose", "endeavor_position",
+    "endeavor_finalize", "call_open", "call_withdraw", "pledge_propose",
+    "pledge_position", "pledge_finalize", "pledge_amend", "pledge_resume",
+    "pledge_relinquish", "delivery_submit", "delivery_withdraw",
+    "mandate_prepare", "mandate_position", "act_intent_prepare",
+    "act_intent_position", "act_intent_cancel", "engram_propose",
+    "engram_read", "engram_search", "participant_show", "activity_show",
+    "society_show", "budget_show", "snapshot_get", "events_read",
+    "events_wait", "event_payload", "idempotency_result", "cursor_recover",
+)
+# The sheet lists activity_show twice (once among the activity ops, once
+# among the projection reads); one tool binds each unique op, in
+# first-occurrence sheet order.
+C3A_PARTICIPANT_UNIQUE = tuple(dict.fromkeys(C3A_PARTICIPANT_OPS))
+# Reads (safe_to_allow) within the participant list: SLICE_READS members
+# plus the knowledge/budget projection reads whose op schemas land with
+# their own bundles (engram_read/engram_search are R4/R37 reads per
+# amendment A5; budget_show is a projection read).
+C3A_PARTICIPANT_READS = frozenset({
+    "activity_show", "participant_show", "society_show", "budget_show",
+    "snapshot_get", "events_read", "events_wait", "event_payload",
+    "idempotency_result", "cursor_recover", "engram_read", "engram_search",
+})
+# The channel/bridge envelope the byom-mcp bridge derives (protocol version
+# from negotiation, MutationMeta from channel state): never tool args.
+MCP_ENVELOPE_FIELDS = frozenset({"version", "op", "meta"})
+# Channel-derived fields (gap notes G16/G18/G24/G26/G34/G40): supplied by
+# the sender-constrained credential, never by the caller. participant_ref
+# is NOT listed — it is a legitimate lookup arg on participant_show; on
+# every mutation it is absent from the request schema, so the subset rule
+# already rejects it.
+MCP_CHANNEL_DERIVED = frozenset({
+    "candidate_participant_ref", "candidate_binding_epoch",
+    "candidate_actor_ref", "onboarding_fence_epoch", "refused_by_actor_ref",
+    "accepted_by_actor_ref", "authentication_observation_ref",
+    "actor_ref", "participant_binding_epoch", "endpoint_incarnation",
+    "recovery_epoch", "delivered_by_participant", "requested_by_participant",
 })
 
 
@@ -973,6 +1033,120 @@ class Runner:
                 covered += 1
         return covered
 
+    # -- C3a MCP tool bundle --
+
+    def _check_mcp_tool(self, profile: str, tool: dict, info: dict):
+        """Per-tool C3a rules: name = byom_<op>; reads safe_to_allow and
+        mutations gated (the akson-mcp marking); input-schema fields a
+        subset of the committed op request schema's args (envelope
+        excluded) — no invented, no channel-derived (G16) fields; required
+        args carried faithfully. A tool whose op has no committed request
+        schema must declare op_request_schema null and expose zero args."""
+        op = tool["op"]
+        name = tool["name"]
+        if name != f"byom_{op}":
+            self.fail(f"c3a: {profile} tool {name} does not equal "
+                      f"byom_{op}")
+        want_access = ("safe_to_allow" if op in C3A_PARTICIPANT_READS
+                       and profile == "participant" else "gated")
+        if tool["access"] != want_access:
+            self.fail(f"c3a: {name} access is {tool['access']!r}, expected "
+                      f"{want_access!r} (reads safe_to_allow, mutations "
+                      "gated)")
+        input_schema = tool["input_schema"]
+        props = set(input_schema.get("properties", {}))
+        required = set(input_schema.get("required", []))
+        derived = props & MCP_CHANNEL_DERIVED
+        if derived:
+            self.fail(f"c3a: {name} input schema carries channel-derived "
+                      f"field(s) {sorted(derived)} (G16: the credential "
+                      "supplies them, never the caller)")
+        base = op.replace("_", "-")
+        request = self.schemas.get(f"{base}-request")
+        if request is None:
+            info["pending"].append(op)
+            if tool["op_request_schema"] is not None:
+                self.fail(f"c3a: {name} names op_request_schema "
+                          f"{tool['op_request_schema']!r} but no {base}-"
+                          "request schema is committed")
+            if props or required:
+                self.fail(f"c3a: {name} has no committed {base}-request "
+                          "schema — a pending tool must expose zero args")
+            return
+        if tool["op_request_schema"] != f"{base}-request":
+            self.fail(f"c3a: {name} op_request_schema is "
+                      f"{tool['op_request_schema']!r}, expected "
+                      f"'{base}-request'")
+        args = set(request.get("properties", {})) - MCP_ENVELOPE_FIELDS
+        invented = props - args
+        if invented:
+            self.fail(f"c3a: {name} input schema invents field(s) "
+                      f"{sorted(invented)} not in {base}-request args")
+        req_args = set(request.get("required", [])) - MCP_ENVELOPE_FIELDS
+        if required != req_args:
+            self.fail(f"c3a: {name} required {sorted(required)} != "
+                      f"{base}-request required args {sorted(req_args)}")
+
+    def check_mcp_tools(self) -> dict:
+        """C3a check: mcp/byom-mcp.tools.json validates against the closed
+        meta-schema; each profile's op list EXACTLY equals the transcribed
+        C3a sheet list; per-tool rules via _check_mcp_tool; zero
+        governance, runtime, or admin operations bound (deny-by-absence
+        made explicit)."""
+        info = {"candidate": 0, "participant": 0, "pending": []}
+        self._mcp_doc = None
+        for op in C3A_CANDIDATE_OPS + C3A_PARTICIPANT_OPS:
+            if op not in ALL_CATALOG_OPS:
+                self.fail(f"c3a: sheet op {op} is not a §14.6 catalog "
+                          "operation (bad transcription or catalog drift)")
+        path = Path(__file__).resolve().parent.parent / "mcp" / \
+            "byom-mcp.tools.json"
+        if "mcp-tools" not in self.schemas:
+            self.fail("c3a: meta-schema spec/schemas/mcp-tools.schema.json "
+                      "is missing or did not load")
+            return info
+        if not path.is_file():
+            self.fail(f"c3a: tools document not found: {path}")
+            return info
+        try:
+            doc = strict_parse(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            self.fail(f"c3a: byom-mcp.tools.json is not strict I-JSON: {exc}")
+            return info
+        if not self._validate("mcp-tools", None, doc):
+            self.fail("c3a: byom-mcp.tools.json does not validate against "
+                      "the mcp-tools meta-schema")
+            return info
+        self._mcp_doc = doc
+        expected = {"candidate": C3A_CANDIDATE_OPS,
+                    "participant": C3A_PARTICIPANT_UNIQUE}
+        for profile, want in expected.items():
+            tools = doc["profiles"][profile]["tools"]
+            got = tuple(t["op"] for t in tools)
+            if got != want:
+                self.fail(f"c3a: {profile} profile op list != C3a sheet "
+                          f"list\n      bound: {got}\n      sheet: {want}")
+                continue
+            for tool in tools:
+                self._check_mcp_tool(profile, tool, info)
+            info[profile] = len(tools)
+        bound = {t["op"] for env in doc["profiles"].values()
+                 for t in env["tools"]}
+        allowed = set(C3A_CANDIDATE_OPS) | set(C3A_PARTICIPANT_OPS)
+        for surface, ops in (("admin", CATALOG["administration"]),
+                             ("runtime", CATALOG["runtime"]
+                              + CATALOG["host_integration"])):
+            hits = bound & set(ops)
+            if hits:
+                self.fail(f"c3a: {surface} operation(s) bound as tools: "
+                          f"{sorted(hits)} — 'no governance, runtime, or "
+                          "admin operation, ever'")
+        stray = bound - allowed
+        if stray:
+            self.fail("c3a: op(s) outside the closed C3a lists (governance "
+                      f"or other surface): {sorted(stray)}")
+        return info
+
     # -- transition descriptors --
 
     def _descriptor_shape_errors(self, body) -> list[str]:
@@ -1106,7 +1280,8 @@ class Runner:
     def run_vectors(self) -> dict:
         vector_dir = self.spec_dir / "vectors"
         counts = {"schema-valid": 0, "schema-invalid": 0, "acceptance": 0,
-                  "digest": 0, "machine-walk": 0, "policy": 0}
+                  "digest": 0, "machine-walk": 0, "policy": 0,
+                  "tool-call": 0}
         paths = sorted(p for p in vector_dir.rglob("*.json"))
         if not paths:
             self.fail(f"no vectors found under {vector_dir}")
@@ -1128,6 +1303,8 @@ class Runner:
                 self._run_acceptance_vector(rel, inp, expected, counts)
             elif "policy_op" in inp:
                 self._run_policy_vector(rel, inp, expected, counts)
+            elif "tool_call" in inp:
+                self._run_tool_call_vector(rel, inp, expected, counts)
             elif "domain" in inp:
                 self._run_digest_vector(rel, inp, expected, counts)
             elif "machine" in inp:
@@ -1284,6 +1461,43 @@ class Runner:
         return (f"both evaluators agree on {agree}/{len(cases)} vectors "
                 "(eval.py reference + eval.mjs independent)")
 
+    def _run_tool_call_vector(self, rel, inp, expected, counts):
+        """C3a MCP tool-call vectors (spec/vectors/mcp/): the call names a
+        profile, a tool, and an input. The shape is valid only when the
+        tool exists in exactly that profile's closed tool list in the
+        committed mcp/byom-mcp.tools.json AND the input validates against
+        the tool's embedded closed input schema AND carries no
+        channel-derived field — so a candidate tool under a participant
+        envelope and a caller-supplied actor_ref both fail."""
+        doc = getattr(self, "_mcp_doc", None)
+        if doc is None:
+            self.fail(f"{rel}: mcp tools document unavailable (the c3a "
+                      "check failed before vectors ran)")
+            return
+        call = inp["tool_call"]
+        env = doc["profiles"].get(call.get("profile"))
+        tool = None
+        if env is not None:
+            tool = next((t for t in env["tools"]
+                         if t["name"] == call.get("tool")), None)
+        verdict = tool is not None
+        if verdict:
+            schema = tool["input_schema"]
+            value = call.get("input")
+            if self.jsonschema is not None:
+                verdict = self.jsonschema.Draft202012Validator(
+                    schema).is_valid(value)
+            else:
+                verdict = mini_valid(schema, schema, value)
+            if verdict and isinstance(value, dict) \
+                    and set(value) & MCP_CHANNEL_DERIVED:
+                verdict = False
+        if verdict != expected["valid"]:
+            self.fail(f"{rel}: expected valid={expected['valid']}, "
+                      f"got {verdict}")
+            return
+        counts["tool-call"] += 1
+
     def _descriptor_rows(self, machine: str):
         """Load spec/descriptors/<machine>.json once and return its
         transition rows as a set of (from, to, via) triples."""
@@ -1397,6 +1611,7 @@ class Runner:
             backend = "minimal structural validator (jsonschema not installed)"
         n_schemas = self.load_schemas()
         covered = self.check_bundle()
+        mcp = self.check_mcp_tools()
         desc = self.run_descriptors()
         counts = self.run_vectors()
         policy_note = self.cross_check_policy()
@@ -1411,13 +1626,19 @@ class Runner:
               f"states, {desc['transitions']} transitions — "
               f"{desc['owned']}/{len(SLICE_MUTATING)} mutating ops owned "
               "exactly once")
+        pending = (f"; pending op schemas: {', '.join(mcp['pending'])}"
+                   if mcp["pending"] else "; all ops schema-backed")
+        print(f"mcp:      c3a — {mcp['candidate']} candidate + "
+              f"{mcp['participant']} participant tools, sheet-exact; "
+              f"0 governance/runtime/admin{pending}")
         print(f"vectors:  {total} passed — "
               f"{counts['schema-valid']} schema-valid, "
               f"{counts['schema-invalid']} schema-invalid, "
               f"{counts['acceptance']} acceptance, "
               f"{counts['digest']} digest, "
               f"{counts['machine-walk']} machine-walk, "
-              f"{counts['policy']} policy")
+              f"{counts['policy']} policy, "
+              f"{counts['tool-call']} tool-call")
         print(f"policy:   {policy_note}")
         if self.failures:
             print(f"result:   FAIL ({len(self.failures)} failure(s))")

@@ -1,0 +1,13 @@
+{
+  "name": "mcp/governance-op-tool-name-invalid",
+  "description": "a governance operation as a tool name: byom_participant_admit is not in the closed participant tool-name enum — the meta-schema rejects it (deny-by-absence; the sheet's 'no governance, runtime, or admin operation, ever')",
+  "input": {
+    "schema": "mcp-tools",
+    "ref": "#/$defs/participantToolName",
+    "value": "byom_participant_admit"
+  },
+  "expected": {
+    "valid": false,
+    "reason": "participant_admit is a governance-surface operation; neither MCP profile may bind it as a tool"
+  }
+}

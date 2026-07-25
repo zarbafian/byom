@@ -1,0 +1,22 @@
+{
+  "name": "mcp/tool-call-membership-refuse-valid",
+  "description": "candidate-profile byom_membership_refuse call with the optional refusal_reason_ref; the terminal answer to the exact offer this channel is bound to",
+  "input": {
+    "tool_call": {
+      "profile": "candidate",
+      "tool": "byom_membership_refuse",
+      "input": {
+        "offer_ref": "offer-7431",
+        "offer_subject_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "refusal_reason_ref": "reason-decline-scope"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

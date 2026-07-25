@@ -1,0 +1,21 @@
+{
+  "name": "mcp/tool-call-membership-accept-valid",
+  "description": "candidate-profile byom_membership_accept call: exactly the op's caller-supplied args (offer_ref + pinned subject digest); version/op/meta are bridge-derived and candidate identity is channel-derived (G16)",
+  "input": {
+    "tool_call": {
+      "profile": "candidate",
+      "tool": "byom_membership_accept",
+      "input": {
+        "offer_ref": "offer-7431",
+        "subject_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}
