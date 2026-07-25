@@ -1,0 +1,20 @@
+{
+  "name": "envelope/failure-invalid-status-out-of-range",
+  "description": "status 399 is outside the profile range; status, when present, is a JSON integer in 400-599 (PROFILE.md §3)",
+  "input": {
+    "schema": "bpp-failure",
+    "value": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/invalid",
+        "title": "Invalid request",
+        "kind": "invalid",
+        "status": 399
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "status must be within 400-599"
+  }
+}

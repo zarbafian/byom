@@ -1,0 +1,20 @@
+{
+  "name": "envelope/failure-invalid-extension-key-not-reverse-domain",
+  "description": "extension members are allowed solely under reverse-domain names (at least three dot-separated lowercase segments); a bare extension name fails the propertyNames pattern",
+  "input": {
+    "schema": "bpp-failure",
+    "value": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/budget_exceeded",
+        "title": "Budget exceeded",
+        "kind": "budget_exceeded",
+        "budget_ref": "budget:b-9"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "extension member name is not reverse-domain"
+  }
+}

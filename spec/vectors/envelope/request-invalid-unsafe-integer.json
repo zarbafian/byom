@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-unsafe-integer",
+  "description": "integer 2^53 exceeds the I-JSON safe range +-(2^53 - 1) (PROFILE.md §1)",
+  "input": {
+    "raw": "{\"n\":9007199254740992}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unsafe-integer",
+    "reason": "integer outside the safe range"
+  }
+}

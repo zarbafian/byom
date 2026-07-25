@@ -1,8 +1,12 @@
 {
   "name": "envelope/request-invalid-duplicate-keys",
-  "description": "duplicate op key in the raw bytes; strict I-JSON acceptance rejects before any schema sees the value (§14.2)",
+  "description": "duplicate op key in the raw bytes; strict I-JSON acceptance rejects before any schema sees the value (§14.2, PROFILE.md §1; R0/BYOM-03: profile error class asserted)",
   "input": {
     "raw": "{\"version\":\"0.2\",\"op\":\"hello\",\"op\":\"society_dissolve\"}"
   },
-  "expected": { "valid": false, "reason": "duplicate object key" }
+  "expected": {
+    "valid": false,
+    "error": "duplicate",
+    "reason": "duplicate object key"
+  }
 }

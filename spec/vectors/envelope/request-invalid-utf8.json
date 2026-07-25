@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-utf8",
+  "description": "a 0xff byte is not valid UTF-8; rejected after the size check, before parsing (PROFILE.md §1 order 2)",
+  "input": {
+    "raw_base64": "eyJzIjoi/yJ9"
+  },
+  "expected": {
+    "valid": false,
+    "error": "invalid-utf8",
+    "reason": "request bytes are not valid UTF-8"
+  }
+}

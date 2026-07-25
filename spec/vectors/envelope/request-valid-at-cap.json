@@ -1,0 +1,15 @@
+{
+  "name": "envelope/request-valid-at-cap",
+  "description": "well-formed request envelope of exactly 262144 bytes; the 256 KiB request cap is inclusive (PROFILE.md §1)",
+  "input": {
+    "json_synth": {
+      "prefix": "{\"version\":\"0.2\",\"op\":\"hello\",\"pad\":\"",
+      "repeat": "a",
+      "count": 262105,
+      "suffix": "\"}"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

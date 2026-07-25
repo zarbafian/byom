@@ -1,24 +1,31 @@
 {
   "name": "envelope/digest-idempotency-domain-max-epoch",
-  "description": "society_recovery_epoch at the I-JSON safe-integer maximum 2^53-1; integers canonicalize without exponent or padding",
+  "description": "society_recovery_epoch at the I-JSON safe-integer maximum 2^53-1; integers canonicalize without exponent or padding; ratified $domain-tagged HMAC construction (R0/BYOM-01 regeneration in place)",
   "input": {
     "domain": "bpp-idempotency-domain-v1",
     "value": {
       "actor_binding_digest": {
-        "algorithm": "hmac-sha-256",
         "class": "local_erasure_safe",
-        "key_id": "kb-2026-002",
-        "value": "b9e14d16434c3230db8cc166206f20d390932d2dbb8e9a3dc7e2cae2782be06f"
+        "algorithm": "hmac-sha-256",
+        "key_ref": "kb-2026-002",
+        "value_hex": "b9e14d16434c3230db8cc166206f20d390932d2dbb8e9a3dc7e2cae2782be06f"
       },
-      "endpoint_incarnation": "inc-0002",
-      "idempotency_key": "idem-0002",
       "operation": "participant_admit",
+      "endpoint_incarnation": "inc-0002",
       "society_id": "soc-0002",
-      "society_recovery_epoch": 9007199254740991
-    }
+      "society_recovery_epoch": 9007199254740991,
+      "idempotency_key": "idem-0002"
+    },
+    "index_secret_hex": "6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c",
+    "key_ref": "society-key:soc-0002/idempotency-index"
   },
   "expected": {
-    "canonical": "[\"bpp-idempotency-domain-v1\",{\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_id\":\"kb-2026-002\",\"value\":\"b9e14d16434c3230db8cc166206f20d390932d2dbb8e9a3dc7e2cae2782be06f\"},\"endpoint_incarnation\":\"inc-0002\",\"idempotency_key\":\"idem-0002\",\"operation\":\"participant_admit\",\"society_id\":\"soc-0002\",\"society_recovery_epoch\":9007199254740991}]",
-    "sha256_hex": "d667dbbb6b0d3fe18b0f70f3181adcdbfaea8a84c03bda13c4169723cd02434e"
+    "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"kb-2026-002\",\"value_hex\":\"b9e14d16434c3230db8cc166206f20d390932d2dbb8e9a3dc7e2cae2782be06f\"},\"endpoint_incarnation\":\"inc-0002\",\"idempotency_key\":\"idem-0002\",\"operation\":\"participant_admit\",\"society_id\":\"soc-0002\",\"society_recovery_epoch\":9007199254740991}",
+    "digest_ref": {
+      "class": "scope_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-0002/idempotency-index",
+      "value_hex": "0edf0dc8006a52d1c4c9233b494d21ac10387b422311ffc6ec76b34d2de521e9"
+    }
   }
 }

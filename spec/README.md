@@ -18,7 +18,8 @@ A request and its two possible answers, end to end:
 
 ~~~json
 {"outcome": "problem", "problem": {"kind": "unsupported_version",
- "status": 400, "title": "no common protocol minor version"}}
+ "type": "https://byom.dev/problems/unsupported_version",
+ "title": "no common protocol minor version", "status": 400}}
 ~~~
 
 Everything else — mutations, idempotency, events, state machines — is layered
@@ -61,14 +62,24 @@ A specification bundle (B0.1, B0.2, …) is the unit of compatibility:
 
 Mirrors `akson/spec/ext/README.md`:
 
-- JSON Schema draft 2020-12; `additionalProperties: false` on every object
-  that declares properties (closed schemas; unknown fields fail closed).
+- JSON Schema draft 2020-12; closed schemas: `additionalProperties: false` on
+  every object schema that declares properties (unknown fields fail closed).
+  Two recorded exceptions (R0/BYOM-01/02): pure refinement branches (`oneOf`
+  arms without `type`, e.g. the DigestRef class/algorithm pairing) constrain
+  members of an already-closed parent; and the RFC 9457 problem object admits
+  extension members solely under reverse-domain names via a `propertyNames`
+  pattern (family profile §3). The conformance runner enforces exactly this
+  rule.
 - Self-contained: internal `$ref` into the same file's `$defs` only, never a
   remote reference. Shared shapes (identifier, DigestRef, MutationMeta) are
   restated per file.
 - Instances must pass strict I-JSON acceptance *before* schema validation:
-  UTF-8, duplicate keys rejected, unsafe integers (>2^53−1 magnitude)
-  rejected, no NaN/Infinity, bounded depth and size (§14.2, §14.9).
+  the C1 family acceptance rules of `../family-vectors/PROFILE.md` §1
+  (normative — R0/BYOM-03): token-order first-error reporting, 256 KiB
+  request / 1 MiB response caps, inclusive depth-64 and 65 536-node caps,
+  the `$domain` reservation at every depth, unpaired-surrogate rejection,
+  unsafe integers and integer-valued floats beyond ±(2^53 − 1) rejected, no
+  NaN/Infinity (§14.2, §14.9).
 - Validation rules the schemas cannot express (per-operation registry
   membership, mutation/meta pairing by registry row, envelope byte limits)
   are enforced in code and covered by raw vectors.
@@ -79,30 +90,55 @@ control one; every `$id` uses the provisional reserved name
 `https://byom.example/bpp/…` and MUST be rewritten in one place when the
 namespace gate is met. No stable release may ship on `byom.example`.
 
+**Problem-type namespace (open fact, A0.4-style).** The ratified family
+profile pins problem `type` as exactly `https://byom.dev/problems/<kind>`
+(`../family-vectors/PROFILE.md` §3, profile-pinned decision 3), and the
+schemas, vectors, and runner enforce that prefix (R0/BYOM-02). Control of the
+`byom.dev` problems namespace is **not yet established**: this is recorded
+honestly as an open fact, tracked to closure (domain control demonstrated, or
+the profile amended) before any public advertisement of the protocol. It is
+distinct from the `$id` gate above — `$id`s stay on the reserved
+`byom.example` name, while problem types already carry the profile-pinned
+`byom.dev` prefix on the wire.
+
 ## Canonical bytes and digest domains
 
-Canonical bytes are RFC 8785 JCS over strict I-JSON values (no floats in any
-BPP canonical value). Every digest field is a typed `DigestRef`
-`{class, algorithm, value, key_id?}`, never an unlabelled hash (§14.2).
+The ratified family encoding profile — `../family-vectors/PROFILE.md` (C1,
+amended by the R0 dispositions of 2026-07-25) — is **normative** for
+canonical bytes, the DigestRef wire, digest classes, and the
+idempotency-domain construction. This section is a conforming summary, not a
+second source (R0/BYOM-01).
 
-Type-tagged digests use one construction for every domain:
+Canonical bytes are RFC 8785 JCS over the profile's strict-I-JSON value
+space (PROFILE.md §1/§2): the full finite-number space in ES minimal form.
+BPP canonical values happen to contain no floats today (§14.2, ADR-0001),
+but the canonicalizer implements the profile space. Every digest field is a
+typed `DigestRef` with the closed wire shape
+`{class, algorithm, key_ref?, value_hex}` (PROFILE.md §6.1), never an
+unlabelled hash: closed class/algorithm pairing (`sha-256` for the public
+classes, `hmac-sha-256` for the keyed erasure classes), `key_ref` required
+exactly for the keyed erasure classes and forbidden otherwise, `value_hex`
+exactly 64 lowercase hex characters. The six classes include
+`scope_erasure_safe` (D-R0-1) for shared-key index and chain constructions.
+
+Type-tagged canonical bytes inject the reserved top-level `$domain` member,
+then apply JCS (PROFILE.md §2; `$domain` is reserved at every depth of wire
+bodies and fails closed on collision):
 
 ~~~text
-canonical_bytes = JCS([ "<digest-domain-string>", value ])
-digest          = SHA-256(canonical_bytes)        # or HMAC-SHA-256 per class
+tagged(domain, value) = JCS(value ∪ {"$domain": domain})
 ~~~
 
-i.e. the domain tag is the first element of a two-element JSON array that is
-canonicalized as a whole, so the digest input is itself one valid canonical
-JSON text and two domains can never collide by byte concatenation. This is
-the proposed concrete reading of DESIGN.md §14.2's
-`DigestRef(JCS(type_tag("…") || value))`; it freezes with the bundle.
+This is the ratified concrete reading of DESIGN.md §14.2's
+`DigestRef(JCS(type_tag("…") || value))`. The earlier B0.1 proposal —
+`SHA-256(JCS([domain, value]))` with the tag as the first array element — is
+**superseded** (R0/BYOM-01, profile-pinned decision 4).
 
 Current digest domains:
 
-| Domain string | Value | Vectors |
+| Domain string | Value and construction | Vectors |
 |---|---|---|
-| `bpp-idempotency-domain-v1` | `IdempotencyDomain` (§14.2) | `vectors/envelope/digest-*` |
+| `bpp-idempotency-domain-v1` | `IdempotencyDomain` (§14.2): `HMAC-SHA-256(per-Society index key, tagged(domain, value))`, emitted as a `scope_erasure_safe` DigestRef — the index key is a scope key, so destroying it erases offline verifiability of the whole index, never one entry (PROFILE.md §5, D-R0-1) | `vectors/envelope/digest-*` |
 | `bpa1-policy-v1` | BPA-1 policy AST (ADR-0001) | with the BPA-1 slice |
 
 ## ADR format

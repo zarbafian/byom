@@ -1,0 +1,16 @@
+{
+  "name": "envelope/response-valid-request-cap-inapplicable",
+  "description": "a 262145-byte body is over the request cap but well under the 1 MiB response cap; input.context selects the response context (PROFILE.md §1)",
+  "input": {
+    "context": "response",
+    "json_synth": {
+      "prefix": "[\"",
+      "repeat": "a",
+      "count": 262141,
+      "suffix": "\"]"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-domain-collision",
+  "description": "$domain is reserved at every depth of wire bodies: it is injected only during canonicalization and is never a wire member (PROFILE.md §1, profile-pinned decision 12)",
+  "input": {
+    "raw": "{\"$domain\":\"bpp-idempotency-domain-v1\"}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "reserved-domain-collision",
+    "reason": "reserved $domain member on the wire"
+  }
+}

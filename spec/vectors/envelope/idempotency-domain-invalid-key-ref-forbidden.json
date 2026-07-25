@@ -1,0 +1,18 @@
+{
+  "name": "envelope/idempotency-domain-invalid-key-ref-forbidden",
+  "description": "DigestRef carrying key_ref on the public class structural_public; key_ref is required exactly for the keyed erasure classes and forbidden otherwise (PROFILE.md §6.1, schema oneOf)",
+  "input": {
+    "schema": "bpp-idempotency-domain",
+    "ref": "#/$defs/digestRef",
+    "value": {
+      "class": "structural_public",
+      "algorithm": "sha-256",
+      "key_ref": "kb-2026-001",
+      "value_hex": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "key_ref is forbidden for the public classes"
+  }
+}

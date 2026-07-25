@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-mixed-error-order",
+  "description": "order-3 classes surface in token order: the duplicate member precedes the later unsafe number, so duplicate is the reported first error (PROFILE.md §1, mirror of ijson/mixed-error-order)",
+  "input": {
+    "raw": "{\"a\":1,\"a\":2,\"n\":1e400}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "duplicate",
+    "reason": "first offending token names the error"
+  }
+}

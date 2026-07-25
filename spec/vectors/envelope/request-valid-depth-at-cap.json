@@ -1,0 +1,10 @@
+{
+  "name": "envelope/request-valid-depth-at-cap",
+  "description": "64 nested containers sit exactly at the profile depth cap; the cap is inclusive (PROFILE.md §1, profile-pinned decision 1)",
+  "input": {
+    "raw": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
+  },
+  "expected": {
+    "valid": true
+  }
+}

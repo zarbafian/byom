@@ -1,19 +1,22 @@
 {
   "name": "envelope/failure-valid-full",
-  "description": "failure envelope carrying an RFC 9457 problem with the required Byom kind plus standard members",
+  "description": "failure envelope carrying the required type/title/kind (type exactly https://byom.dev/problems/<kind>), standard members, and a reverse-domain extension member carrying no authority (R0/BYOM-02 regeneration in place)",
   "input": {
     "schema": "bpp-failure",
     "value": {
       "outcome": "problem",
       "problem": {
         "kind": "stale_revision",
-        "type": "https://byom.example/bpp/problems/stale_revision",
+        "type": "https://byom.dev/problems/stale_revision",
         "title": "expected revision is no longer current",
         "status": 409,
         "detail": "expected_revision 17 does not match the current revision of the governed object",
-        "instance": "urn:byom:request:req-0002"
+        "instance": "urn:byom:request:req-0002",
+        "dev.byom.expected_revision": 17
       }
     }
   },
-  "expected": { "valid": true }
+  "expected": {
+    "valid": true
+  }
 }

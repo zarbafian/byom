@@ -1,9 +1,17 @@
 {
   "name": "envelope/request-invalid-oversized",
-  "description": "well-formed request envelope of 262145 bytes; one byte over the 256 KiB ceiling fails closed before parsing (§14.9); the runner synthesizes the padded bytes",
+  "description": "well-formed request envelope of 262145 bytes; one byte over the 256 KiB request cap fails closed before parsing (PROFILE.md §1 order 1; R0/BYOM-03: migrated to json_synth with the asserted profile error class)",
   "input": {
-    "synthetic": "oversized_request",
-    "target_bytes": 262145
+    "json_synth": {
+      "prefix": "{\"version\":\"0.2\",\"op\":\"hello\",\"pad\":\"",
+      "repeat": "a",
+      "count": 262106,
+      "suffix": "\"}"
+    }
   },
-  "expected": { "valid": false, "reason": "request over 256 KiB" }
+  "expected": {
+    "valid": false,
+    "error": "oversize",
+    "reason": "request over 256 KiB"
+  }
 }

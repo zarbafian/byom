@@ -12,18 +12,27 @@ equals `<family>/<file-stem>`. Three input kinds, dispatched by key:
   schema's `$defs`) — validate `input.value` against
   `../schemas/<schema>.schema.json`; `expected.valid` says whether it
   passes. Negative cases carry `expected.reason` for the human reader; the
-  runner asserts only the verdict.
-- **`input.raw`** or **`input.synthetic`** — strict I-JSON + limit
-  acceptance of exact bytes, *before* any schema: duplicate keys, unsafe
-  integers, NaN/Infinity, and the §14.9 256 KiB request ceiling fail
-  closed. `raw` carries the bytes as a JSON string; `synthetic`
-  (`oversized_request` + `target_bytes`) has the runner build a valid JSON
-  text of exactly `target_bytes` bytes so the repository does not store a
-  quarter-megabyte literal.
-- **`input.domain`** + **`input.value`** — digest derivation:
-  `expected.canonical` is `JCS([domain, value])` and `expected.sha256_hex`
-  its SHA-256 (type-tag construction, `../README.md`). The runner
-  re-derives both.
+  runner asserts the verdict, plus one convention check JSON Schema cannot
+  express: for `bpp-failure`, problem `type` must equal exactly
+  `https://byom.dev/problems/<kind>` (R0/BYOM-02).
+- **`input.raw`**, **`input.raw_base64`**, or **`input.json_synth`** — C1
+  family acceptance of exact bytes, *before* any schema
+  (`../../family-vectors/PROFILE.md` §1, normative — R0/BYOM-03):
+  token-order first-error reporting, the 256 KiB request cap (1 MiB with
+  `input.context: "response"`), inclusive depth-64 and 65 536-node caps, the
+  `$domain` reservation at every depth, unpaired surrogates, unsafe
+  integers/floats, NaN/Infinity. `raw` carries the bytes as a JSON string,
+  `raw_base64` as base64 (non-UTF-8 cases); `json_synth`
+  (`{prefix, repeat, count, suffix}`, the family convention) has the runner
+  build large bytes so the repository does not store megabyte literals.
+  Negative cases carry the asserted profile `expected.error` class.
+- **`input.domain`** + **`input.value`** (+ `input.index_secret_hex`, a test
+  fixture in shape only, and `input.key_ref`) — the ratified
+  idempotency-domain digest derivation (PROFILE.md §5, D-R0-1 — R0/BYOM-01):
+  `expected.canonical` is `JCS(value ∪ {"$domain": domain})` and
+  `expected.digest_ref` the typed `scope_erasure_safe` DigestRef whose
+  `value_hex` is `HMAC-SHA-256(index key, canonical)`. The runner re-derives
+  both.
 
 `envelope/` covers the §14.2 request/success/failure envelope, MutationMeta,
 and the `bpp-idempotency-domain-v1` digest domain. `ops/` covers the B0.1

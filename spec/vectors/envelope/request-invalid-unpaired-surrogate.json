@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-unpaired-surrogate",
+  "description": "an escaped unpaired high surrogate fails closed after escape decoding (PROFILE.md §1 order 4)",
+  "input": {
+    "raw": "{\"s\":\"\\ud800\"}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unpaired-surrogate",
+    "reason": "unpaired surrogate after escape decoding"
+  }
+}

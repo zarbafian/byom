@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/bpp/v0/bpp-failure.schema.json",
-  "title": "BPP failure envelope (DESIGN.md §14.2, §14.9): outcome \"problem\" plus RFC 9457 problem details",
-  "description": "problem carries the RFC 9457 standard members plus the required Byom extension member kind, drawn from the closed §14.9 problem-kind enum for this bundle (new kinds are a spec revision; unknown safety-relevant values fail closed). RFC 9457 permits arbitrary extension members; BPP deliberately closes the object — additional extensions are a schema revision. Problems never disclose hidden object, participant, peer, path, policy, or membership existence.",
+  "title": "BPP failure envelope (DESIGN.md §14.2, §14.9; family-vectors/PROFILE.md §3, normative): outcome \"problem\" plus RFC 9457 problem details",
+  "description": "problem carries the RFC 9457 members the ratified family profile requires — type, title, and the Byom kind from the closed §14.9 enum (unknown kinds fail closed; new kinds are a spec revision). type is exactly https://byom.dev/problems/<kind> (profile-pinned decision 3; control of the byom.dev problems namespace is an open fact recorded in spec/README.md). status, when present, is a JSON integer in 400-599. RFC 9457 extension members are allowed and carry no authority, but solely under reverse-domain member names (at least three dot-separated lowercase segments) so extensions can never collide with future standard members — aligned to the profile under R0/BYOM-02. Problems never disclose hidden object, participant, peer, path, policy, or membership existence.",
   "type": "object",
   "additionalProperties": false,
   "required": ["outcome", "problem"],
@@ -13,21 +13,30 @@
   "$defs": {
     "problem": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["kind"],
+      "additionalProperties": true,
+      "propertyNames": {
+        "pattern": "^(type|title|kind|status|detail|instance|[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*){2,})$"
+      },
+      "required": ["type", "title", "kind"],
+      "$comment": "type must equal exactly https://byom.dev/problems/<kind> for the sibling kind member (PROFILE.md §3). JSON Schema cannot cross-reference two members, so the pattern pins the prefix and the snake_case kind shape here, and conformance/run.py enforces exact type/kind agreement as a convention check.",
       "properties": {
         "kind": { "$ref": "#/$defs/problemKind" },
         "type": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 2048,
-          "description": "RFC 9457 type URI; defaults to \"about:blank\" when absent."
+          "pattern": "^https://byom\\.dev/problems/[a-z][a-z0-9_]{0,127}$",
+          "description": "RFC 9457 type URI: exactly https://byom.dev/problems/<kind>; never about:blank, never another namespace (non-substitutable with kovee's urn:kovee:error:<kind>, PROFILE.md §3.1)."
         },
         "title": { "type": "string", "maxLength": 4096 },
-        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "status": {
+          "type": "integer",
+          "minimum": 400,
+          "maximum": 599,
+          "description": "Optional; when present a JSON integer in 400-599 (never a bool or string)."
+        },
         "detail": { "type": "string", "maxLength": 65536 },
         "instance": { "type": "string", "minLength": 1, "maxLength": 2048 }
-      }
+      },
+      "description": "RFC 9457 problem object per the family profile: required type/title/kind; extension members allowed under reverse-domain names only (propertyNames pattern), carrying no authority."
     },
     "problemKind": {
       "enum": [

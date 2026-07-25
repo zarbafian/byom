@@ -1,14 +1,14 @@
 {
   "name": "envelope/idempotency-domain-invalid-missing-society",
-  "description": "IdempotencyDomain without society_id; the uniqueness domain is complete or invalid",
+  "description": "IdempotencyDomain without society_id; the uniqueness domain is complete or invalid (R0/BYOM-01: DigestRef regenerated to the ratified wire)",
   "input": {
     "schema": "bpp-idempotency-domain",
     "value": {
       "actor_binding_digest": {
         "class": "local_erasure_safe",
         "algorithm": "hmac-sha-256",
-        "key_id": "kb-2026-001",
-        "value": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480"
+        "key_ref": "kb-2026-001",
+        "value_hex": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480"
       },
       "operation": "society_prepare",
       "endpoint_incarnation": "inc-0001",
@@ -16,5 +16,8 @@
       "idempotency_key": "idem-0001"
     }
   },
-  "expected": { "valid": false, "reason": "society_id is required" }
+  "expected": {
+    "valid": false,
+    "reason": "society_id is required"
+  }
 }

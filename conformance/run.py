@@ -24,23 +24,34 @@ Checks, in order:
    descriptor's owning (non-cascade) transitions (§14.8 one-to-one rule);
    cascade transitions must cite an operation owned by another descriptor;
 4. every vector in spec/vectors/ passes: schema vectors match their expected
-   verdict, raw/synthetic vectors match strict I-JSON + limit acceptance,
-   digest vectors re-derive canonical bytes (RFC 8785 JCS, type-tagged as
-   JCS([domain, value])) and their SHA-256.
+   verdict (bpp-failure additionally cross-checks exact type/kind agreement,
+   which JSON Schema cannot express); acceptance vectors match the C1 family
+   acceptance rules of family-vectors/PROFILE.md section 1 (token-order first
+   error, 256 KiB request / 1 MiB response caps, inclusive depth-64 and
+   65 536-node caps, `$domain` reservation at every depth, surrogate and
+   float rules — R0/BYOM-03); digest vectors re-derive $domain-tagged JCS
+   canonical bytes and the keyed scope_erasure_safe HMAC DigestRef
+   (PROFILE.md sections 2/5/6, normative; D-R0-1 — R0/BYOM-01).
 
-Exit code 0 only when everything passes.
+Exit code 0 only when everything passes. Self-contained: Python stdlib only,
+with `jsonschema` used opportunistically when installed.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import json
 import re
 import sys
 from pathlib import Path
 
 SAFE_MAX = 2**53 - 1
-MAX_REQUEST_BYTES = 262144  # DESIGN.md §14.9: request envelope at most 256 KiB
+REQUEST_CAP = 262144      # §14.9 / PROFILE.md §1: request envelope at most 256 KiB
+RESPONSE_CAP = 1048576    # §14.9 / PROFILE.md §1: response at most 1 MiB
+DEPTH_CAP = 64            # PROFILE.md profile-pinned decision 1 (inclusive)
+NODE_CAP = 65536          # PROFILE.md profile-pinned decision 1 (inclusive)
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
 
 # ------------------------------------------------------ operation catalog ----
@@ -224,8 +235,9 @@ def _check_numbers(value):
 
 
 def strict_parse(text: str):
-    """Strict I-JSON acceptance: duplicate keys, non-finite numbers, and
-    unsafe integers fail closed (DESIGN.md §14.2)."""
+    """Strict parsing for the repository's own spec files (schemas,
+    descriptors, vector files): duplicate keys, non-finite numbers, and
+    unsafe integers fail closed. Wire-body acceptance is `ijson_class`."""
     def _const(name):
         raise ValueError(f"non-finite number: {name}")
 
@@ -236,11 +248,291 @@ def strict_parse(text: str):
     return value
 
 
-def accept_request_bytes(raw: bytes):
-    """Pre-schema acceptance of one request envelope's exact bytes."""
-    if len(raw) > MAX_REQUEST_BYTES:
-        raise ValueError(f"request over 256 KiB: {len(raw)} bytes")
-    return strict_parse(raw.decode("utf-8"))
+# ------------------------------------- C1 wire-body acceptance (BYOM-03) ----
+# The family acceptance rules of family-vectors/PROFILE.md section 1,
+# self-contained here per the runner's convention (the independent family
+# rederiver family-vectors/xcheck.py implements the same profile).
+
+
+class IJsonError(Exception):
+    def __init__(self, cls: str):
+        super().__init__(cls)
+        self.cls = cls
+
+
+def _scan_one_json_text(text: str):
+    """Single-pass validating token scanner for exactly one strict JSON text.
+
+    Iterative (explicit container stack, no recursion), so pathological
+    nesting inside the size cap can never raise RecursionError; the stack
+    length is the container depth. Values are never materialized -- the
+    scanner counts nodes, tracks maximum depth, records decoded-string
+    surrogate health, and raises the order-3 error classes of PROFILE.md
+    section 1 in token order: `syntax`, `trailing-data`, `duplicate`,
+    `reserved-domain-collision`, `unsafe-integer`, `non-finite`,
+    `unsafe-number`. Returns (nodes, max_depth, lone_surrogate).
+    """
+    pos = 0
+    n = len(text)
+    nodes = 0
+    max_depth = 0
+    lone_surrogate = False
+    stack: list = []  # per-container: a key set for objects, None for arrays
+
+    def syntax():
+        raise IJsonError("syntax")
+
+    def digit(i: int) -> bool:
+        return i < n and "0" <= text[i] <= "9"
+
+    def skip_ws():
+        nonlocal pos
+        while pos < n and text[pos] in " \t\n\r":
+            pos += 1
+
+    def scan_string() -> str:
+        """Scan a string token at `pos` (opening quote), decoding escapes."""
+        nonlocal pos, lone_surrogate
+        pos += 1  # opening quote
+        out: list[str] = []
+        while True:
+            if pos >= n:
+                syntax()
+            ch = text[pos]
+            if ch == '"':
+                pos += 1
+                break
+            if ch == "\\":
+                pos += 1
+                if pos >= n:
+                    syntax()
+                e = text[pos]
+                if e in '"\\/':
+                    out.append(e)
+                elif e == "b":
+                    out.append("\b")
+                elif e == "f":
+                    out.append("\f")
+                elif e == "n":
+                    out.append("\n")
+                elif e == "r":
+                    out.append("\r")
+                elif e == "t":
+                    out.append("\t")
+                elif e == "u":
+                    hex4 = text[pos + 1 : pos + 5]
+                    if len(hex4) != 4 or any(
+                        c not in "0123456789abcdefABCDEF" for c in hex4
+                    ):
+                        syntax()
+                    out.append(chr(int(hex4, 16)))
+                    pos += 4
+                else:
+                    syntax()
+                pos += 1
+            elif ord(ch) < 0x20:
+                syntax()  # raw control character in a string
+            else:
+                out.append(ch)
+                pos += 1
+        s = "".join(out)
+        # Surrogate health after escape decoding (raw text is already valid
+        # UTF-8, so unpaired halves can only arrive via \uXXXX escapes). The
+        # profile reports this as its own ordered check (order 4), so only a
+        # flag is recorded here.
+        i = 0
+        while i < len(s):
+            u = ord(s[i])
+            if 0xD800 <= u <= 0xDBFF:
+                if i + 1 < len(s) and 0xDC00 <= ord(s[i + 1]) <= 0xDFFF:
+                    i += 1
+                else:
+                    lone_surrogate = True
+            elif 0xDC00 <= u <= 0xDFFF:
+                lone_surrogate = True
+            i += 1
+        return s
+
+    def scan_number():
+        """Scan a number token at `pos` ('-' or digit) and classify it."""
+        nonlocal pos
+        start = pos
+        if text[pos] == "-":
+            pos += 1
+            # json's -Infinity spelling is the non-finite class, not syntax
+            if text.startswith("Infinity", pos):
+                raise IJsonError("non-finite")
+        if pos < n and text[pos] == "0":
+            pos += 1
+        elif digit(pos):
+            while digit(pos):
+                pos += 1
+        else:
+            syntax()
+        is_float = False
+        if pos < n and text[pos] == ".":
+            is_float = True
+            pos += 1
+            if not digit(pos):
+                syntax()
+            while digit(pos):
+                pos += 1
+        if pos < n and text[pos] in "eE":
+            is_float = True
+            pos += 1
+            if pos < n and text[pos] in "+-":
+                pos += 1
+            if not digit(pos):
+                syntax()
+            while digit(pos):
+                pos += 1
+        token = text[start:pos]
+        if not is_float:
+            # Exact magnitude check on the token, immune to double rounding.
+            if abs(int(token)) > SAFE_MAX:
+                raise IJsonError("unsafe-integer")
+        else:
+            v = float(token)
+            if v != v or v in (float("inf"), float("-inf")):
+                raise IJsonError("unsafe-number")
+            if v.is_integer() and abs(v) > SAFE_MAX:
+                raise IJsonError("unsafe-number")
+
+    VALUE = 0            # a value is required
+    VALUE_OR_CLOSE = 1   # just after '[': a value or ']'
+    KEY_OR_CLOSE = 2     # just after '{': a key or '}'
+    KEY = 3              # after ',' in an object: a key
+    COLON = 4
+    COMMA_OR_CLOSE = 5   # after a completed member/element
+    state = VALUE
+    done = False
+
+    def bump_depth():
+        nonlocal max_depth
+        if len(stack) > max_depth:
+            max_depth = len(stack)
+
+    while not done:
+        skip_ws()
+        if pos >= n:
+            syntax()
+        ch = text[pos]
+        if state in (VALUE, VALUE_OR_CLOSE):
+            if state == VALUE_OR_CLOSE and ch == "]":
+                pos += 1
+                stack.pop()
+                if not stack:
+                    done = True
+                else:
+                    state = COMMA_OR_CLOSE
+                continue
+            if ch == "{":
+                pos += 1
+                nodes += 1
+                stack.append(set())
+                bump_depth()
+                state = KEY_OR_CLOSE
+            elif ch == "[":
+                pos += 1
+                nodes += 1
+                stack.append(None)
+                bump_depth()
+                state = VALUE_OR_CLOSE
+            elif ch == '"':
+                scan_string()
+                nodes += 1
+                done, state = (True, state) if not stack else (False, COMMA_OR_CLOSE)
+            elif ch == "-" or digit(pos):
+                scan_number()
+                nodes += 1
+                done, state = (True, state) if not stack else (False, COMMA_OR_CLOSE)
+            elif text.startswith("true", pos):
+                pos += 4
+                nodes += 1
+                done, state = (True, state) if not stack else (False, COMMA_OR_CLOSE)
+            elif text.startswith("false", pos):
+                pos += 5
+                nodes += 1
+                done, state = (True, state) if not stack else (False, COMMA_OR_CLOSE)
+            elif text.startswith("null", pos):
+                pos += 4
+                nodes += 1
+                done, state = (True, state) if not stack else (False, COMMA_OR_CLOSE)
+            elif text.startswith("NaN", pos) or text.startswith("Infinity", pos):
+                raise IJsonError("non-finite")
+            else:
+                syntax()
+        elif state in (KEY_OR_CLOSE, KEY):
+            if state == KEY_OR_CLOSE and ch == "}":
+                pos += 1
+                stack.pop()
+                if not stack:
+                    done = True
+                else:
+                    state = COMMA_OR_CLOSE
+                continue
+            if ch != '"':
+                syntax()
+            # Member names in token order: the reserved-name check precedes
+            # the duplicate check for the same token; names compare after
+            # escape decoding (RFC 7493).
+            key = scan_string()
+            if key == "$domain":
+                raise IJsonError("reserved-domain-collision")
+            keys = stack[-1]
+            if key in keys:
+                raise IJsonError("duplicate")
+            keys.add(key)
+            state = COLON
+        elif state == COLON:
+            if ch != ":":
+                syntax()
+            pos += 1
+            state = VALUE
+        else:  # COMMA_OR_CLOSE
+            top_keys = stack[-1]
+            if ch == ",":
+                pos += 1
+                state = KEY if top_keys is not None else VALUE
+            elif ch == ("}" if top_keys is not None else "]"):
+                pos += 1
+                stack.pop()
+                if not stack:
+                    done = True
+                else:
+                    state = COMMA_OR_CLOSE
+            else:
+                syntax()
+    skip_ws()
+    if pos < n:
+        raise IJsonError("trailing-data")  # exactly one JSON text
+    return nodes, max_depth, lone_surrogate
+
+
+def ijson_class(data: bytes, context: str = "request"):
+    """Returns None when `data` is an acceptable strict-I-JSON body for the
+    given context ("request": 256 KiB cap; "response": 1 MiB cap), else the
+    profile error class. Check order (PROFILE.md section 1): size, UTF-8,
+    token scan (syntax / trailing-data / duplicates / reserved `$domain` /
+    numeric caps / non-finite), surrogates, depth, node count."""
+    cap = RESPONSE_CAP if context == "response" else REQUEST_CAP
+    if len(data) > cap:
+        return "oversize"
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return "invalid-utf8"
+    try:
+        nodes, max_depth, lone_surrogate = _scan_one_json_text(text)
+    except IJsonError as e:
+        return e.cls
+    if lone_surrogate:
+        return "unpaired-surrogate"
+    if max_depth > DEPTH_CAP:
+        return "over-depth"
+    if nodes > NODE_CAP:
+        return "over-nodes"
+    return None
 
 
 # ------------------------------------------------------------------- JCS ----
@@ -265,10 +557,49 @@ def _jcs_string(s: str) -> str:
     return "".join(out)
 
 
+def _es_number(v: float) -> str:
+    """ECMAScript Number::toString(10) for a finite double (RFC 8785
+    3.2.2.3). Python's repr() already yields the shortest round-trip decimal
+    digits (same digits as ES); only the layout rules differ, applied here.
+    Ported from the family rederiver approach (R0/BYOM-03): the profile JCS
+    covers the full finite-float value space section 1 admits."""
+    if v != v or v in (float("inf"), float("-inf")):
+        raise ValueError("non-finite number in JCS input")
+    if v == 0.0:
+        return "0"  # covers -0.0, as in ES
+    sign = "-" if v < 0 else ""
+    r = repr(abs(v))
+    if "e" in r:
+        mant, _, exp_s = r.partition("e")
+        exp = int(exp_s)
+    else:
+        mant, exp = r, 0
+    ip, _, fp = mant.partition(".")
+    digits = (ip + fp).lstrip("0")
+    stripped = digits.rstrip("0")
+    trailing = len(digits) - len(stripped)
+    k = len(stripped)
+    n = k + trailing + exp - len(fp)  # value == 0.<stripped> * 10**n
+    s = stripped
+    if k <= n <= 21:
+        out = s + "0" * (n - k)
+    elif 0 < n <= 21:
+        out = s[:n] + "." + s[n:]
+    elif -6 < n <= 0:
+        out = "0." + "0" * (-n) + s
+    else:
+        e = n - 1
+        out = (s[0] + ("." + s[1:] if k > 1 else "")
+               + "e" + ("+" if e >= 0 else "-") + str(abs(e)))
+    return sign + out
+
+
 def jcs(value) -> str:
-    """RFC 8785 JCS restricted to the BPP canonical value domain: objects,
-    arrays, strings, safe integers, booleans, null. No BPP canonical value
-    contains a float (§14.2, ADR-0001)."""
+    """RFC 8785 JCS over the profile value space (PROFILE.md section 2): the
+    full strict-I-JSON space section 1 admits, including finite floats in ES
+    minimal number form. BPP canonical values happen to contain no floats
+    today (§14.2, ADR-0001), but the canonicalizer implements the family
+    profile, not that narrower habit (R0/BYOM-03)."""
     if value is None:
         return "null"
     if value is True:
@@ -280,7 +611,7 @@ def jcs(value) -> str:
             raise ValueError("unsafe integer")
         return str(value)
     if isinstance(value, float):
-        raise ValueError("floats are not BPP canonical values")
+        return _es_number(value)
     if isinstance(value, str):
         return _jcs_string(value)
     if isinstance(value, list):
@@ -293,12 +624,41 @@ def jcs(value) -> str:
     raise TypeError(f"unsupported type: {type(value)}")
 
 
-def type_tagged_digest(domain: str, value) -> tuple[str, str]:
-    canonical = jcs([domain, value])
-    return canonical, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+def tagged_jcs(domain: str, value) -> str:
+    """Byom type-tagged canonical bytes (PROFILE.md section 2, normative;
+    supersedes the B0.1 JCS([domain, value]) proposal — R0/BYOM-01): inject
+    the reserved `$domain` member at the top level, then JCS. Fails closed if
+    the object already carries `$domain`."""
+    if not isinstance(value, dict):
+        raise ValueError("type-tagged canonicalization requires an object")
+    if "$domain" in value:
+        raise ValueError("object already carries a $domain member")
+    return jcs({**value, "$domain": domain})
+
+
+def hmac_sha256_hex(secret_hex: str, canonical: str) -> str:
+    return hmac.new(
+        bytes.fromhex(secret_hex), canonical.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
 
 
 # ------------------------------------------------- schema conventions -------
+
+PROBLEM_TYPE_PREFIX = "https://byom.dev/problems/"
+
+
+def _failure_type_kind_ok(envelope) -> bool:
+    """Problem type must equal exactly PROBLEM_TYPE_PREFIX + kind (PROFILE.md
+    §3, profile-pinned decision 3). Applied only where both members are
+    present strings; their presence and shape are the schema's job."""
+    problem = envelope.get("problem") if isinstance(envelope, dict) else None
+    if not isinstance(problem, dict):
+        return True
+    kind, typ = problem.get("kind"), problem.get("type")
+    if isinstance(kind, str) and isinstance(typ, str):
+        return typ == PROBLEM_TYPE_PREFIX + kind
+    return True
+
 
 def _walk_dicts(node):
     if isinstance(node, dict):
@@ -338,10 +698,20 @@ def convention_errors(schema: dict) -> list[str]:
                 except KeyError:
                     errs.append(f"unresolvable $ref: {ref}")
         if isinstance(node.get("properties"), dict):
-            if node.get("additionalProperties") is not False:
+            # Closed schemas (spec/README.md conventions): a defining object
+            # schema (one that declares type) must either close itself with
+            # additionalProperties false or constrain every member name with
+            # a propertyNames pattern (the RFC 9457 problem-extension case,
+            # R0/BYOM-02). Refinement branches without `type` (oneOf arms)
+            # constrain members of an already-closed parent and are exempt.
+            closed = node.get("additionalProperties") is False
+            named_extensions = isinstance(node.get("propertyNames"), dict)
+            refinement = "type" not in node
+            if not (closed or named_extensions or refinement):
                 errs.append(
                     "object schema with properties must set "
-                    f"additionalProperties false (near {sorted(node['properties'])[:3]})"
+                    "additionalProperties false or constrain names via "
+                    f"propertyNames (near {sorted(node['properties'])[:3]})"
                 )
         pattern = node.get("pattern")
         if isinstance(pattern, str):
@@ -386,7 +756,7 @@ def mini_valid(root: dict, schema, instance) -> bool:
     """Just enough of draft 2020-12 for the keyword set these schemas use:
     boolean schemas, $ref (internal), type, const, enum, pattern, min/max
     Length, minimum/maximum, required, properties, additionalProperties,
-    items, minItems, maxItems, uniqueItems."""
+    propertyNames, oneOf, not, items, minItems, maxItems, uniqueItems."""
     if schema is True:
         return True
     if schema is False:
@@ -400,6 +770,15 @@ def mini_valid(root: dict, schema, instance) -> bool:
             return False
         if not mini_valid(root, target, instance):
             return False
+
+    one_of = schema.get("oneOf")
+    if one_of is not None:
+        matches = sum(1 for sub in one_of if mini_valid(root, sub, instance))
+        if matches != 1:
+            return False
+
+    if "not" in schema and mini_valid(root, schema["not"], instance):
+        return False
 
     typ = schema.get("type")
     if typ is not None:
@@ -429,6 +808,10 @@ def mini_valid(root: dict, schema, instance) -> bool:
     if isinstance(instance, dict):
         for key in schema.get("required", []):
             if key not in instance:
+                return False
+        prop_names = schema.get("propertyNames")
+        if prop_names is not None:
+            if not all(mini_valid(root, prop_names, k) for k in instance):
                 return False
         props = schema.get("properties", {})
         for key, sub in props.items():
@@ -718,7 +1101,7 @@ class Runner:
             expected = vector.get("expected", {})
             if "schema" in inp:
                 self._run_schema_vector(rel, inp, expected, counts)
-            elif "raw" in inp or "synthetic" in inp:
+            elif "raw" in inp or "raw_base64" in inp or "json_synth" in inp:
                 self._run_acceptance_vector(rel, inp, expected, counts)
             elif "domain" in inp:
                 self._run_digest_vector(rel, inp, expected, counts)
@@ -732,6 +1115,11 @@ class Runner:
             self.fail(f"{rel}: references unknown schema {schema_name!r}")
             return
         verdict = self._validate(schema_name, inp.get("ref"), inp["value"])
+        if verdict and schema_name == "bpp-failure" and inp.get("ref") is None:
+            # Exact type/kind agreement (PROFILE.md §3): JSON Schema cannot
+            # cross-reference two members, so the schema's $comment defers to
+            # this convention check (R0/BYOM-02).
+            verdict = _failure_type_kind_ok(inp["value"])
         if verdict != expected["valid"]:
             self.fail(f"{rel}: expected valid={expected['valid']}, got {verdict}")
             return
@@ -740,46 +1128,50 @@ class Runner:
     def _run_acceptance_vector(self, rel, inp, expected, counts):
         if "raw" in inp:
             raw = inp["raw"].encode("utf-8")
+        elif "raw_base64" in inp:
+            raw = base64.b64decode(inp["raw_base64"])
         else:
-            if inp["synthetic"] != "oversized_request":
-                self.fail(f"{rel}: unknown synthetic kind {inp['synthetic']!r}")
-                return
-            prefix = '{"version":"0.2","op":"hello","pad":"'
-            suffix = '"}'
-            pad = inp["target_bytes"] - len(prefix) - len(suffix)
-            if pad < 0:
-                self.fail(f"{rel}: target_bytes too small to synthesize")
-                return
-            raw = (prefix + "a" * pad + suffix).encode("utf-8")
-            if len(raw) != inp["target_bytes"]:
-                self.fail(f"{rel}: synthesized {len(raw)} bytes, wanted "
-                          f"{inp['target_bytes']}")
-                return
-        try:
-            accept_request_bytes(raw)
-            verdict = True
-        except ValueError:
-            verdict = False
+            s = inp["json_synth"]
+            raw = (s.get("prefix", "") + s.get("repeat", "") * s.get("count", 0)
+                   + s.get("suffix", "")).encode("utf-8")
+        cls = ijson_class(raw, inp.get("context", "request"))
+        verdict = cls is None
         if verdict != expected["valid"]:
-            self.fail(f"{rel}: expected valid={expected['valid']}, got {verdict}")
+            self.fail(f"{rel}: expected valid={expected['valid']}, got "
+                      f"{verdict} (error class {cls!r})")
+            return
+        if not expected["valid"] and "error" in expected and cls != expected["error"]:
+            self.fail(f"{rel}: expected error class {expected['error']!r}, "
+                      f"got {cls!r}")
             return
         counts["acceptance"] += 1
 
     def _run_digest_vector(self, rel, inp, expected, counts):
+        """Digest vectors re-derive the ratified idempotency-domain
+        construction (PROFILE.md §5, D-R0-1): the $domain-tagged JCS
+        canonical bytes and the HMAC-SHA-256 under the embedded per-Society
+        index key (a test fixture, shape only), emitted as a typed
+        scope_erasure_safe DigestRef."""
         try:
-            canonical, digest = type_tagged_digest(inp["domain"], inp["value"])
+            canonical = tagged_jcs(inp["domain"], inp["value"])
         except (TypeError, ValueError) as exc:
             self.fail(f"{rel}: canonicalization failed: {exc}")
             return
+        derived_ref = {
+            "class": "scope_erasure_safe",
+            "algorithm": "hmac-sha-256",
+            "key_ref": inp["key_ref"],
+            "value_hex": hmac_sha256_hex(inp["index_secret_hex"], canonical),
+        }
         ok = True
         if canonical != expected["canonical"]:
             self.fail(f"{rel}: canonical bytes mismatch\n"
                       f"      derived:  {canonical}\n"
                       f"      expected: {expected['canonical']}")
             ok = False
-        if digest != expected["sha256_hex"]:
-            self.fail(f"{rel}: sha256 mismatch: derived {digest}, "
-                      f"expected {expected['sha256_hex']}")
+        if derived_ref != expected["digest_ref"]:
+            self.fail(f"{rel}: digest_ref mismatch: derived {derived_ref}, "
+                      f"expected {expected['digest_ref']}")
             ok = False
         if ok:
             counts["digest"] += 1

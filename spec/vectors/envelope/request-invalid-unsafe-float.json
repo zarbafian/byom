@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-unsafe-float",
+  "description": "integer-valued float 9007199254740992.0 exceeds the safe range; floats are admitted only within the RFC 8785 value space the profile pins (PROFILE.md §1)",
+  "input": {
+    "raw": "{\"n\":9007199254740992.0}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unsafe-number",
+    "reason": "integer-valued float outside the safe range"
+  }
+}

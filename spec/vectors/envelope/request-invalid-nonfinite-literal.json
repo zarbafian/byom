@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-nonfinite-literal",
+  "description": "the NaN literal is not JSON and maps to the non-finite class, not syntax (PROFILE.md §1)",
+  "input": {
+    "raw": "{\"n\":NaN}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "non-finite",
+    "reason": "NaN/Infinity literals fail closed"
+  }
+}

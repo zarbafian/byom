@@ -1,6 +1,6 @@
 {
   "name": "envelope/digest-idempotency-domain-key-order",
-  "description": "same IdempotencyDomain as digest-idempotency-domain-basic authored in scrambled key order; JCS key sorting yields identical canonical bytes and digest",
+  "description": "same IdempotencyDomain as digest-idempotency-domain-basic authored in scrambled key order; JCS key sorting yields identical canonical bytes ($domain sorts first) and an identical HMAC (R0/BYOM-01 regeneration in place)",
   "input": {
     "domain": "bpp-idempotency-domain-v1",
     "value": {
@@ -10,15 +10,22 @@
       "operation": "society_prepare",
       "endpoint_incarnation": "inc-0001",
       "actor_binding_digest": {
-        "value": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480",
-        "key_id": "kb-2026-001",
+        "value_hex": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480",
+        "key_ref": "kb-2026-001",
         "class": "local_erasure_safe",
         "algorithm": "hmac-sha-256"
       }
-    }
+    },
+    "index_secret_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+    "key_ref": "society-key:soc-0001/idempotency-index"
   },
   "expected": {
-    "canonical": "[\"bpp-idempotency-domain-v1\",{\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_id\":\"kb-2026-001\",\"value\":\"74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480\"},\"endpoint_incarnation\":\"inc-0001\",\"idempotency_key\":\"idem-0001\",\"operation\":\"society_prepare\",\"society_id\":\"soc-0001\",\"society_recovery_epoch\":0}]",
-    "sha256_hex": "15108a652165b056e11c541a88892073973e1d126292a959f186adb8fba88072"
+    "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"kb-2026-001\",\"value_hex\":\"74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480\"},\"endpoint_incarnation\":\"inc-0001\",\"idempotency_key\":\"idem-0001\",\"operation\":\"society_prepare\",\"society_id\":\"soc-0001\",\"society_recovery_epoch\":0}",
+    "digest_ref": {
+      "class": "scope_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-0001/idempotency-index",
+      "value_hex": "7990548bca84fa430fb94937836f7a2ca64f50b61a67d40e645616a6d1961c3f"
+    }
   }
 }

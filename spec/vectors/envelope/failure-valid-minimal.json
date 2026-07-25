@@ -1,12 +1,18 @@
 {
   "name": "envelope/failure-valid-minimal",
-  "description": "failure envelope with only the required kind; non-enumerating forbidden discloses nothing",
+  "description": "failure envelope with exactly the three required problem members type, title, kind (PROFILE.md §3; R0/BYOM-02 regeneration in place); non-enumerating forbidden discloses nothing",
   "input": {
     "schema": "bpp-failure",
     "value": {
       "outcome": "problem",
-      "problem": { "kind": "forbidden" }
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Forbidden",
+        "kind": "forbidden"
+      }
     }
   },
-  "expected": { "valid": true }
+  "expected": {
+    "valid": true
+  }
 }

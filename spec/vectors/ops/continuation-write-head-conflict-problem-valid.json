@@ -1,12 +1,13 @@
 {
   "name": "ops/continuation-write-head-conflict-problem-valid",
-  "description": "continuation head conflict shape: the losing concurrent writer receives stale_revision with the current opaque head and cannot append (§11.3, §14.8)",
+  "description": "continuation head conflict shape: the losing concurrent writer receives stale_revision with the current opaque head and cannot append (§11.3, §14.8) (R0/BYOM-02: required problem type added, https://byom.dev/problems/<kind>)",
   "input": {
     "schema": "bpp-failure",
     "value": {
       "outcome": "problem",
       "problem": {
         "kind": "stale_revision",
+        "type": "https://byom.dev/problems/stale_revision",
         "status": 409,
         "title": "continuation head conflict",
         "detail": "expected_head_revision 3 is stale; the current head is revision 4 (opaque); reconcile and deliberately prepare a successor — Byom never auto-merges private state or silently selects a branch"

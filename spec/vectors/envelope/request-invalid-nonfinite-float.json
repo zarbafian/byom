@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-nonfinite-float",
+  "description": "1e400 overflows to infinity; non-finite floats fail closed (PROFILE.md §1)",
+  "input": {
+    "raw": "{\"n\":1e400}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "unsafe-number",
+    "reason": "float literal overflows to infinity"
+  }
+}

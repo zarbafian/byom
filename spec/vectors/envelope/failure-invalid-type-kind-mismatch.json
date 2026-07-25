@@ -1,0 +1,19 @@
+{
+  "name": "envelope/failure-invalid-type-kind-mismatch",
+  "description": "type names a different kind than the sibling kind member; type must equal https://byom.dev/problems/<kind> exactly — JSON Schema cannot cross-reference the two members, so the runner enforces the agreement as a convention check ($comment in bpp-failure)",
+  "input": {
+    "schema": "bpp-failure",
+    "value": {
+      "outcome": "problem",
+      "problem": {
+        "type": "https://byom.dev/problems/forbidden",
+        "title": "Not found",
+        "kind": "not_found"
+      }
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "type/kind cross-check: type suffix must equal kind (runner-enforced)"
+  }
+}

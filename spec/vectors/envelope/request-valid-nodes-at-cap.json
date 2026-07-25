@@ -1,0 +1,15 @@
+{
+  "name": "envelope/request-valid-nodes-at-cap",
+  "description": "an array of 65535 elements is exactly 65536 JSON values with its container; the node cap is inclusive (PROFILE.md §1, profile-pinned decision 1)",
+  "input": {
+    "json_synth": {
+      "prefix": "[",
+      "repeat": "1,",
+      "count": 65534,
+      "suffix": "1]"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

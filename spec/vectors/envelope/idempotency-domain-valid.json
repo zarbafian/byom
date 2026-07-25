@@ -1,14 +1,14 @@
 {
   "name": "envelope/idempotency-domain-valid",
-  "description": "canonical IdempotencyDomain with a typed local_erasure_safe actor-binding DigestRef",
+  "description": "canonical IdempotencyDomain with a typed local_erasure_safe actor-binding DigestRef on the ratified {class, algorithm, key_ref, value_hex} wire (R0/BYOM-01 regeneration in place)",
   "input": {
     "schema": "bpp-idempotency-domain",
     "value": {
       "actor_binding_digest": {
         "class": "local_erasure_safe",
         "algorithm": "hmac-sha-256",
-        "key_id": "kb-2026-001",
-        "value": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480"
+        "key_ref": "kb-2026-001",
+        "value_hex": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480"
       },
       "operation": "society_prepare",
       "endpoint_incarnation": "inc-0001",
@@ -17,5 +17,7 @@
       "idempotency_key": "idem-0001"
     }
   },
-  "expected": { "valid": true }
+  "expected": {
+    "valid": true
+  }
 }

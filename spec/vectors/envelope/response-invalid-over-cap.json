@@ -1,0 +1,18 @@
+{
+  "name": "envelope/response-invalid-over-cap",
+  "description": "a 1048577-byte response body is one byte over the 1 MiB response cap; oversize before parsing (PROFILE.md §1)",
+  "input": {
+    "context": "response",
+    "json_synth": {
+      "prefix": "[\"",
+      "repeat": "a",
+      "count": 1048573,
+      "suffix": "\"]"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "oversize",
+    "reason": "response over 1 MiB"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "envelope/request-invalid-nodes-over-cap",
+  "description": "an array of 65536 elements is 65537 JSON values with its container, one over the node cap (PROFILE.md §1)",
+  "input": {
+    "json_synth": {
+      "prefix": "[",
+      "repeat": "1,",
+      "count": 65535,
+      "suffix": "1]"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "over-nodes",
+    "reason": "more than 65536 JSON values"
+  }
+}

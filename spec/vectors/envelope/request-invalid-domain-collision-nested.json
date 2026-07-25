@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-domain-collision-nested",
+  "description": "the $domain reservation applies at any depth: any nested object may later become the object being type-tagged (PROFILE.md profile-pinned decision 12)",
+  "input": {
+    "raw": "{\"meta\":{\"$domain\":\"x\"}}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "reserved-domain-collision",
+    "reason": "reserved $domain member at depth"
+  }
+}

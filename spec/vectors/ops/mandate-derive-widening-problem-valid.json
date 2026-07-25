@@ -1,12 +1,13 @@
 {
   "name": "ops/mandate-derive-widening-problem-valid",
-  "description": "widening attempt rejection shape: a child asking for more than any parent fails the typed authority_widening problem (§10.2, §14.9, gap note G33)",
+  "description": "widening attempt rejection shape: a child asking for more than any parent fails the typed authority_widening problem (§10.2, §14.9, gap note G33) (R0/BYOM-02: required problem type added, https://byom.dev/problems/<kind>)",
   "input": {
     "schema": "bpp-failure",
     "value": {
       "outcome": "problem",
       "problem": {
         "kind": "authority_widening",
+        "type": "https://byom.dev/problems/authority_widening",
         "status": 403,
         "title": "child mandate widens parent scope",
         "detail": "derivation never widens (§10.2): the child requests destination sel-dest-anywhere not covered by any parent atom and an expiry later than the parent's; no new operation, resource, data class, destination, participant class, manifestation, ceiling, delegation depth/fanout, or weaker requirement can appear in a child"

@@ -1,0 +1,12 @@
+{
+  "name": "envelope/request-invalid-depth-over-cap",
+  "description": "65 nested containers exceed the profile depth cap of 64 (PROFILE.md §1)",
+  "input": {
+    "raw": "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]"
+  },
+  "expected": {
+    "valid": false,
+    "error": "over-depth",
+    "reason": "container nesting depth over 64"
+  }
+}

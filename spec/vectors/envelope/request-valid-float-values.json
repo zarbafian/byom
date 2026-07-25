@@ -1,0 +1,10 @@
+{
+  "name": "envelope/request-valid-float-values",
+  "description": "finite floats within the profile value space are accepted: fractional, small-exponent, integer-valued in range, negative zero (PROFILE.md §1/§2; R0/BYOM-03 float acceptance)",
+  "input": {
+    "raw": "{\"half\":1.5,\"micro\":1e-7,\"neg_zero\":-0.0,\"ten\":10.0}"
+  },
+  "expected": {
+    "valid": true
+  }
+}
