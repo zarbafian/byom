@@ -42,17 +42,21 @@ operations bound through §2.0's registry-binding table (exact §14.7 fields per
 `(operation, surface)`), plus Kovee-owned contracts and named kernel
 transitions.
 
-**Row classes** (every row carries exactly one):
+**Row classes.** Every row carries **one or more** classes, and every class
+instance names its exact binding — a requirement satisfied by several owners
+lists each owner's binding. The acceptance rule: **a row with any unnamed
+binding, or no class at all (prose-only), fails C0.**
 - **[op R#]** — callable BPP operation(s); R# cites the §2.0 registry binding
-  carrying surface/actor/closure/fence/offline.
+  carrying surface/actor/closure/fence/offline. Each R# covers exactly one
+  surface.
 - **[kovee C#]** — a Kovee-owned record/transition; the cited contract (C2,
   C3a/b, C4, or a KCP registry row frozen in that bundle) is its normative
-  home. Kovee-owned is a *mapping*, not a gap — the row must name its
-  contract or it fails C0.
+  home. Kovee-owned is a *mapping*, not a gap.
 - **[kernel]** — a named non-callable byom kernel transition
   (`activation_admit`, `resource_allocate`, `procedure_seed_*`, journal
   protocol).
-- Prose-only rows are defects and fail C0.
+- **[agreement §]** — both pinned designs already state the identical
+  constraint; the row cites both sections and no new contract is needed.
 
 ### 2.0 Registry bindings (byom §14.7, reproduced faithfully)
 
@@ -81,11 +85,16 @@ fences · **X** Kovee/Akson source bindings. Registry key is
 | R13 | manifestation_propose/disable, assent/activation_policy_adopt/revoke, continuity_root_update | participant | owning Participant only | E,P,O,D | sender-constrained channel + binding epoch | stage (not disable/revoke) |
 | R14 | assembly_hold/reform/dissolve, endeavor_hold/release/close, call_withdraw, pledge_resume/relinquish, delivery_withdraw, review_record | participant | exact Participant/collective authorized by governing subject | E,P,A,O,M,B,D | subject revision/epoch; fresh challenge per policy | no |
 | R15 | mandate_prepare, mandate_derive, standing_mandate_prepare | participant | proposed grantee or authorized issuer in its scope | E,P,A,O,M,B,D | preparation trace; parent revisions | stage (prepare) |
-| R16/17 | mandate_position, standing_mandate_position | participant / governance | exact prepared seat (participant/resource-owner; human-authority) | E,P,A,O,M,B,D | exact subject + seat; fresh challenge as required | stage |
+| R16 | mandate_position, standing_mandate_position | participant | Participant for its exact prepared participant/resource-owner seat | E,P,A,O,M,B,D | exact subject, seat and binding epoch | stage |
+| R17 | mandate_position, standing_mandate_position | governance | human principal for its exact prepared human-authority seat | E,P,A,O,M,B,D | exact subject; fresh challenge as required | stage |
 | R18 | mandate_issue/hold/revoke, standing_mandate_issue/hold/revoke | governance | exact issuer/human-authority actor under decided rule | E,P,A,O,M,B,D | complete current chain; fresh challenge for root/standing issue | no |
-| R19–21 | act_intent_prepare; act_intent_position (participant seat; human seat) | participant / governance | requester/collective in executive policy; exact prepared seat | E,P,A,O,M,B,D,F,X | field-complete PreparationTrace; exact intent digest; fresh challenge | stage |
-| R22/23 | act_intent_finalize | participant / governance | deterministic finalizer; authors no seat | E,P,A,O,M,B,D,F,X | exact slot snapshot + revision CAS; fresh challenge (reserved) | no |
-| R24/25 | act_intent_cancel | participant / governance | original requester (unconsumed) or exact cancellation authority | E,P,A,O,M,B,D,F,X | current revision; cannot claim effect rollback | no |
+| R19 | act_intent_prepare | participant | requesting Participant or collective Manifestation inside current executive policy | E,P,A,O,M,B,D,F,X | field-complete PreparationTrace; subject revision/fences | stage |
+| R20 | act_intent_position | participant | Participant for its exact prepared participant/resource-owner seat | E,P,A,O,M,B,D,F,X | exact intent digest, seat and binding epoch | stage |
+| R21 | act_intent_position | governance | human principal for its exact prepared human-authority seat | E,P,A,O,M,B,D,F,X | exact intent digest; fresh challenge as required | stage |
+| R22 | act_intent_finalize | participant | current Participant requesting deterministic non-root finalization; authors no seat | E,P,A,O,M,B,D,F,X | exact active slot snapshot and revision CAS | no |
+| R23 | act_intent_finalize | governance | governance caller requesting deterministic finalization; authors no seat | E,P,A,O,M,B,D,F,X | exact active slot snapshot; fresh challenge for reserved action | no |
+| R24 | act_intent_cancel | participant | original requester while intent unconsumed, or exact cancellation grantee | E,P,A,O,M,B,D,F,X | current intent revision; cannot claim effect rollback | no |
+| R25 | act_intent_cancel | governance | exact decided cancellation authority | E,P,A,O,M,B,D,F,X | current intent/effect revision; fresh challenge when required | no |
 | R29 | activity_open/hold/close, wake_intent_submit/withdraw, episode_request, continuation_write, delivery_submit | participant | owning Participant/Manifestation or collective channel in executive policy | E,P,A,O,M,B,D,F | participant + generation fence; exact episode fence when cited | stage (activity proposal only) |
 | R30 | episode_claim/start, checkpoint_commit, episode_yield/complete/fail, usage_report | runtime | workload identity bound to exact Episode/Manifestation | E,P,O,M,B,D,F,X | mTLS/attested workload; **Byom and host fences** | no |
 | R31 | onboarding_episode_claim/complete | runtime | candidate workload bound to exact offer + proposed Manifestation | endpoint, offer, candidate binding, OnboardingComputeReceipt, B,D,F,X | mTLS/attested; one offer fence | no |
@@ -108,12 +117,28 @@ fences · **X** Kovee/Akson source bindings. Registry key is
 |---|---|---|---|
 | L1 | governance enablement | genesis: `society_prepare`/`society_bootstrap` → then the greenfield saga (Δ1 two-step; frozen KCP authority-registry row in C2: exact owner/admin actor, subject digest, assurance, recovery-only service authority) | [op R2] + [kovee C2] |
 | L2 | `RealmAuthorityBinding` epochs | `KoveeRealmByomBinding` + `KoveeSocietyMapping`; epoch advance invalidates derived channels/permits; dedicated byomd per realm (byom §16) | [kovee C2] |
-| L3 | dedicated authority per realm | byom §16 rule restated; no shared multi-tenant service until proven profile | agreement |
+| L3 | dedicated authority per realm | no shared multi-tenant service until a proven realm-scoped profile exists | [agreement kovee §17.1 / byom §16] |
 | L4 | principal mapping; no manufactured membership | channel supplies actor; human seats only per R2/R6/R8; `KoveeSocietyMapping` | [op R2/R8] + [kovee C2] |
 | L5–L6 | `DelegatedPrincipalCredential` | C2 DPC profile consumed by `kovee_endeavor_form`; atomic (issuer,nonce); retry → stored result | [kovee C2] + [op R39, R41] |
 | L7 | projection identity | narrow projection service (R4); recovery workload (R42) | [op R4, R42] |
 | L8 | binding validated per use | X closure category on every host-facing row; binding revision/epoch in C2 shapes | [kovee C2] |
 | L9 | protocol discovery; no nesting | `hello`/`protocol_info`/`feature_info`; BPP envelopes never nested in KCP | [op R1] |
+
+**The greenfield-binding authority row (frozen here; C2 carries the schema).**
+The KCP registry row for `governance_enable` (amendment A5 name), stated
+field-complete so no implementer invents it:
+
+| Field | Value |
+|---|---|
+| Operation | `governance_enable` (and `governance_show` read; `governance_disable` with step-up) |
+| Surface | KCP admin (personal: owner principal over the UID-checked local socket; team: realm `owner` role over the authenticated gateway) |
+| Allowed actor | a human realm-owner principal only — never a service identity, session, assistant, or connector; personal-mode bootstrap is owner-only and cannot bind an arbitrary endpoint or map another principal (kovee §11.6) |
+| Authorization dependency set | realm revision; target `society_ref` + Society recovery epoch; byomd endpoint identity/incarnation; expected absent-or-identical `KoveeRealmByomBinding`; `KoveeSocietyMapping` revision |
+| Subject digest | canonical digest over the (realm, society_ref, recovery epoch, byom endpoint, mapping revision, owner-binding transition `none→byom`) tuple — the exact digest the confirming human sees |
+| Assurance | fresh step-up/challenge in team mode; explicit confirmation in personal mode; `governance_disable` always step-up |
+| Fence | binding epoch CAS at expected revision; overlap rejected; retry returns the identical binding; rollback-before-activation and restore behavior per the D10 saga |
+| Offline | no |
+| Service authority | recovery-only: a service may *query* saga state (`external_command_result_query` pattern), never create or activate a binding |
 
 ### 2.B Endeavor formation
 
@@ -206,7 +231,7 @@ fences · **X** Kovee/Akson source bindings. Registry key is
 | L# | Kovee need | Mapping | Class |
 |---|---|---|---|
 | L66–L67 | K2 "one plan gate, two fenced aspects" | **Δ2**: one Endeavor via `kovee_endeavor_form` (R39); the gate = server-prepared act subject → eligible human `act_intent_position` (R21, current digest, fresh challenge) → deterministic `act_intent_finalize` (R22/23) — **`endeavor_finalize` is formation, never a gate**; two fenced Pledge episodes; delivery via R29 + `review_record` (R14); kill-survival and no-duplicate-formation unchanged | [op R39, R19–23, R29, R14] |
-| L68 | K5 no second authority | byom ids/digests/cursors preserved | agreement |
+| L68 | K5 no second authority | byom ids/digests/cursors preserved | [agreement kovee §26-K5 / byom §12] |
 | L69 | K6 exit | maps onto C4 chain identity | [kovee/akson C4] |
 
 ## 3. The eleven §17.5 prerequisites, discharged
