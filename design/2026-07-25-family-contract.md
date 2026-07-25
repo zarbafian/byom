@@ -1,11 +1,12 @@
 # The akson + kovee + byom family contract
 
-Status: proposed v2 — v1 was reviewed by the C0 three-lens codex review
-(`reviews/2026-07-25-c0-lens{1,2,3}-*.md` in the program repo); this revision
-applies the dispositions (`reviews/2026-07-25-c0-dispositions.md`). Ratified
-only when the blocker-only confirmation pass returns no P0/P1 and D8 sign-off
-is recorded. **The C0 three-lens review is itself C0's ratification evidence;
-R0 is a later gate (post-C1) for C2/C3a starts — there is no review cycle.**
+Status: **ratified v2** (2026-07-25) — the C0 three-lens review, dispositions,
+and five confirmation rounds closed "clear"
+(`reviews/2026-07-25-c0-ratification.md` in the program repo). D8 sign-off:
+driver-executed under the operator's standing directive; owner
+countersignature open as an asynchronous item — an objection reopens C0.
+**The three-lens review is C0's ratification evidence; R0 is a later gate
+(post-C1) for C2/C3a starts — there is no review cycle.**
 
 Date: 2026-07-25 (v2)
 
@@ -289,9 +290,10 @@ here, binding once C0 ratifies:
 
 - [x] C0 three-lens codex review executed (2026-07-25, lenses 1–3) — this
       review is C0's ratification evidence (no separate pre-C0 R0)
-- [ ] All findings dispositioned (`reviews/2026-07-25-c0-dispositions.md`)
-      and the blocker-only confirmation pass returns no P0/P1
-- [ ] D8 human sign-off recorded (both project owners + akson maintainer)
-- [ ] Amendment records (kovee A1–A5, byom A1–A7) merged
-- [ ] `plan/dag.json` v2 green (lifecycle states, grants, sheet schema)
-- [ ] Lock manifest v2 seeded and vendored into kovee and akson
+- [x] All findings dispositioned (`reviews/2026-07-25-c0-dispositions.md`)
+      and the blocker-only confirmation chain closed "clear" (r5)
+- [x] D8 sign-off: driver-executed under the operator's standing directive;
+      owner countersignature open (objection reopens C0)
+- [x] Amendment records (kovee A1–A5, byom A1–A7) merged
+- [x] `plan/dag.json` v2 green (lifecycle states, grants, parity, sheet schema)
+- [x] Lock manifest v2 seeded and vendored into kovee and akson
