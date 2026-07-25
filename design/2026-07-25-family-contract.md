@@ -18,7 +18,7 @@ Pinned sources:
 | `kovee/DESIGN.md` v0.1 | sha256 `40820c476d59ebdd458955fd5939289b3ef2bff03c3d1266f5e80f3087935860` (repo `7aad4a6`) + `kovee/design/2026-07-25-amendment-governance-owner.md` |
 | `byom/DESIGN.md` v0.2 | sha256 `ccea384ff931bcf45d30df680b86835ac682006072a07ef2f34f565eba5fa501` (repo `cc4249c`) + `byom/design/2026-07-25-amendment-family-contract.md` |
 | `akson/` | repo `e5e80dc` (pre-release; ADR-0015 itself still `proposed`; consumed via the A0 checklist) |
-| Implementation plan v3 | sha256 `ee5742e936bc23255ca34cc283718b350146faecc1ac48e05338e32c903e36ca` |
+| Implementation plan v3 (c0-r2) | sha256 `56d6fee7f8d346da7ba1587bfb5ecd8829f42eaaa114320aaa22b962ea8fc516` |
 
 ## 1. Ownership
 
