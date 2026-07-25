@@ -168,6 +168,7 @@ function hmacSha256Hex(secretHex, data) {
 // ---------------------------------------------------------------------------
 
 const REQUEST_CAP = 256 * 1024; // bytes
+const RESPONSE_CAP = 1024 * 1024; // bytes (vectors select it with input.context === "response")
 const DEPTH_CAP = 64; // nested containers
 const NODE_CAP = 65536; // JSON values per document
 const SAFE_MAX = 9007199254740991; // 2^53 - 1
@@ -191,8 +192,8 @@ const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
  * container depth. Values are never materialized -- the scanner only counts
  * nodes, tracks depth, records decoded-string surrogate health, and enforces
  * the token-order error classes of PROFILE.md section 1 order 3:
- * `syntax`, `trailing-data`, `duplicate`, `unsafe-integer`, `non-finite`,
- * `unsafe-number`.
+ * `syntax`, `trailing-data`, `duplicate`, `reserved-domain-collision`,
+ * `unsafe-integer`, `non-finite`, `unsafe-number`.
  * @param {string} text
  * @returns {{ nodes: number, maxDepth: number, loneSurrogate: boolean }}
  */
@@ -381,9 +382,12 @@ function scanOneJsonText(text) {
       // fall through: a key is required
       case KEY: {
         if (ch !== '"') syntax();
-        // Duplicate member names at any depth, compared after escape
-        // decoding (RFC 7493), surfaced in token order.
+        // Member names in token order, compared after escape decoding
+        // (RFC 7493). The reserved-name check precedes the duplicate check
+        // for the same token: `$domain` is canonicalization-reserved
+        // (PROFILE.md section 2) and never a wire member at any depth.
         const key = scanString();
+        if (key === "$domain") throw new IJsonError("reserved-domain-collision");
         const keys = /** @type {Set<string>} */ (stack[stack.length - 1].keys);
         if (keys.has(key)) throw new IJsonError("duplicate");
         keys.add(key);
@@ -415,14 +419,16 @@ function scanOneJsonText(text) {
 }
 
 /**
- * Classify request-body bytes per the profile check order (section 1):
- * size cap, UTF-8, single parse (token-order classes), surrogates, depth,
- * node count. Returns null when acceptable, else the error class.
+ * Classify body bytes per the profile check order (section 1): size cap
+ * (256 KiB for requests, 1 MiB for responses), UTF-8, single parse
+ * (token-order classes), surrogates, depth, node count. Returns null when
+ * acceptable, else the error class.
  * @param {Buffer} data
+ * @param {string} [context] "request" (default) or "response"
  * @returns {string | null}
  */
-function ijsonClass(data) {
-  if (data.length > REQUEST_CAP) return "oversize";
+function ijsonClass(data, context) {
+  if (data.length > (context === "response" ? RESPONSE_CAP : REQUEST_CAP)) return "oversize";
   let text;
   try {
     text = STRICT_UTF8.decode(data);
@@ -546,11 +552,14 @@ function contentData(d) {
 function deriveIdempotency(d) {
   switch (d.kind) {
     case "bpp-idempotency-domain-v1": {
+      // Shared per-Society index key: a scope key, so the digest is class
+      // scope_erasure_safe (D-R0-1) -- erasing the scope key erases the
+      // whole index's verifiability, never one entry.
       const canonical = taggedJcs(BYOM_IDEMPOTENCY_TAG, d.domain_object);
       return {
         canonical: canonical.toString("utf8"),
         digest_ref: {
-          class: "local_erasure_safe",
+          class: "scope_erasure_safe",
           algorithm: "hmac-sha-256",
           key_ref: d.key_ref,
           value_hex: hmacSha256Hex(d.index_secret_hex, canonical),
@@ -671,51 +680,124 @@ function problemShape(env) {
 }
 
 // ---------------------------------------------------------------------------
-// Digest classes (PROFILE.md section 6)
+// Digest classes (PROFILE.md section 6, D-R0-1)
 // ---------------------------------------------------------------------------
 
-const ERASABLE_KINDS = new Set(["erasable_plaintext_object", "erasable_plaintext_bytes"]);
+const ERASABLE_KINDS = new Set(["erasable_plaintext_object", "erasable_plaintext_bytes", "erasable_index_object"]);
+
+/** Class -> the only algorithm valid for it (PROFILE.md section 6.1). */
+const DIGEST_CLASS_ALGORITHM = new Map([
+  ["structural_public", "sha-256"],
+  ["portable_public", "sha-256"],
+  ["disclosed_party", "sha-256"],
+  ["ciphertext_public", "sha-256"],
+  ["local_erasure_safe", "hmac-sha-256"],
+  ["scope_erasure_safe", "hmac-sha-256"],
+]);
+
+const KEYED_CLASSES = new Set(["local_erasure_safe", "scope_erasure_safe"]);
+
+// Classes whose construction is over type-tagged canonical bytes; raw-bytes
+// content under them takes the domain-separated byte preimage (section 6.4).
+const CANONICAL_BYTES_CLASSES = new Set(["structural_public", "local_erasure_safe", "scope_erasure_safe"]);
+
+const WIRE_MEMBERS = new Set(["class", "algorithm", "key_ref", "value_hex"]);
+
+const BYOM_TBD_DOMAIN = "bpp-typed-bytes-digest-v1";
 
 /**
- * The bytes a digest-class vector commits to: type-tagged canonical bytes
- * for objects, raw bytes otherwise.
- * @param {Record<string, any>} content
+ * Domain-separated preimage for raw-bytes content under a canonical-bytes
+ * class (PROFILE.md section 6.4): the family typed-bytes framing rule with
+ * the byom domain constant.
+ * @param {string} byteDomain
+ * @param {string} mediaType
+ * @param {Buffer} data
  * @returns {Buffer}
  */
-function digestContentBytes(content) {
-  if (Object.hasOwn(content, "object")) return taggedJcs(content.type_tag, content.object);
-  return contentData(content);
+function byomBytePreimage(byteDomain, mediaType, data) {
+  return Buffer.concat([
+    frame(Buffer.from(BYOM_TBD_DOMAIN, "utf8")),
+    frame(Buffer.from(byteDomain, "utf8")),
+    frame(Buffer.from("0", "utf8")),
+    frame(Buffer.from(mediaType, "utf8")),
+    frame(data),
+  ]);
 }
 
 /**
- * Raw HMAC keys and per-object salts are never part of a DigestRef; the key
+ * The bytes a digest of class `clazz` commits to for this content:
+ * type-tagged canonical bytes for objects; the framed byte preimage for raw
+ * bytes under canonical-bytes classes; exact raw bytes for the exact-bytes
+ * classes (portable_public, disclosed_party, ciphertext_public).
+ * @param {Record<string, any>} content
+ * @param {string} clazz
+ * @returns {Buffer}
+ */
+function preimageBytes(content, clazz) {
+  if (Object.hasOwn(content, "object")) return taggedJcs(content.type_tag, content.object);
+  const raw = contentData(content);
+  if (CANONICAL_BYTES_CLASSES.has(clazz)) return byomBytePreimage(content.byte_domain, content.media_type, raw);
+  return raw;
+}
+
+/**
+ * Raw HMAC keys, secrets, and salts are never part of a DigestRef; the key
  * id (`key_ref`) is. Detected by name pattern rather than a fixed field
  * list: anything holding a secret, salt, or raw key.
- * @param {Record<string, unknown>} ref
+ * @param {string} member
  * @returns {boolean}
  */
-function carriesKeyMaterial(ref) {
-  return Object.keys(ref).some(
-    (k) => k !== "key_ref" && (/secret|salt/i.test(k) || /^(hmac_)?key(_hex)?$/i.test(k)),
-  );
+function isKeyMaterial(member) {
+  return member !== "key_ref" && (/secret|salt/i.test(member) || /^(hmac_)?key(_hex)?$/i.test(member));
+}
+
+/**
+ * The closed DigestRef wire shape {class, algorithm, key_ref?, value_hex}
+ * (PROFILE.md section 6.3 steps 1-7), validated before any class logic.
+ * @param {unknown} offered
+ * @returns {string | null} null when well-formed, else the rejection reason
+ */
+function validateWire(offered) {
+  if (!isPlainObject(offered)) return "untyped_digest_forbidden";
+  const ref = /** @type {Record<string, unknown>} */ (offered);
+  const members = Object.keys(ref);
+  if (members.some(isKeyMaterial)) return "digest_ref_carries_key_material";
+  if (members.some((m) => !WIRE_MEMBERS.has(m))) return "digest_ref_unknown_member";
+  for (const member of ["class", "algorithm", "value_hex"]) {
+    if (typeof ref[member] !== "string") return "digest_ref_missing_member";
+  }
+  const cls = /** @type {string} */ (ref.class);
+  const algorithm = DIGEST_CLASS_ALGORITHM.get(cls);
+  if (algorithm === undefined) return "unknown_digest_class";
+  if (ref.algorithm !== algorithm) return "digest_ref_algorithm_class_mismatch";
+  if (KEYED_CLASSES.has(cls)) {
+    if (typeof ref.key_ref !== "string" || ref.key_ref.length === 0) return "digest_ref_key_ref_missing";
+  } else if (Object.hasOwn(ref, "key_ref")) {
+    return "digest_ref_key_ref_forbidden";
+  }
+  if (!/^[0-9a-f]{64}$/.test(/** @type {string} */ (ref.value_hex))) return "digest_ref_value_not_64_hex";
+  return null;
 }
 
 /**
  * The section 6.3 acceptance rule for a digest offered where a schema field
- * requires class `required`; construction violations are reported before the
- * generic class mismatch.
+ * requires class `required`: wire validation first, then per-class
+ * construction rules, then class equality, then value re-derivation where
+ * the verifier holds the material to re-derive.
  * @param {string} required
- * @param {string} contentKind
+ * @param {Record<string, any>} content
  * @param {unknown} offered
  * @param {{ durable_identifier_accepted?: boolean } | undefined} disclosure
  * @param {string[] | undefined} recipients
+ * @param {string | undefined} offeredSecretHex
  * @returns {{ ok: boolean, reason: string | null }}
  */
-function evaluateOffer(required, contentKind, offered, disclosure, recipients) {
-  if (!isPlainObject(offered)) return { ok: false, reason: "untyped_digest_forbidden" };
-  const ref = /** @type {Record<string, unknown>} */ (offered);
-  if (carriesKeyMaterial(ref)) return { ok: false, reason: "digest_ref_carries_key_material" };
-  const cls = ref.class;
+function evaluateOffer(required, content, offered, disclosure, recipients, offeredSecretHex) {
+  const wire = validateWire(offered);
+  if (wire !== null) return { ok: false, reason: wire };
+  const ref = /** @type {Record<string, any>} */ (offered);
+  const cls = /** @type {string} */ (ref.class);
+  const contentKind = content.kind;
   switch (cls) {
     case "structural_public":
       if (contentKind === "authority_subject") {
@@ -738,6 +820,15 @@ function evaluateOffer(required, contentKind, offered, disclosure, recipients) {
         return { ok: false, reason: "sealed_blob_requires_ciphertext_public" };
       }
       break;
+    case "scope_erasure_safe":
+      if (contentKind === "sealed_blob") {
+        return { ok: false, reason: "sealed_blob_requires_ciphertext_public" };
+      }
+      if (contentKind === "authority_subject") {
+        // Authority subjects are strictly per-object commitments (D-R0-1).
+        return { ok: false, reason: "authority_subject_requires_local_erasure_safe" };
+      }
+      break;
     case "disclosed_party":
       if (!Array.isArray(recipients) || recipients.length === 0) {
         return { ok: false, reason: "disclosed_party_requires_named_recipients" };
@@ -748,29 +839,32 @@ function evaluateOffer(required, contentKind, offered, disclosure, recipients) {
         return { ok: false, reason: "ciphertext_public_requires_ciphertext" };
       }
       break;
-    default:
-      return { ok: false, reason: "unknown_digest_class" };
   }
   if (cls !== required) return { ok: false, reason: "digest_class_mismatch" };
+  const pre = preimageBytes(content, cls);
+  let expectedHex;
+  if (KEYED_CLASSES.has(cls)) {
+    if (offeredSecretHex === undefined) return { ok: true, reason: null }; // offline re-derivation needs the key
+    expectedHex = hmacSha256Hex(offeredSecretHex, pre);
+  } else {
+    expectedHex = sha256Hex(pre);
+  }
+  if (ref.value_hex !== expectedHex) return { ok: false, reason: "digest_value_mismatch" };
   return { ok: true, reason: null };
 }
 
-/**
- * A well-constructed DigestRef of the given class over the content bytes
- * (wire shape {class, algorithm, key_ref?, value_hex}, profile decision 6).
- * @param {string} clazz
- * @param {Buffer} cbytes
- * @param {string} [secretHex]
- * @param {string} [keyRef]
- * @returns {Record<string, unknown>}
- */
-function buildDigestRef(clazz, cbytes, secretHex, keyRef) {
-  if (clazz === "local_erasure_safe") {
-    if (secretHex === undefined) throw new Error("local_erasure_safe requires an object secret");
-    return { class: clazz, algorithm: "hmac-sha-256", key_ref: keyRef, value_hex: hmacSha256Hex(secretHex, cbytes) };
-  }
-  return { class: clazz, algorithm: "sha-256", value_hex: sha256Hex(cbytes) };
-}
+// Reasons produced before the construction/class steps: the offered value is
+// not required to be arithmetically meaningful for these.
+const WIRE_SHAPE_REASONS = new Set([
+  "digest_ref_carries_key_material",
+  "digest_ref_unknown_member",
+  "digest_ref_missing_member",
+  "unknown_digest_class",
+  "digest_ref_algorithm_class_mismatch",
+  "digest_ref_key_ref_missing",
+  "digest_ref_key_ref_forbidden",
+  "digest_ref_value_not_64_hex",
+]);
 
 // ---------------------------------------------------------------------------
 // PrivacyAccessRecord chain (PROFILE.md section 7)
@@ -778,35 +872,81 @@ function buildDigestRef(clazz, cbytes, secretHex, keyRef) {
 
 const PRIVACY_TAG = "bpp-privacy-access-record-v1";
 
+// Every preimage member of a PrivacyAccessRecord except the chain link
+// (previous_access_digest, absent at genesis) and the record's own
+// record_digest, which is EXCLUDED from the preimage (PROFILE.md section 7).
+const PRIVACY_REQUIRED_MEMBERS = [
+  "society_id",
+  "internal_access_sequence",
+  "access_event_id",
+  "endpoint_incarnation",
+  "recovery_epoch",
+  "actor_binding_digest",
+  "operation",
+  "purpose_ref",
+  "query_or_scope_digest",
+  "result_object_count",
+  "result_bytes",
+  "outcome",
+  "dependency_digest",
+  "occurred_at",
+];
+
+/** A rejected PrivacyAccessRecord chain, carrying its error identifier. */
+class PrivacyChainError extends Error {
+  /** @param {string} error */
+  constructor(error) {
+    super(error);
+    this.chainError = error;
+  }
+}
+
 /**
  * Each record links to the previous record's digest through a
- * local_erasure_safe DigestRef (value_hex null at genesis); the record
- * digest is HMAC-SHA-256 of the chain secret over the tagged canonical
- * bytes.
+ * scope_erasure_safe DigestRef under the chain key (D-R0-1); genesis is
+ * whole-member ABSENCE of previous_access_digest, never a null-valued
+ * pseudo-DigestRef. The record digest is a typed scope_erasure_safe
+ * DigestRef whose value is HMAC-SHA-256 of the chain key over the tagged
+ * canonical bytes of the record WITHOUT its own record_digest member.
  * @param {Record<string, any>[]} records
  * @param {string} chainSecretHex
  * @param {string} keyRef
- * @returns {{ canonical: string, record_digest_hex: string }[]}
+ * @returns {{ canonical: string, record_digest: Record<string, string> }[]}
  */
 function derivePrivacyChain(records, chainSecretHex, keyRef) {
   const derived = [];
   /** @type {string | null} */
   let prevValue = null;
   for (const rec of records) {
-    const full = Object.hasOwn(rec, "previous_access_digest")
-      ? { ...rec }
-      : {
-          ...rec,
-          previous_access_digest: {
-            class: "local_erasure_safe",
-            algorithm: "hmac-sha-256",
-            key_ref: keyRef,
-            value_hex: prevValue,
-          },
-        };
+    for (const member of PRIVACY_REQUIRED_MEMBERS) {
+      if (!Object.hasOwn(rec, member)) throw new PrivacyChainError(`privacy_record_missing_${member}`);
+    }
+    if (Object.hasOwn(rec, "record_digest")) {
+      throw new PrivacyChainError("privacy_record_preimage_carries_record_digest");
+    }
+    const full =
+      prevValue !== null && !Object.hasOwn(rec, "previous_access_digest")
+        ? {
+            ...rec,
+            previous_access_digest: {
+              class: "scope_erasure_safe",
+              algorithm: "hmac-sha-256",
+              key_ref: keyRef,
+              value_hex: prevValue,
+            },
+          }
+        : { ...rec };
     const canonical = taggedJcs(PRIVACY_TAG, full);
     prevValue = hmacSha256Hex(chainSecretHex, canonical);
-    derived.push({ canonical: canonical.toString("utf8"), record_digest_hex: prevValue });
+    derived.push({
+      canonical: canonical.toString("utf8"),
+      record_digest: {
+        class: "scope_erasure_safe",
+        algorithm: "hmac-sha-256",
+        key_ref: keyRef,
+        value_hex: prevValue,
+      },
+    });
   }
   return derived;
 }
@@ -829,12 +969,12 @@ function privacyRelease(lastOutcome, journalCommitted) {
 // Family checkers
 // ---------------------------------------------------------------------------
 
-/** @typedef {{ name?: string, input: Record<string, any>, expected: Record<string, any> }} VectorCase */
+/** @typedef {{ name?: string, input: Record<string, any>, expected: Record<string, any>, cases?: Record<string, any>[] }} VectorCase */
 /** @typedef {(name: string, kase: VectorCase) => number} Checker */
 
 /** @type {Checker} */
 function checkIjson(name, kase) {
-  const cls = ijsonClass(vectorBytes(kase.input));
+  const cls = ijsonClass(vectorBytes(kase.input), kase.input.context ?? "request");
   expectEq(name, "validity", cls === null, kase.expected.valid);
   if (!kase.expected.valid) expectEq(name, "error class", cls, kase.expected.error);
   return 1;
@@ -871,51 +1011,98 @@ function checkIdempotency(name, kase) {
   return 1;
 }
 
+/**
+ * The secret (if any) matching the OFFERED keyed class, from the sub-case
+ * first, then the vector input.
+ * @param {Record<string, any>} sub
+ * @param {Record<string, any>} inp
+ * @returns {string | undefined}
+ */
+function offeredSecret(sub, inp) {
+  for (const holder of [sub, inp]) {
+    for (const member of ["object_secret_hex", "scope_secret_hex"]) {
+      if (Object.hasOwn(holder, member)) return holder[member];
+    }
+  }
+  return undefined;
+}
+
 /** @type {Checker} */
 function checkDigestClass(name, kase) {
   const inp = kase.input;
   const content = inp.content;
-  const cbytes = digestContentBytes(content);
   const required = inp.required_class;
-  const exp = kase.expected;
-  if (exp.accepted) {
-    const ref = buildDigestRef(required, cbytes, inp.object_secret_hex, inp.key_ref);
-    const verdict = evaluateOffer(required, content.kind, ref, inp.disclosure, inp.recipients);
-    expectEq(name, "acceptance", verdict, { ok: true, reason: null });
-    expectEq(name, "digest_ref", ref, exp.digest_ref);
-    if (Object.hasOwn(exp, "canonical")) {
-      expectEq(name, "canonical", taggedJcs(content.type_tag, content.object).toString("utf8"), exp.canonical);
-    }
-    if (required === "disclosed_party") {
-      // Decision 10: disclosed_party acceptance always asserts the
-      // external-copy obligation.
-      expectEq(name, "external_copy_obligation", exp.external_copy_obligation, true);
-    }
-  } else {
-    const offered = inp.offered;
-    const verdict = evaluateOffer(required, content.kind, offered, inp.disclosure, inp.recipients);
-    expectEq(name, "acceptance", verdict.ok, false);
-    expectEq(name, "rejection reason", verdict.reason, exp.reason);
-    // Internal consistency: every negative's offered value must be
-    // arithmetically correct, proving the rejection is typing-only.
-    if (typeof offered === "string") {
-      expectEq(name, "offered value (untyped)", offered, sha256Hex(cbytes));
-    } else if (Object.hasOwn(offered, "value_hex")) {
-      if (offered.class === "local_erasure_safe") {
-        const secret = inp.object_secret_hex ?? offered.object_secret_hex;
-        expectEq(name, "offered value (hmac)", offered.value_hex, hmacSha256Hex(secret, cbytes));
-      } else {
-        expectEq(name, "offered value (sha-256)", offered.value_hex, sha256Hex(cbytes));
+  const subs = kase.cases ?? [{ name: null, offered: inp.offered, expected: kase.expected }];
+  let count = 0;
+  for (const sub of subs) {
+    const cname = sub.name ? `${name}/${sub.name}` : name;
+    const disclosure = Object.hasOwn(sub, "disclosure") ? sub.disclosure : inp.disclosure;
+    const recipients = Object.hasOwn(sub, "recipients") ? sub.recipients : inp.recipients;
+    const secret = offeredSecret(sub, inp);
+    const offered = sub.offered;
+    const exp = sub.expected;
+    const verdict = evaluateOffer(required, content, offered, disclosure, recipients, secret);
+    if (exp.accepted) {
+      // Positive cases validate the OFFERED ref (wire, construction, class,
+      // and value re-derivation) -- never synthesize-and-compare.
+      expectEq(cname, "acceptance", verdict, { ok: true, reason: null });
+      expectEq(cname, "digest_ref", offered, exp.digest_ref);
+      if (Object.hasOwn(exp, "canonical")) {
+        expectEq(cname, "canonical", taggedJcs(content.type_tag, content.object).toString("utf8"), exp.canonical);
+      }
+      if (required === "disclosed_party") {
+        // Decision 10: disclosed_party acceptance always asserts the
+        // external-copy obligation.
+        expectEq(cname, "external_copy_obligation", exp.external_copy_obligation, true);
+      }
+    } else {
+      expectEq(cname, "acceptance", verdict.ok, false);
+      expectEq(cname, "rejection reason", verdict.reason, exp.reason);
+      // Internal consistency: a typing-only rejection's offered value must
+      // be arithmetically correct under the OFFERED class. Wire-shape
+      // rejections carry no meaningful value; the digest_value_mismatch
+      // negative instead proves its value is exactly the un-framed
+      // raw-bytes digest.
+      if (typeof offered === "string") {
+        const exact = Object.hasOwn(content, "object")
+          ? taggedJcs(content.type_tag, content.object)
+          : contentData(content);
+        expectEq(cname, "offered value (untyped)", offered, sha256Hex(exact));
+      } else if (verdict.reason === "digest_value_mismatch") {
+        expectEq(
+          cname,
+          "offered value (raw, un-framed preimage)",
+          offered.value_hex,
+          hmacSha256Hex(/** @type {string} */ (secret), contentData(content)),
+        );
+      } else if (!WIRE_SHAPE_REASONS.has(/** @type {string} */ (verdict.reason))) {
+        const pre = preimageBytes(content, offered.class);
+        if (KEYED_CLASSES.has(offered.class)) {
+          expectEq(cname, "offered value (hmac)", offered.value_hex, hmacSha256Hex(/** @type {string} */ (secret), pre));
+        } else {
+          expectEq(cname, "offered value (sha-256)", offered.value_hex, sha256Hex(pre));
+        }
       }
     }
+    count += 1;
   }
-  return 1;
+  return count;
 }
 
 /** @type {Checker} */
 function checkPrivacy(name, kase) {
   const inp = kase.input;
   const exp = kase.expected;
+  if (exp.chain_valid === false) {
+    try {
+      derivePrivacyChain(inp.records, inp.chain_secret_hex, inp.key_ref);
+      fail(name, "chain derivation unexpectedly succeeded");
+    } catch (e) {
+      if (!(e instanceof PrivacyChainError)) throw e;
+      expectEq(name, "chain error", e.chainError, exp.error);
+    }
+    return 1;
+  }
   const derived = derivePrivacyChain(inp.records, inp.chain_secret_hex, inp.key_ref);
   expectEq(name, "records", derived, exp.records);
   const last = inp.records[inp.records.length - 1];

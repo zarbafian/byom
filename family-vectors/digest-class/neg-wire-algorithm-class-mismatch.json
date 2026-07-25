@@ -1,0 +1,43 @@
+{
+  "name": "digest-class/neg-wire-algorithm-class-mismatch",
+  "description": "class/algorithm pairing is closed: sha-256 only for the public classes, hmac-sha-256 only for the erasure classes; the wire check reports before any construction or content rule",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+  },
+  "cases": [
+    {
+      "name": "erasure-class-with-sha-256",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "sha-256",
+        "key_ref": "society-key:soc-garden/object:engram-42",
+        "value_hex": "adb08c756d29a31e1108b22c6c3177464179b3031dd18838239b17cd7e2635c3"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_algorithm_class_mismatch"
+      }
+    },
+    {
+      "name": "public-class-with-hmac-sha-256",
+      "offered": {
+        "class": "structural_public",
+        "algorithm": "hmac-sha-256",
+        "value_hex": "e3564af308b54e55c511cd1d4c41904e78e12bf4b39212c28588ea8210064fef"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_algorithm_class_mismatch"
+      }
+    }
+  ]
+}

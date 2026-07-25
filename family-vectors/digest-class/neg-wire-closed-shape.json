@@ -1,0 +1,44 @@
+{
+  "name": "digest-class/neg-wire-closed-shape",
+  "description": "the DigestRef wire shape is closed: {class, algorithm, key_ref?, value_hex} and nothing else; a missing required member also fails closed",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+  },
+  "cases": [
+    {
+      "name": "unknown-member",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:engram-42",
+        "value_hex": "adb08c756d29a31e1108b22c6c3177464179b3031dd18838239b17cd7e2635c3",
+        "note": "not-a-wire-member"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_unknown_member"
+      }
+    },
+    {
+      "name": "missing-algorithm",
+      "offered": {
+        "class": "local_erasure_safe",
+        "key_ref": "society-key:soc-garden/object:engram-42",
+        "value_hex": "adb08c756d29a31e1108b22c6c3177464179b3031dd18838239b17cd7e2635c3"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_missing_member"
+      }
+    }
+  ]
+}

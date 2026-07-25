@@ -1,6 +1,6 @@
 {
   "name": "digest-class/structural-public-positive",
-  "description": "structural_public: SHA-256 over knowingly non-sensitive, non-erasable protocol/schema bytes ($domain-tagged JCS)",
+  "description": "structural_public: SHA-256 over knowingly non-sensitive, non-erasable protocol/schema bytes ($domain-tagged JCS); the offered DigestRef is wire-validated and its value re-derived",
   "input": {
     "content": {
       "kind": "protocol_bytes",
@@ -15,7 +15,12 @@
         ]
       }
     },
-    "required_class": "structural_public"
+    "required_class": "structural_public",
+    "offered": {
+      "class": "structural_public",
+      "algorithm": "sha-256",
+      "value_hex": "cdd8ae67bea39d4b491dea1516694b49442bf393df9c4693350906f37763d6f6"
+    }
   },
   "expected": {
     "accepted": true,

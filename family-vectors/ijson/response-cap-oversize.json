@@ -1,0 +1,17 @@
+{
+  "name": "ijson/response-cap-oversize",
+  "description": "response bodies follow the same rules under a 1 MiB cap; above it is oversize before parsing",
+  "input": {
+    "context": "response",
+    "json_synth": {
+      "prefix": "[\"",
+      "repeat": "a",
+      "count": 1048575,
+      "suffix": "\"]"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "error": "oversize"
+  }
+}

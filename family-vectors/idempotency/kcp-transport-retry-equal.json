@@ -5,10 +5,10 @@
     "derivations": [
       {
         "kind": "kcp-command-idempotency",
-        "schema_ref": "kcp/contribution_append@0",
+        "schema_ref": "https://kovee.example/kcp/v0/kcp-command.schema.json",
         "raw_command": {
-          "version": 0,
-          "authority_surface": "participant",
+          "version": "0.1",
+          "authority_surface": "external_client",
           "op": "contribution_append",
           "realm_id": "realm-1",
           "project_id": "proj-9",
@@ -34,10 +34,10 @@
       },
       {
         "kind": "kcp-command-idempotency",
-        "schema_ref": "kcp/contribution_append@0",
+        "schema_ref": "https://kovee.example/kcp/v0/kcp-command.schema.json",
         "raw_command": {
-          "version": 0,
-          "authority_surface": "participant",
+          "version": "0.1",
+          "authority_surface": "external_client",
           "op": "contribution_append",
           "realm_id": "realm-1",
           "project_id": "proj-9",
@@ -66,12 +66,12 @@
   "expected": {
     "results": [
       {
-        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"note: budget ceiling\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"participant\",\"expected_revision\":12,\"ext\":{},\"op\":\"contribution_append\",\"project_id\":\"proj-9\",\"realm_id\":\"realm-1\",\"version\":0},\"protocol_major\":0,\"schema_ref\":\"kcp/contribution_append@0\"}",
-        "sha256_hex": "e5b9cf131702ca1f7b41bd4b791ecc51c461f2be263cd245d1fff897293d23fc"
+        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"note: budget ceiling\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"external_client\",\"expected_revision\":12,\"ext\":{},\"op\":\"contribution_append\",\"project_id\":\"proj-9\",\"realm_id\":\"realm-1\",\"version\":\"0.1\"},\"protocol_major\":0,\"schema_ref\":\"https://kovee.example/kcp/v0/kcp-command.schema.json\"}",
+        "sha256_hex": "2cc3954c266ee54fbbee82465ea8efc6e98e9eacb92121278fbfcc8972796d28"
       },
       {
-        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"note: budget ceiling\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"participant\",\"expected_revision\":12,\"ext\":{},\"op\":\"contribution_append\",\"project_id\":\"proj-9\",\"realm_id\":\"realm-1\",\"version\":0},\"protocol_major\":0,\"schema_ref\":\"kcp/contribution_append@0\"}",
-        "sha256_hex": "e5b9cf131702ca1f7b41bd4b791ecc51c461f2be263cd245d1fff897293d23fc"
+        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"note: budget ceiling\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"external_client\",\"expected_revision\":12,\"ext\":{},\"op\":\"contribution_append\",\"project_id\":\"proj-9\",\"realm_id\":\"realm-1\",\"version\":\"0.1\"},\"protocol_major\":0,\"schema_ref\":\"https://kovee.example/kcp/v0/kcp-command.schema.json\"}",
+        "sha256_hex": "2cc3954c266ee54fbbee82465ea8efc6e98e9eacb92121278fbfcc8972796d28"
       }
     ],
     "relation": "equal"

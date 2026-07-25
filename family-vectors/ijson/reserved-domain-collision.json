@@ -1,0 +1,11 @@
+{
+  "name": "ijson/reserved-domain-collision",
+  "description": "$domain is canonicalization-reserved (section 2): a wire body carrying it fails closed before any type-tag injection can collide",
+  "input": {
+    "json_utf8": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"a\":1}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "reserved-domain-collision"
+  }
+}

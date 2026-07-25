@@ -26,6 +26,12 @@
         "result_object_count": 2,
         "result_bytes": 412,
         "outcome": "allowed",
+        "dependency_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
         "occurred_at": "2026-07-25T13:00:00Z"
       },
       {
@@ -51,6 +57,12 @@
         "result_object_count": 0,
         "result_bytes": 0,
         "outcome": "denied",
+        "dependency_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b"
+        },
         "occurred_at": "2026-07-25T13:00:02Z"
       }
     ],
@@ -61,12 +73,22 @@
   "expected": {
     "records": [
       {
-        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000007\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":7,\"occurred_at\":\"2026-07-25T13:00:00Z\",\"operation\":\"engram_search\",\"outcome\":\"allowed\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":null},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"47d8915493a3716a82254320e74c75861f24303892d84189749e3e03909db176\"},\"recovery_epoch\":0,\"result_bytes\":412,\"result_object_count\":2,\"society_id\":\"soc-garden\"}",
-        "record_digest_hex": "e7ad3c7907c1b51736a0b1092f1b1aeb003118099c5bba18fbb87ba0010cd9b6"
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000007\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"dependency_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"scope_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":7,\"occurred_at\":\"2026-07-25T13:00:00Z\",\"operation\":\"engram_search\",\"outcome\":\"allowed\",\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"47d8915493a3716a82254320e74c75861f24303892d84189749e3e03909db176\"},\"recovery_epoch\":0,\"result_bytes\":412,\"result_object_count\":2,\"society_id\":\"soc-garden\"}",
+        "record_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "c4ba57c4125230772fff9b6b81b943d78eb992907215bd82aab20b608d226879"
+        }
       },
       {
-        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000008\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":8,\"occurred_at\":\"2026-07-25T13:00:02Z\",\"operation\":\"artifact_fetch\",\"outcome\":\"denied\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"e7ad3c7907c1b51736a0b1092f1b1aeb003118099c5bba18fbb87ba0010cd9b6\"},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"3fd47c4d2a24d57fb98888d99b6dcd6213412f3f28024793f577d69a3e306619\"},\"recovery_epoch\":0,\"result_bytes\":0,\"result_object_count\":0,\"society_id\":\"soc-garden\"}",
-        "record_digest_hex": "695719e7da32f8e828bf55b33b98218858e90eeaf3c159f3627e430abeeb3b83"
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000008\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"dependency_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"scope_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":8,\"occurred_at\":\"2026-07-25T13:00:02Z\",\"operation\":\"artifact_fetch\",\"outcome\":\"denied\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"scope_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"c4ba57c4125230772fff9b6b81b943d78eb992907215bd82aab20b608d226879\"},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"3fd47c4d2a24d57fb98888d99b6dcd6213412f3f28024793f577d69a3e306619\"},\"recovery_epoch\":0,\"result_bytes\":0,\"result_object_count\":0,\"society_id\":\"soc-garden\"}",
+        "record_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "38d8edc7389dbe35d59ab79e7c93d410324fbe9e66a5795bdb7b5e222feff44d"
+        }
       }
     ],
     "release_permitted": false,

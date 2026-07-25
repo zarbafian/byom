@@ -1,6 +1,6 @@
 {
   "name": "digest-class/portable-public-positive",
-  "description": "portable_public: allowed only after the owner explicitly accepted a durable publicly dictionary-testable identifier",
+  "description": "portable_public: exact-bytes SHA-256, allowed only after the owner explicitly accepted a durable publicly dictionary-testable identifier; the offered DigestRef is wire-validated and its value re-derived",
   "input": {
     "content": {
       "kind": "erasable_plaintext_bytes",
@@ -9,6 +9,11 @@
     "required_class": "portable_public",
     "disclosure": {
       "durable_identifier_accepted": true
+    },
+    "offered": {
+      "class": "portable_public",
+      "algorithm": "sha-256",
+      "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
     }
   },
   "expected": {

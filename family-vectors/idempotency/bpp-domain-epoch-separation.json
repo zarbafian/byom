@@ -12,7 +12,7 @@
             "key_ref": "society-key:soc-garden/actor-binding",
             "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
           },
-          "operation": "pledge_open",
+          "operation": "pledge_propose",
           "endpoint_incarnation": "inc-1",
           "society_id": "soc-garden",
           "society_recovery_epoch": 0,
@@ -30,7 +30,7 @@
             "key_ref": "society-key:soc-garden/actor-binding",
             "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
           },
-          "operation": "pledge_open",
+          "operation": "pledge_propose",
           "endpoint_incarnation": "inc-1",
           "society_id": "soc-garden",
           "society_recovery_epoch": 1,
@@ -44,21 +44,21 @@
   "expected": {
     "results": [
       {
-        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_open\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
+        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_propose\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
         "digest_ref": {
-          "class": "local_erasure_safe",
+          "class": "scope_erasure_safe",
           "algorithm": "hmac-sha-256",
           "key_ref": "society-key:soc-garden/idempotency-index",
-          "value_hex": "4088084261c41087c8d3c9a74d21862bdce4105649604f4761c55fd98907cf47"
+          "value_hex": "203f685057135b4f1c548af6e8ac8bc6ba97420f3b2c94e93a263f0e3cfc61d9"
         }
       },
       {
-        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_open\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":1}",
+        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_propose\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":1}",
         "digest_ref": {
-          "class": "local_erasure_safe",
+          "class": "scope_erasure_safe",
           "algorithm": "hmac-sha-256",
           "key_ref": "society-key:soc-garden/idempotency-index",
-          "value_hex": "17905f5fde33fe7a3fd19a230902a9777512db81ec63cc5ea0e3b95fbae2637c"
+          "value_hex": "9d6232886e60e09915b80bf8977a39166026b61357f517d31fb206861c832379"
         }
       }
     ],

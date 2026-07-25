@@ -1,0 +1,30 @@
+{
+  "name": "digest-class/typed-bytes-local-erasure-positive",
+  "description": "raw bytes under a canonical-bytes class take the domain-separated byte preimage frame(bpp-typed-bytes-digest-v1) || frame(byte_domain) || frame(0) || frame(media_type) || frame(bytes), never a raw-bytes HMAC (section 6.4)",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "call alice about the garden fence",
+      "byte_domain": "engram-bytes",
+      "media_type": "text/plain"
+    },
+    "required_class": "local_erasure_safe",
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+    "key_ref": "society-key:soc-garden/object:engram-77",
+    "offered": {
+      "class": "local_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/object:engram-77",
+      "value_hex": "2ba2d5c3730950e10f4bdb1f960ffa8b2e554bd14124cbbe630299aa62a301bf"
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "local_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/object:engram-77",
+      "value_hex": "2ba2d5c3730950e10f4bdb1f960ffa8b2e554bd14124cbbe630299aa62a301bf"
+    }
+  }
+}

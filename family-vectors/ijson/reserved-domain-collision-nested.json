@@ -1,0 +1,11 @@
+{
+  "name": "ijson/reserved-domain-collision-nested",
+  "description": "the $domain reservation applies at any depth: any nested object may later become the object being type-tagged",
+  "input": {
+    "json_utf8": "{\"a\":{\"$domain\":\"x\"}}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "reserved-domain-collision"
+  }
+}

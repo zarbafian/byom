@@ -1,6 +1,6 @@
 {
   "name": "idempotency/bpp-domain-basic",
-  "description": "byom bpp-idempotency-domain-v1: HMAC-SHA-256 (local_erasure_safe) over the $domain-tagged JCS of the IdempotencyDomain; the actor binding digest is opaque input material",
+  "description": "byom bpp-idempotency-domain-v1: HMAC-SHA-256 (scope_erasure_safe, per-Society index key, D-R0-1) over the $domain-tagged JCS of the IdempotencyDomain; the actor binding digest is opaque input material",
   "input": {
     "derivations": [
       {
@@ -12,7 +12,7 @@
             "key_ref": "society-key:soc-garden/actor-binding",
             "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
           },
-          "operation": "pledge_open",
+          "operation": "pledge_propose",
           "endpoint_incarnation": "inc-1",
           "society_id": "soc-garden",
           "society_recovery_epoch": 0,
@@ -26,12 +26,12 @@
   "expected": {
     "results": [
       {
-        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_open\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
+        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_propose\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
         "digest_ref": {
-          "class": "local_erasure_safe",
+          "class": "scope_erasure_safe",
           "algorithm": "hmac-sha-256",
           "key_ref": "society-key:soc-garden/idempotency-index",
-          "value_hex": "4088084261c41087c8d3c9a74d21862bdce4105649604f4761c55fd98907cf47"
+          "value_hex": "203f685057135b4f1c548af6e8ac8bc6ba97420f3b2c94e93a263f0e3cfc61d9"
         }
       }
     ]

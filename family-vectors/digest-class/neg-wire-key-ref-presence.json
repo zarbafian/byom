@@ -1,0 +1,44 @@
+{
+  "name": "digest-class/neg-wire-key-ref-presence",
+  "description": "key_ref is required exactly for the keyed erasure classes and forbidden for the public classes",
+  "input": {
+    "content": {
+      "kind": "erasable_index_object",
+      "type_tag": "bpp-idempotency-index-entry-v1",
+      "object": {
+        "society_id": "soc-garden",
+        "operation": "pledge_propose",
+        "idempotency_key": "idem-4711"
+      }
+    },
+    "required_class": "scope_erasure_safe",
+    "scope_secret_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+  },
+  "cases": [
+    {
+      "name": "keyed-class-missing-key-ref",
+      "offered": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "value_hex": "7b037cc0276eafad11cbd6b23fbe4f684d557ce971c203c09ab4c7d0a9f56400"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_key_ref_missing"
+      }
+    },
+    {
+      "name": "public-class-with-key-ref",
+      "offered": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "key_ref": "society-key:soc-garden/idempotency-index",
+        "value_hex": "6aa4084448569a8804d1b7a98acb2defffc6fa58244c52ed27047d4d7557c5e9"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_key_ref_forbidden"
+      }
+    }
+  ]
+}

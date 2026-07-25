@@ -4,13 +4,15 @@
   "input": {
     "content": {
       "kind": "sealed_blob",
-      "bytes_base64": "3y7SbgVToMqv8EfIqg3tLsb61HyLzb96AZdCOajbrBJW5UAcBL939HEQXxUivJkp"
+      "bytes_base64": "3y7SbgVToMqv8EfIqg3tLsb61HyLzb96AZdCOajbrBJW5UAcBL939HEQXxUivJkp",
+      "byte_domain": "sealed-blob-bytes",
+      "media_type": "application/octet-stream"
     },
     "required_class": "ciphertext_public",
     "offered": {
       "class": "structural_public",
       "algorithm": "sha-256",
-      "value_hex": "6f3ca91587b1bed6612a48827c6ad5a3855a78df0604cd15164254618e8efd5e"
+      "value_hex": "9399f43c01a43917652d387db393d4b2eca24c5bb980ed8ea265b4434e303f05"
     }
   },
   "expected": {

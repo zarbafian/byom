@@ -1,0 +1,85 @@
+{
+  "name": "digest-class/matrix-required-ciphertext-public",
+  "description": "forbidden-substitution matrix row for required class ciphertext_public: every other class offered with an arithmetically correct value is rejected (construction violations report before the generic mismatch); classes never substitute even where value spaces coincide",
+  "input": {
+    "content": {
+      "kind": "sealed_blob",
+      "bytes_base64": "3y7SbgVToMqv8EfIqg3tLsb61HyLzb96AZdCOajbrBJW5UAcBL939HEQXxUivJkp",
+      "byte_domain": "sealed-blob-bytes",
+      "media_type": "application/octet-stream"
+    },
+    "required_class": "ciphertext_public"
+  },
+  "cases": [
+    {
+      "name": "offered-structural-public",
+      "offered": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9399f43c01a43917652d387db393d4b2eca24c5bb980ed8ea265b4434e303f05"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "structural_public_requires_protocol_bytes"
+      }
+    },
+    {
+      "name": "offered-portable-public",
+      "disclosure": {
+        "durable_identifier_accepted": true
+      },
+      "offered": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "6f3ca91587b1bed6612a48827c6ad5a3855a78df0604cd15164254618e8efd5e"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-local-erasure-safe",
+      "object_secret_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:test-1",
+        "value_hex": "bd31e41a151c745368d14743b43df729717ddf02955b91effb65c0e3a6fea746"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "sealed_blob_requires_ciphertext_public"
+      }
+    },
+    {
+      "name": "offered-scope-erasure-safe",
+      "scope_secret_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "offered": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/idempotency-index",
+        "value_hex": "f7f721fc682167d57c2051de130d83b9c24be1dbb3d7c8ebc5fa34978f11e943"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "sealed_blob_requires_ciphertext_public"
+      }
+    },
+    {
+      "name": "offered-disclosed-party",
+      "recipients": [
+        "participant:reviewer-a"
+      ],
+      "offered": {
+        "class": "disclosed_party",
+        "algorithm": "sha-256",
+        "value_hex": "6f3ca91587b1bed6612a48827c6ad5a3855a78df0604cd15164254618e8efd5e"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    }
+  ]
+}

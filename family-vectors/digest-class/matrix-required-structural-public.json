@@ -1,0 +1,92 @@
+{
+  "name": "digest-class/matrix-required-structural-public",
+  "description": "forbidden-substitution matrix row for required class structural_public: every other class offered with an arithmetically correct value is rejected (construction violations report before the generic mismatch); classes never substitute even where value spaces coincide",
+  "input": {
+    "content": {
+      "kind": "protocol_bytes",
+      "type_tag": "bpp-schema-descriptor-v1",
+      "object": {
+        "object_kind": "pledge",
+        "schema_ref": "bpp/pledge@1",
+        "fields": [
+          "society_id",
+          "endeavor_ref",
+          "title"
+        ]
+      }
+    },
+    "required_class": "structural_public"
+  },
+  "cases": [
+    {
+      "name": "offered-portable-public",
+      "disclosure": {
+        "durable_identifier_accepted": true
+      },
+      "offered": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "cdd8ae67bea39d4b491dea1516694b49442bf393df9c4693350906f37763d6f6"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-local-erasure-safe",
+      "object_secret_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:test-1",
+        "value_hex": "b327582797899b37a2a847c3b791a4a3443904d585768da415482d64158ce6f9"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-scope-erasure-safe",
+      "scope_secret_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "offered": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/idempotency-index",
+        "value_hex": "6dad54b4f4ede97bea2e58f503957be50e2cd3ddd243b2c16d2042266d52f230"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-disclosed-party",
+      "recipients": [
+        "participant:reviewer-a"
+      ],
+      "offered": {
+        "class": "disclosed_party",
+        "algorithm": "sha-256",
+        "value_hex": "cdd8ae67bea39d4b491dea1516694b49442bf393df9c4693350906f37763d6f6"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-ciphertext-public",
+      "offered": {
+        "class": "ciphertext_public",
+        "algorithm": "sha-256",
+        "value_hex": "cdd8ae67bea39d4b491dea1516694b49442bf393df9c4693350906f37763d6f6"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "ciphertext_public_requires_ciphertext"
+      }
+    }
+  ]
+}

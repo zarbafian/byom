@@ -1,0 +1,86 @@
+{
+  "name": "digest-class/matrix-required-scope-erasure-safe",
+  "description": "forbidden-substitution matrix row for required class scope_erasure_safe: every other class offered with an arithmetically correct value is rejected (construction violations report before the generic mismatch); classes never substitute even where value spaces coincide",
+  "input": {
+    "content": {
+      "kind": "erasable_index_object",
+      "type_tag": "bpp-idempotency-index-entry-v1",
+      "object": {
+        "society_id": "soc-garden",
+        "operation": "pledge_propose",
+        "idempotency_key": "idem-4711"
+      }
+    },
+    "required_class": "scope_erasure_safe"
+  },
+  "cases": [
+    {
+      "name": "offered-structural-public",
+      "offered": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "6aa4084448569a8804d1b7a98acb2defffc6fa58244c52ed27047d4d7557c5e9"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "public_hash_over_erasable_content_forbidden"
+      }
+    },
+    {
+      "name": "offered-portable-public",
+      "disclosure": {
+        "durable_identifier_accepted": true
+      },
+      "offered": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "6aa4084448569a8804d1b7a98acb2defffc6fa58244c52ed27047d4d7557c5e9"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-local-erasure-safe",
+      "object_secret_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:test-1",
+        "value_hex": "582d47c7c93f5f7c02a3534bfe2482621bf3c00bcf7f8be7db789374853b389d"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-disclosed-party",
+      "recipients": [
+        "participant:reviewer-a"
+      ],
+      "offered": {
+        "class": "disclosed_party",
+        "algorithm": "sha-256",
+        "value_hex": "6aa4084448569a8804d1b7a98acb2defffc6fa58244c52ed27047d4d7557c5e9"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-ciphertext-public",
+      "offered": {
+        "class": "ciphertext_public",
+        "algorithm": "sha-256",
+        "value_hex": "6aa4084448569a8804d1b7a98acb2defffc6fa58244c52ed27047d4d7557c5e9"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "ciphertext_public_requires_ciphertext"
+      }
+    }
+  ]
+}

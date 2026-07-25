@@ -1,0 +1,44 @@
+{
+  "name": "digest-class/neg-wire-value-not-64-hex",
+  "description": "value_hex is exactly 64 lowercase hex characters: a truncated value and an uppercase value both fail the wire check before any class logic",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_object",
+      "type_tag": "bpp-engram-v1",
+      "object": {
+        "participant_ref": "participant:alice",
+        "text": "call alice about the garden fence"
+      }
+    },
+    "required_class": "local_erasure_safe",
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+  },
+  "cases": [
+    {
+      "name": "short-hex",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:engram-42",
+        "value_hex": "adb08c756d29a31e1108b22c6c3177464179b3031dd18838239b17cd7e26"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_value_not_64_hex"
+      }
+    },
+    {
+      "name": "uppercase-hex",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:engram-42",
+        "value_hex": "ADB08C756D29A31E1108B22C6C3177464179B3031DD18838239B17CD7E2635C3"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_ref_value_not_64_hex"
+      }
+    }
+  ]
+}

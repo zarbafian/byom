@@ -1,6 +1,6 @@
 {
   "name": "privacy/allowed-read-with-record",
-  "description": "an allowed sensitive read releases plaintext only after its PrivacyAccessRecord commits to the access journal; the chain links each record to the previous digest (genesis link is null)",
+  "description": "an allowed sensitive read releases plaintext only after its PrivacyAccessRecord commits to the access journal; each record links to the previous record's scope_erasure_safe digest under the chain key, genesis is whole-member absence of the link, and the self-referential record_digest is excluded from the preimage",
   "input": {
     "records": [
       {
@@ -26,6 +26,12 @@
         "result_object_count": 2,
         "result_bytes": 412,
         "outcome": "allowed",
+        "dependency_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+        },
         "occurred_at": "2026-07-25T12:00:00Z"
       },
       {
@@ -51,6 +57,12 @@
         "result_object_count": 1,
         "result_bytes": 180,
         "outcome": "allowed",
+        "dependency_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
+        },
         "occurred_at": "2026-07-25T12:00:01Z"
       }
     ],
@@ -61,12 +73,22 @@
   "expected": {
     "records": [
       {
-        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000001\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":1,\"occurred_at\":\"2026-07-25T12:00:00Z\",\"operation\":\"engram_search\",\"outcome\":\"allowed\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":null},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"47d8915493a3716a82254320e74c75861f24303892d84189749e3e03909db176\"},\"recovery_epoch\":0,\"result_bytes\":412,\"result_object_count\":2,\"society_id\":\"soc-garden\"}",
-        "record_digest_hex": "5451896ae7c030ba64197795b07317dbb6da0c16892f723b55f2656acfb3cb0d"
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000001\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"dependency_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"scope_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":1,\"occurred_at\":\"2026-07-25T12:00:00Z\",\"operation\":\"engram_search\",\"outcome\":\"allowed\",\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"47d8915493a3716a82254320e74c75861f24303892d84189749e3e03909db176\"},\"recovery_epoch\":0,\"result_bytes\":412,\"result_object_count\":2,\"society_id\":\"soc-garden\"}",
+        "record_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "ee2d97a392a474f1d6dadaf16d5c7da1830733fa6bc6f7df19a9ba5f8e02c34a"
+        }
       },
       {
-        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000002\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":2,\"occurred_at\":\"2026-07-25T12:00:01Z\",\"operation\":\"engram_read\",\"outcome\":\"allowed\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"5451896ae7c030ba64197795b07317dbb6da0c16892f723b55f2656acfb3cb0d\"},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"da6a5a5c9bf6cb96d4ccbd659a3fe01480ba2a0d3649df66d8bda2a530690dc5\"},\"recovery_epoch\":0,\"result_bytes\":180,\"result_object_count\":1,\"society_id\":\"soc-garden\"}",
-        "record_digest_hex": "cd8e6751242463e4dd22659349d9a82df0c7cf69bc925d0076cf7e81cc71efb5"
+        "canonical": "{\"$domain\":\"bpp-privacy-access-record-v1\",\"access_event_id\":\"acc-01H0000000000000000000002\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"dependency_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"scope_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b\"},\"endpoint_incarnation\":\"inc-1\",\"internal_access_sequence\":2,\"occurred_at\":\"2026-07-25T12:00:01Z\",\"operation\":\"engram_read\",\"outcome\":\"allowed\",\"previous_access_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"scope_erasure_safe\",\"key_ref\":\"society-key:soc-garden/privacy-chain\",\"value_hex\":\"ee2d97a392a474f1d6dadaf16d5c7da1830733fa6bc6f7df19a9ba5f8e02c34a\"},\"purpose_ref\":\"purpose:endeavor-support\",\"query_or_scope_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/query-scope\",\"value_hex\":\"da6a5a5c9bf6cb96d4ccbd659a3fe01480ba2a0d3649df66d8bda2a530690dc5\"},\"recovery_epoch\":0,\"result_bytes\":180,\"result_object_count\":1,\"society_id\":\"soc-garden\"}",
+        "record_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/privacy-chain",
+          "value_hex": "5d49e1faba977b1164cdf9c01934e58018509f09f3b86adbd7fabceb38d704ab"
+        }
       }
     ],
     "release_permitted": true

@@ -1,0 +1,34 @@
+{
+  "name": "digest-class/scope-erasure-safe-positive",
+  "description": "scope_erasure_safe (D-R0-1): HMAC-SHA-256 over type-tagged canonical bytes under a protected per-scope key (here the per-Society idempotency-index key); destroying the scope key erases verifiability of the entire index or chain, never one object",
+  "input": {
+    "content": {
+      "kind": "erasable_index_object",
+      "type_tag": "bpp-idempotency-index-entry-v1",
+      "object": {
+        "society_id": "soc-garden",
+        "operation": "pledge_propose",
+        "idempotency_key": "idem-4711"
+      }
+    },
+    "required_class": "scope_erasure_safe",
+    "scope_secret_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+    "key_ref": "society-key:soc-garden/idempotency-index",
+    "offered": {
+      "class": "scope_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/idempotency-index",
+      "value_hex": "7b037cc0276eafad11cbd6b23fbe4f684d557ce971c203c09ab4c7d0a9f56400"
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "digest_ref": {
+      "class": "scope_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/idempotency-index",
+      "value_hex": "7b037cc0276eafad11cbd6b23fbe4f684d557ce971c203c09ab4c7d0a9f56400"
+    },
+    "canonical": "{\"$domain\":\"bpp-idempotency-index-entry-v1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_propose\",\"society_id\":\"soc-garden\"}"
+  }
+}

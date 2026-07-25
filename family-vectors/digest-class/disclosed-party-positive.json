@@ -1,6 +1,6 @@
 {
   "name": "digest-class/disclosed-party-positive",
-  "description": "disclosed_party: SHA-256 over exact bytes already disclosed to named recipients; always accompanied by the external-copy obligation",
+  "description": "disclosed_party: SHA-256 over exact bytes already disclosed to named recipients; always accompanied by the external-copy obligation; the offered ref is wire-validated and re-derived",
   "input": {
     "content": {
       "kind": "erasable_plaintext_bytes",
@@ -10,7 +10,12 @@
     "recipients": [
       "participant:reviewer-a",
       "akson-peer:endpoint-b"
-    ]
+    ],
+    "offered": {
+      "class": "disclosed_party",
+      "algorithm": "sha-256",
+      "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+    }
   },
   "expected": {
     "accepted": true,

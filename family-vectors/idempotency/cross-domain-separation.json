@@ -1,6 +1,6 @@
 {
   "name": "idempotency/cross-domain-separation",
-  "description": "the same logical subject digested under each project's domain: every digest differs -- divergence is intentional and non-substitutable",
+  "description": "the same underlying act rendered under each project's registry-valid domain: every digest differs -- divergence is intentional and non-substitutable",
   "input": {
     "derivations": [
       {
@@ -12,7 +12,7 @@
             "key_ref": "society-key:soc-garden/actor-binding",
             "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
           },
-          "operation": "pledge_open",
+          "operation": "pledge_propose",
           "endpoint_incarnation": "inc-1",
           "society_id": "soc-garden",
           "society_recovery_epoch": 0,
@@ -23,14 +23,15 @@
       },
       {
         "kind": "kcp-command-idempotency",
-        "schema_ref": "kcp/pledge_open@0",
+        "schema_ref": "https://kovee.example/kcp/v0/kcp-command.schema.json",
         "projection": {
-          "version": 0,
-          "authority_surface": "participant",
-          "op": "pledge_open",
+          "version": "0.1",
+          "authority_surface": "external_client",
+          "op": "contribution_append",
           "realm_id": "realm-1",
           "args": {
-            "society_id": "soc-garden"
+            "space_ref": "space:s-3",
+            "content": "pledge: water the garden"
           },
           "ext": {}
         }
@@ -38,19 +39,19 @@
       {
         "kind": "dev.kovee.typed-bytes-digest.v1",
         "domain": "artifact-bytes",
-        "media_or_schema_ref": "application/json",
-        "bytes_utf8": "{\"op\":\"pledge_open\",\"society_id\":\"soc-garden\"}"
+        "media_or_schema_ref": "text/plain",
+        "bytes_utf8": "pledge: water the garden"
       },
       {
         "kind": "akson-dsse-pae",
         "payload_type": "application/vnd.akson.test+json",
-        "payload_utf8": "{\"op\":\"pledge_open\",\"society_id\":\"soc-garden\"}"
+        "payload_utf8": "{\"note\":\"pledge: water the garden\"}"
       },
       {
         "kind": "byom-tagged-structural",
         "type_tag": "bpp-schema-descriptor-v1",
         "object": {
-          "op": "pledge_open",
+          "op": "pledge_propose",
           "society_id": "soc-garden"
         }
       }
@@ -59,31 +60,31 @@
   "expected": {
     "results": [
       {
-        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_open\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
+        "canonical": "{\"$domain\":\"bpp-idempotency-domain-v1\",\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_ref\":\"society-key:soc-garden/actor-binding\",\"value_hex\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\"},\"endpoint_incarnation\":\"inc-1\",\"idempotency_key\":\"idem-4711\",\"operation\":\"pledge_propose\",\"society_id\":\"soc-garden\",\"society_recovery_epoch\":0}",
         "digest_ref": {
-          "class": "local_erasure_safe",
+          "class": "scope_erasure_safe",
           "algorithm": "hmac-sha-256",
           "key_ref": "society-key:soc-garden/idempotency-index",
-          "value_hex": "4088084261c41087c8d3c9a74d21862bdce4105649604f4761c55fd98907cf47"
+          "value_hex": "203f685057135b4f1c548af6e8ac8bc6ba97420f3b2c94e93a263f0e3cfc61d9"
         }
       },
       {
-        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"society_id\":\"soc-garden\"},\"authority_surface\":\"participant\",\"ext\":{},\"op\":\"pledge_open\",\"realm_id\":\"realm-1\",\"version\":0},\"protocol_major\":0,\"schema_ref\":\"kcp/pledge_open@0\"}",
-        "sha256_hex": "7cbefaf03db9ddcbe062d57ff0bf695ca2c55db97440a3486b026adc60601d58"
+        "canonical": "{\"$domain\":\"dev.kovee.canonical-object-digest.v1\",\"object_kind\":\"kcp-command-idempotency\",\"projection\":{\"args\":{\"content\":\"pledge: water the garden\",\"space_ref\":\"space:s-3\"},\"authority_surface\":\"external_client\",\"ext\":{},\"op\":\"contribution_append\",\"realm_id\":\"realm-1\",\"version\":\"0.1\"},\"protocol_major\":0,\"schema_ref\":\"https://kovee.example/kcp/v0/kcp-command.schema.json\"}",
+        "sha256_hex": "7f2eb98078b2f6c091374513c26b290829da6f0be0374167aea2ceb5fdb7eb9a"
       },
       {
-        "digest_hex": "d4f578c5690083535d0bbdffa5e54c628232eca090792de3e2c262e96f42ccc2"
+        "digest_hex": "ce73bcb6d3c0023b9b6ca9b7beb7ae1b3aed6d459a2ec243069287224de36f07"
       },
       {
-        "pae_utf8": "DSSEv1 31 application/vnd.akson.test+json 46 {\"op\":\"pledge_open\",\"society_id\":\"soc-garden\"}",
-        "sha256_hex": "d3e523c72847ea5974d24db9a7cb9281c1a834b3a907cc396980554aa96e62c1"
+        "pae_utf8": "DSSEv1 31 application/vnd.akson.test+json 35 {\"note\":\"pledge: water the garden\"}",
+        "sha256_hex": "4a881008f6e2c8325a3ad79e11696c36ba3a828834f8f4167de2860938b2f6f9"
       },
       {
-        "canonical": "{\"$domain\":\"bpp-schema-descriptor-v1\",\"op\":\"pledge_open\",\"society_id\":\"soc-garden\"}",
+        "canonical": "{\"$domain\":\"bpp-schema-descriptor-v1\",\"op\":\"pledge_propose\",\"society_id\":\"soc-garden\"}",
         "digest_ref": {
           "class": "structural_public",
           "algorithm": "sha-256",
-          "value_hex": "6b0b4ed7c4a4fa089c07fd4d52deed6ee92be7e63319e206dbff273911d31183"
+          "value_hex": "a30b329de792a1733cbed4c6f223f77c2dfb75ddc200f0b87dd81ff267c907b9"
         }
       }
     ],

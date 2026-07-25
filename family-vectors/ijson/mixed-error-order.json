@@ -1,0 +1,11 @@
+{
+  "name": "ijson/mixed-error-order",
+  "description": "order-3 classes surface in token order: the duplicate member precedes the later unsafe number, so `duplicate` is the reported first error in both rederivers",
+  "input": {
+    "json_utf8": "{\"a\":1,\"a\":2,\"n\":1e400}"
+  },
+  "expected": {
+    "valid": false,
+    "error": "duplicate"
+  }
+}

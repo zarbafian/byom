@@ -1,0 +1,25 @@
+{
+  "name": "digest-class/neg-typed-bytes-raw-preimage",
+  "description": "an HMAC over raw bytes without the typed-bytes domain frame never verifies: the value is exactly the un-framed raw-bytes digest, so the rejection isolates the missing domain separation",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "call alice about the garden fence",
+      "byte_domain": "engram-bytes",
+      "media_type": "text/plain"
+    },
+    "required_class": "local_erasure_safe",
+    "object_secret_hex": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+    "key_ref": "society-key:soc-garden/object:engram-77",
+    "offered": {
+      "class": "local_erasure_safe",
+      "algorithm": "hmac-sha-256",
+      "key_ref": "society-key:soc-garden/object:engram-77",
+      "value_hex": "2cc3fe3ffbde9a0b1c8cc0d8cb47c101af9e7ef7227e6defddc6bfb90e82303c"
+    }
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "digest_value_mismatch"
+  }
+}

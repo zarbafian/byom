@@ -2,7 +2,7 @@
   "name": "ijson/valid-request",
   "description": "a typical BPP mutation request envelope is accepted",
   "input": {
-    "json_utf8": "{\"version\":0,\"op\":\"pledge_open\",\"meta\":{\"request_id\":\"req-01H0000000000000000000001\",\"idempotency_key\":\"idem-4711\",\"expected_endpoint_incarnation\":\"inc-1\",\"expected_recovery_epoch\":0},\"pledge\":{\"endeavor_ref\":\"endeavor:e-1\",\"title\":\"water the garden\"}}"
+    "json_utf8": "{\"version\":0,\"op\":\"pledge_propose\",\"meta\":{\"request_id\":\"req-01H0000000000000000000001\",\"idempotency_key\":\"idem-4711\",\"expected_endpoint_incarnation\":\"inc-1\",\"expected_recovery_epoch\":0},\"pledge\":{\"endeavor_ref\":\"endeavor:e-1\",\"title\":\"water the garden\"}}"
   },
   "expected": {
     "valid": true

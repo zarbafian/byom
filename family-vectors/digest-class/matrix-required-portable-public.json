@@ -1,0 +1,85 @@
+{
+  "name": "digest-class/matrix-required-portable-public",
+  "description": "forbidden-substitution matrix row for required class portable_public: every other class offered with an arithmetically correct value is rejected (construction violations report before the generic mismatch); classes never substitute even where value spaces coincide",
+  "input": {
+    "content": {
+      "kind": "erasable_plaintext_bytes",
+      "bytes_utf8": "meeting notes: discussed the budget ceiling with bob",
+      "byte_domain": "note-bytes",
+      "media_type": "text/plain"
+    },
+    "required_class": "portable_public",
+    "disclosure": {
+      "durable_identifier_accepted": true
+    }
+  },
+  "cases": [
+    {
+      "name": "offered-structural-public",
+      "offered": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "2e757cb56fe79931af92fcefc1da59915e8e4d51b6b36b5168410f8965bae91c"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "public_hash_over_erasable_content_forbidden"
+      }
+    },
+    {
+      "name": "offered-local-erasure-safe",
+      "object_secret_hex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "offered": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/object:test-1",
+        "value_hex": "558f6ecb00868f9cedc61b3dafc88f3409e064821eeb3bd3532ff715849dce4a"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-scope-erasure-safe",
+      "scope_secret_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "offered": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-garden/idempotency-index",
+        "value_hex": "82112f231b6fbcbe5bc759e55c646df407ed006b830c6dbdfd9137fd17f5187b"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-disclosed-party",
+      "recipients": [
+        "participant:reviewer-a"
+      ],
+      "offered": {
+        "class": "disclosed_party",
+        "algorithm": "sha-256",
+        "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "digest_class_mismatch"
+      }
+    },
+    {
+      "name": "offered-ciphertext-public",
+      "offered": {
+        "class": "ciphertext_public",
+        "algorithm": "sha-256",
+        "value_hex": "dddb58442a7fa8354a68064d4779f00555943547d52f00b0d15946f08569e541"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "ciphertext_public_requires_ciphertext"
+      }
+    }
+  ]
+}

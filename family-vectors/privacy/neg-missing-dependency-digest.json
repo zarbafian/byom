@@ -1,0 +1,40 @@
+{
+  "name": "privacy/neg-missing-dependency-digest",
+  "description": "the PrivacyAccessRecord preimage field list is exact: a record without the required dependency_digest member fails closed and no chain digest is derived",
+  "input": {
+    "records": [
+      {
+        "society_id": "soc-garden",
+        "internal_access_sequence": 3,
+        "access_event_id": "acc-01H0000000000000000000003",
+        "endpoint_incarnation": "inc-1",
+        "recovery_epoch": 0,
+        "actor_binding_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/actor-binding",
+          "value_hex": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
+        },
+        "operation": "engram_read",
+        "purpose_ref": "purpose:endeavor-support",
+        "query_or_scope_digest": {
+          "class": "local_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-key:soc-garden/query-scope",
+          "value_hex": "da6a5a5c9bf6cb96d4ccbd659a3fe01480ba2a0d3649df66d8bda2a530690dc5"
+        },
+        "result_object_count": 1,
+        "result_bytes": 180,
+        "outcome": "allowed",
+        "occurred_at": "2026-07-25T15:00:00Z"
+      }
+    ],
+    "chain_secret_hex": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+    "key_ref": "society-key:soc-garden/privacy-chain",
+    "journal_committed": true
+  },
+  "expected": {
+    "chain_valid": false,
+    "error": "privacy_record_missing_dependency_digest"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "ijson/response-request-cap-inapplicable",
+  "description": "a roughly 300 KiB body would be oversize as a request but is accepted as a response: the 256 KiB cap is request-context only",
+  "input": {
+    "context": "response",
+    "json_synth": {
+      "prefix": "[\"",
+      "repeat": "a",
+      "count": 300000,
+      "suffix": "\"]"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}
