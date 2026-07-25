@@ -10,4 +10,7 @@ python3 conformance/run.py
 echo "== family vectors (independent rederiver)"
 python3 family-vectors/xcheck.py
 
+echo "== family vectors (TypeScript independent rederiver)"
+node family-vectors/tscheck/check.mjs
+
 echo "run-checks: OK"

@@ -612,6 +612,8 @@ def main() -> int:
     per_family: dict[str, int] = {}
     for path in sorted(root.rglob("*.json")):
         family = path.relative_to(root).parts[0]
+        if family == "tscheck":  # the TypeScript rederiver's own tree (package.json), not a family
+            continue
         checker = CHECKERS.get(family)
         if checker is None:
             fail(str(path), f"no checker registered for family {family!r}")

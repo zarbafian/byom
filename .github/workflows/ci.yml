@@ -26,3 +26,14 @@ jobs:
       # Stdlib-only independent rederiver; must fail on any mismatch or an
       # empty tree.
       - run: python3 family-vectors/xcheck.py
+
+  family-vectors-ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Dependency-free independent TypeScript-family rederiver (JSDoc-typed
+      # .mjs); must fail on any mismatch or an empty tree.
+      - run: node family-vectors/tscheck/check.mjs
