@@ -1,0 +1,19 @@
+{
+  "name": "envelope/protocol-info-result-valid",
+  "description": "protocol_info result payload with the §14.9 initial limits at revision 0",
+  "input": {
+    "schema": "protocol-info-result",
+    "value": {
+      "versions": ["0.1", "0.2"],
+      "limits": {
+        "request_bytes_max": 262144,
+        "response_bytes_max": 1048576,
+        "identifier_bytes_max": 128,
+        "mutation_list_items_max": 256,
+        "events_page_items_max": 512
+      },
+      "limits_revision": 0
+    }
+  },
+  "expected": { "valid": true }
+}

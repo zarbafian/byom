@@ -1,0 +1,10 @@
+{
+  "name": "envelope/request-invalid-missing-meta",
+  "description": "mutation envelope without MutationMeta; every mutation requires request id and idempotency key (§14.2)",
+  "input": {
+    "schema": "bpp-request",
+    "ref": "#/$defs/mutationRequest",
+    "value": { "version": "0.2", "op": "society_prepare" }
+  },
+  "expected": { "valid": false, "reason": "meta is required on a mutation" }
+}

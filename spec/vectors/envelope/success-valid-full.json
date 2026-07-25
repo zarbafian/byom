@@ -1,0 +1,14 @@
+{
+  "name": "envelope/success-valid-full",
+  "description": "success envelope with result, new revision, and opaque continuation token",
+  "input": {
+    "schema": "bpp-success",
+    "value": {
+      "outcome": "ok",
+      "result": { "society_id": "soc-0001" },
+      "revision": 3,
+      "source_cursor": "ct.eyJvcGFxdWUiOnRydWV9.fixture"
+    }
+  },
+  "expected": { "valid": true }
+}

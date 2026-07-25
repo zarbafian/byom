@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/feature-info-request.schema.json",
+  "title": "BPP feature_info request (DESIGN.md §14.6 negotiation family): argument-free feature-bundle read",
+  "description": "Available on each advertised surface to a bounded pre-auth client or any actor valid for that surface; closure is endpoint/version only, fenced by parser and rate limits (§14.7). feature_info is a read: meta is absent by construction. DESIGN.md defines no request arguments for feature_info; this schema pins the envelope only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "op"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "op": { "const": "feature_info" }
+  }
+}

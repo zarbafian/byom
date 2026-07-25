@@ -1,0 +1,13 @@
+{
+  "name": "envelope/hello-result-valid",
+  "description": "hello result payload: supported minors, bound surface, endpoint incarnation",
+  "input": {
+    "schema": "hello-result",
+    "value": {
+      "versions": ["0.1", "0.2"],
+      "surface": "participant",
+      "endpoint_incarnation": "inc-0001"
+    }
+  },
+  "expected": { "valid": true }
+}

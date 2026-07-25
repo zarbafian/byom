@@ -1,0 +1,9 @@
+{
+  "name": "envelope/request-invalid-op-shape",
+  "description": "op tag violating the operation-id shape (uppercase, hyphen, punctuation) fails closed",
+  "input": {
+    "schema": "bpp-request",
+    "value": { "version": "0.2", "op": "Society-Show!" }
+  },
+  "expected": { "valid": false, "reason": "op does not match ^[a-z][a-z0-9_]{0,127}$" }
+}

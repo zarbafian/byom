@@ -1,0 +1,24 @@
+{
+  "name": "envelope/digest-idempotency-domain-max-epoch",
+  "description": "society_recovery_epoch at the I-JSON safe-integer maximum 2^53-1; integers canonicalize without exponent or padding",
+  "input": {
+    "domain": "bpp-idempotency-domain-v1",
+    "value": {
+      "actor_binding_digest": {
+        "algorithm": "hmac-sha-256",
+        "class": "local_erasure_safe",
+        "key_id": "kb-2026-002",
+        "value": "b9e14d16434c3230db8cc166206f20d390932d2dbb8e9a3dc7e2cae2782be06f"
+      },
+      "endpoint_incarnation": "inc-0002",
+      "idempotency_key": "idem-0002",
+      "operation": "participant_admit",
+      "society_id": "soc-0002",
+      "society_recovery_epoch": 9007199254740991
+    }
+  },
+  "expected": {
+    "canonical": "[\"bpp-idempotency-domain-v1\",{\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_id\":\"kb-2026-002\",\"value\":\"b9e14d16434c3230db8cc166206f20d390932d2dbb8e9a3dc7e2cae2782be06f\"},\"endpoint_incarnation\":\"inc-0002\",\"idempotency_key\":\"idem-0002\",\"operation\":\"participant_admit\",\"society_id\":\"soc-0002\",\"society_recovery_epoch\":9007199254740991}]",
+    "sha256_hex": "d667dbbb6b0d3fe18b0f70f3181adcdbfaea8a84c03bda13c4169723cd02434e"
+  }
+}

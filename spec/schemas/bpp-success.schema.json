@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/bpp-success.schema.json",
+  "title": "BPP success envelope (DESIGN.md §14.2): outcome \"ok\" plus operation result",
+  "description": "result is the operation-specific payload; each operation's closed result schema (e.g. hello-result) validates it. revision is the new revision of the mutated object where the operation yields one; source_cursor is an opaque, scope- and audience-bound continuation token (§14.4). Responses are limited to 1 MiB (§14.9), enforced in code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "result"],
+  "properties": {
+    "outcome": { "const": "ok" },
+    "result": true,
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "source_cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Opaque authenticated continuation token; never interpreted by clients."
+    }
+  }
+}

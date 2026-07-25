@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/hello-request.schema.json",
+  "title": "BPP hello request (DESIGN.md §14.6 negotiation family): argument-free liveness and version probe",
+  "description": "Available on each advertised surface to a bounded pre-auth client or any actor valid for that surface; closure is endpoint/version only, fenced by parser and rate limits (§14.7). hello is a read: meta is absent by construction (closed schema). DESIGN.md defines no request arguments for hello; this schema pins the envelope only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "op"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "op": { "const": "hello" }
+  }
+}

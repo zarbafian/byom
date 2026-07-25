@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/bpp-mutation-meta.schema.json",
+  "title": "BPP MutationMeta (DESIGN.md §14.2): idempotent-mutation metadata carried in Request.meta",
+  "description": "Required on every mutation. expected_revision is required by update operations (the last observed revision); causation_event_ref and correlation_ref thread provenance into the event ledger (§14.4). Field-level pairing of operation and meta (which ops are mutations, which are updates) is a registry rule enforced in code, not expressible here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "idempotency_key",
+    "expected_endpoint_incarnation",
+    "expected_recovery_epoch"
+  ],
+  "properties": {
+    "request_id": { "$ref": "#/$defs/identifier" },
+    "idempotency_key": { "$ref": "#/$defs/identifier" },
+    "expected_endpoint_incarnation": { "$ref": "#/$defs/identifier" },
+    "expected_recovery_epoch": { "$ref": "#/$defs/safeNonNegativeInteger" },
+    "expected_revision": { "$ref": "#/$defs/safeNonNegativeInteger" },
+    "causation_event_ref": { "$ref": "#/$defs/identifier" },
+    "correlation_ref": { "$ref": "#/$defs/identifier" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    }
+  }
+}

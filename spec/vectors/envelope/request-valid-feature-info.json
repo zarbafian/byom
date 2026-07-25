@@ -1,0 +1,9 @@
+{
+  "name": "envelope/request-valid-feature-info",
+  "description": "minimal feature_info request against the closed per-operation schema",
+  "input": {
+    "schema": "feature-info-request",
+    "value": { "version": "0.2", "op": "feature_info" }
+  },
+  "expected": { "valid": true }
+}

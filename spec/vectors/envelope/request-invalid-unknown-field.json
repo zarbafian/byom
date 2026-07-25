@@ -1,0 +1,9 @@
+{
+  "name": "envelope/request-invalid-unknown-field",
+  "description": "unknown top-level field on a closed per-operation request schema fails closed",
+  "input": {
+    "schema": "hello-request",
+    "value": { "version": "0.2", "op": "hello", "surface": "admin" }
+  },
+  "expected": { "valid": false, "reason": "additionalProperties false rejects surface" }
+}

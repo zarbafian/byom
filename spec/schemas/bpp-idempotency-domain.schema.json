@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/bpp-idempotency-domain.schema.json",
+  "title": "BPP IdempotencyDomain (DESIGN.md §14.2): the server's canonical, inspectable idempotency uniqueness domain",
+  "description": "The server recomputes this domain for every mutation and persists its digest with every idempotency row: idempotency_domain_digest = SHA-256(JCS([\"bpp-idempotency-domain-v1\", IdempotencyDomain])) carried as a typed DigestRef (see spec/README.md for the type-tag construction). actor_binding_digest covers the authenticated principal/Participant and binding epoch supplied by the channel, never a caller-selected identity. A request addressed to an old incarnation or Society epoch is rejected, not looked up in the new domain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "actor_binding_digest",
+    "operation",
+    "endpoint_incarnation",
+    "society_id",
+    "society_recovery_epoch",
+    "idempotency_key"
+  ],
+  "properties": {
+    "actor_binding_digest": { "$ref": "#/$defs/digestRef" },
+    "operation": { "$ref": "#/$defs/operationId" },
+    "endpoint_incarnation": { "$ref": "#/$defs/identifier" },
+    "society_id": { "$ref": "#/$defs/identifier" },
+    "society_recovery_epoch": { "$ref": "#/$defs/safeNonNegativeInteger" },
+    "idempotency_key": { "$ref": "#/$defs/identifier" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,127}$",
+      "description": "Versioned BPP operation id from the frozen bundle registry (§14.6)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "algorithm", "value"],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": { "enum": ["sha-256", "hmac-sha-256"] },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    }
+  }
+}

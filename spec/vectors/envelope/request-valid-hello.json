@@ -1,0 +1,9 @@
+{
+  "name": "envelope/request-valid-hello",
+  "description": "minimal hello request against the closed per-operation schema",
+  "input": {
+    "schema": "hello-request",
+    "value": { "version": "0.2", "op": "hello" }
+  },
+  "expected": { "valid": true }
+}

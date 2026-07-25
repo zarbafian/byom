@@ -1,0 +1,9 @@
+{
+  "name": "envelope/request-valid-generic-read",
+  "description": "argument-free read envelope against the generic bpp-request shape; reads carry no meta",
+  "input": {
+    "schema": "bpp-request",
+    "value": { "version": "0.2", "op": "hello" }
+  },
+  "expected": { "valid": true }
+}

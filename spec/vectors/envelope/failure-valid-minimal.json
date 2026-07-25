@@ -1,0 +1,12 @@
+{
+  "name": "envelope/failure-valid-minimal",
+  "description": "failure envelope with only the required kind; non-enumerating forbidden discloses nothing",
+  "input": {
+    "schema": "bpp-failure",
+    "value": {
+      "outcome": "problem",
+      "problem": { "kind": "forbidden" }
+    }
+  },
+  "expected": { "valid": true }
+}

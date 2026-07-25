@@ -1,0 +1,16 @@
+{
+  "name": "envelope/feature-info-result-valid",
+  "description": "feature_info result payload advertising the negotiation family of one frozen bundle",
+  "input": {
+    "schema": "feature-info-result",
+    "value": {
+      "features": [
+        {
+          "feature": "b0.1-negotiation",
+          "operations": ["hello", "protocol_info", "feature_info"]
+        }
+      ]
+    }
+  },
+  "expected": { "valid": true }
+}

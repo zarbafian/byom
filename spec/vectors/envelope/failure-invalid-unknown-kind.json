@@ -1,0 +1,12 @@
+{
+  "name": "envelope/failure-invalid-unknown-kind",
+  "description": "problem kind outside the closed §14.9 enum fails closed; new kinds are a spec revision",
+  "input": {
+    "schema": "bpp-failure",
+    "value": {
+      "outcome": "problem",
+      "problem": { "kind": "novel_problem" }
+    }
+  },
+  "expected": { "valid": false, "reason": "kind not in the closed problem-kind enum" }
+}

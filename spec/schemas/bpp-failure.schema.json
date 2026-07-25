@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/bpp-failure.schema.json",
+  "title": "BPP failure envelope (DESIGN.md §14.2, §14.9): outcome \"problem\" plus RFC 9457 problem details",
+  "description": "problem carries the RFC 9457 standard members plus the required Byom extension member kind, drawn from the closed §14.9 problem-kind enum for this bundle (new kinds are a spec revision; unknown safety-relevant values fail closed). RFC 9457 permits arbitrary extension members; BPP deliberately closes the object — additional extensions are a schema revision. Problems never disclose hidden object, participant, peer, path, policy, or membership existence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "problem"],
+  "properties": {
+    "outcome": { "const": "problem" },
+    "problem": { "$ref": "#/$defs/problem" }
+  },
+  "$defs": {
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/problemKind" },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "RFC 9457 type URI; defaults to \"about:blank\" when absent."
+        },
+        "title": { "type": "string", "maxLength": 4096 },
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "detail": { "type": "string", "maxLength": 65536 },
+        "instance": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "problemKind": {
+      "enum": [
+        "invalid",
+        "unsupported_version",
+        "feature_unavailable",
+        "forbidden_surface",
+        "forbidden",
+        "not_found",
+        "stale_revision",
+        "stale_binding",
+        "stale_assembly_epoch",
+        "stale_lease",
+        "idempotency_mismatch",
+        "position_ineligible",
+        "decision_incomplete",
+        "independence_conflict",
+        "authority_widening",
+        "mandate_held",
+        "admission_required",
+        "classification_unmapped",
+        "policy_conflict",
+        "policy_overflow",
+        "budget_exceeded",
+        "effect_ambiguous",
+        "authority_witness_unknown",
+        "endpoint_sealed",
+        "cursor_expired",
+        "unavailable",
+        "formation_requires_participation",
+        "external_command_not_terminalizable",
+        "internal"
+      ],
+      "description": "Stable problem kinds (§14.9), closed for this bundle."
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "envelope/mutation-meta-valid-minimal",
+  "description": "MutationMeta with only the four required fields",
+  "input": {
+    "schema": "bpp-mutation-meta",
+    "value": {
+      "request_id": "req-0003",
+      "idempotency_key": "idem-0003",
+      "expected_endpoint_incarnation": "inc-0001",
+      "expected_recovery_epoch": 0
+    }
+  },
+  "expected": { "valid": true }
+}

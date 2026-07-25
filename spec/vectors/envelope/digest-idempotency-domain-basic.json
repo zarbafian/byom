@@ -1,0 +1,24 @@
+{
+  "name": "envelope/digest-idempotency-domain-basic",
+  "description": "idempotency_domain_digest derivation: SHA-256 over JCS([\"bpp-idempotency-domain-v1\", IdempotencyDomain])",
+  "input": {
+    "domain": "bpp-idempotency-domain-v1",
+    "value": {
+      "actor_binding_digest": {
+        "algorithm": "hmac-sha-256",
+        "class": "local_erasure_safe",
+        "key_id": "kb-2026-001",
+        "value": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480"
+      },
+      "endpoint_incarnation": "inc-0001",
+      "idempotency_key": "idem-0001",
+      "operation": "society_prepare",
+      "society_id": "soc-0001",
+      "society_recovery_epoch": 0
+    }
+  },
+  "expected": {
+    "canonical": "[\"bpp-idempotency-domain-v1\",{\"actor_binding_digest\":{\"algorithm\":\"hmac-sha-256\",\"class\":\"local_erasure_safe\",\"key_id\":\"kb-2026-001\",\"value\":\"74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480\"},\"endpoint_incarnation\":\"inc-0001\",\"idempotency_key\":\"idem-0001\",\"operation\":\"society_prepare\",\"society_id\":\"soc-0001\",\"society_recovery_epoch\":0}]",
+    "sha256_hex": "15108a652165b056e11c541a88892073973e1d126292a959f186adb8fba88072"
+  }
+}

@@ -1,0 +1,100 @@
+# ADR-0003: Model checking and conformance oracle
+
+Status: proposed
+Date: 2026-07-25
+Plan id: B-ADR-4
+
+## Context
+
+DESIGN.md §14.8 closes every state machine (an unlisted transition is
+invalid) and requires the critical Mandate, Pledge, Episode, ActIntent,
+Assembly, and budget machines to be model-checked for invariant
+preservation, dead transitions, replay, and crash at every commit and
+external-call boundary — and makes the machine-readable descriptors and
+model checks, not daemon behavior, decide conformance. The B0.1 sheet lists
+the concrete models: MembershipOffer/Standing + OnboardingActivationOffer,
+Pledge (13 states including `disputed`), ActivityStream/Episode lease,
+ActIntent/permit, Mandate chain (never-widening derivation), budget
+conservation (`ceiling = remaining + reserved + committed + uncertain +
+delegated_to_children`), and the authority journal — each with crash and
+replay vectors and a proof README.
+
+The sibling akson project already runs this pattern end to end
+(`akson/proof/`): TLC exhaustively checks each spec, Apalache discharges
+inductive proofs where TLC's run-length bound bites, `negative-checks.sh`
+mutations prove the harness is not vacuous, and a `conformance/` workspace
+member ties the implementation's pure transition functions to the models in
+plain `cargo test`. Evaluated alternatives: Alloy (weaker
+crash/interleaving story for this shape of machine), P (would couple the
+spec to one implementation runtime), and hand-written proofs (not
+mechanically re-checkable in CI). Akson's pattern is proven in-family and
+its tooling costs are known.
+
+## Decision (proposed)
+
+- **TLA+** is the modeling language. Each B0.1 machine gets one spec plus
+  TLC config under `spec/models/`, exploring crashes at every commit and
+  external-call boundary, message replay, and adversarial interleaving;
+  Apalache inductive proofs lift bound-sensitive invariants (budget
+  conservation, never-widening Mandate derivation) beyond TLC's run length
+  where feasible. Negative checks (deliberate mutations that must yield
+  counterexamples) guard against a vacuous harness, mirroring akson's
+  `negative-checks.sh`.
+- An **in-workspace conformance oracle** ties models to code: a workspace
+  member (`cargo test -p bpp-spec` reaches it, per the B0.1 sheet's
+  descriptor-parity gate) asserts, for every (state, event) pair, that the
+  implementation's pure transition functions equal the TLA+ transition
+  relations, and that the machine-readable transition descriptors in
+  `spec/descriptors/` agree with both. A change to either side that forgets
+  the other fails plain workspace tests — no Java or model-checker install
+  needed on that path.
+- Akson's **honesty note is adopted as a normative requirement**, not
+  prose: a hand-transcribed oracle catches **code drift** (an implementation
+  transition contradicting the transcribed relation fails the suite) but not
+  **model-only drift** — editing a `.tla` action and nothing else does not
+  fail conformance, because the transcription is a third, independent copy.
+  Therefore Byom **generates the oracle table from the model where
+  feasible** (the descriptor registry is machine-readable precisely so the
+  source→target relation can be emitted, compared, or generated rather than
+  re-typed); wherever generation is not yet feasible, the proof README must
+  say so and name the drift that remains uncaught.
+- **Every proof README states**, per model: the **projection** (which
+  implementation state is abstracted away and why that is sound), the
+  **refinement boundary** (which code artifacts are claimed to refine the
+  model, and where the claim stops), the **fairness assumptions** behind any
+  liveness claim (safety claims assume none), and the **bounded-state
+  coverage** (exact constants/bounds TLC explored, and which invariants are
+  additionally inductive and therefore hold for any run length).
+
+## Criteria
+
+Moves to `accepted` when, within B0.1:
+
+- every machine listed in the B0.1 sheet has a spec, a TLC config that
+  completes with zero errors in CI, and crash + replay vectors;
+- each model's proof README contains all four required statements
+  (projection, refinement boundary, fairness, coverage);
+- the negative-check suite produces a counterexample for every mutation;
+- the conformance oracle covers every (state, event) pair of every modeled
+  machine and runs in the default workspace test invocation; for at least
+  one machine the oracle table is generated from the model/descriptors, and
+  every hand-transcribed remainder is flagged in its proof README;
+- descriptor parity holds: descriptors ↔ registry ↔ modeled transitions.
+
+## Consequences
+
+- Reuses akson's known-cost toolchain (TLC, Apalache, mutation checks);
+  reviewers can read both proof trees the same way.
+- The spec's closed-transition rule becomes mechanically enforceable: a
+  descriptor row with no model transition, or vice versa, is a CI failure,
+  not a review catch.
+- Honest limits are recorded where they bind: conformance guarantees "code
+  cannot silently diverge from the transcribed/generated relation"; it does
+  not guarantee the model matches the English design — that remains review,
+  which the proof READMEs must not overstate.
+- Generating oracle tables from models adds build machinery, accepted to
+  shrink the third-copy problem that akson documented (the drift class that
+  actually bit them).
+- Model checking joins the bundle-freeze gate: a frozen B0.1 cannot ship
+  with a red model, and later machine changes require re-checking before any
+  new bundle freeze.

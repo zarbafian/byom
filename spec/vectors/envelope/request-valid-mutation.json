@@ -1,0 +1,20 @@
+{
+  "name": "envelope/request-valid-mutation",
+  "description": "mutation envelope with required MutationMeta against bpp-request #/$defs/mutationRequest",
+  "input": {
+    "schema": "bpp-request",
+    "ref": "#/$defs/mutationRequest",
+    "value": {
+      "version": "0.2",
+      "op": "society_prepare",
+      "meta": {
+        "request_id": "req-0001",
+        "idempotency_key": "idem-0001",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "correlation_ref": "corr-0001"
+      }
+    }
+  },
+  "expected": { "valid": true }
+}

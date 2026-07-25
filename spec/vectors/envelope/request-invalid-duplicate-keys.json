@@ -1,0 +1,8 @@
+{
+  "name": "envelope/request-invalid-duplicate-keys",
+  "description": "duplicate op key in the raw bytes; strict I-JSON acceptance rejects before any schema sees the value (§14.2)",
+  "input": {
+    "raw": "{\"version\":\"0.2\",\"op\":\"hello\",\"op\":\"society_dissolve\"}"
+  },
+  "expected": { "valid": false, "reason": "duplicate object key" }
+}

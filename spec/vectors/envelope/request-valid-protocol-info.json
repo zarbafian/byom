@@ -1,0 +1,9 @@
+{
+  "name": "envelope/request-valid-protocol-info",
+  "description": "minimal protocol_info request against the closed per-operation schema",
+  "input": {
+    "schema": "protocol-info-request",
+    "value": { "version": "0.2", "op": "protocol_info" }
+  },
+  "expected": { "valid": true }
+}

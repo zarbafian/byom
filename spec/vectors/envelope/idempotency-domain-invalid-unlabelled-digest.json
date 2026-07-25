@@ -1,0 +1,16 @@
+{
+  "name": "envelope/idempotency-domain-invalid-unlabelled-digest",
+  "description": "actor_binding_digest as a bare hex string; every digest field is a typed DigestRef, never an unlabelled hash (§14.2)",
+  "input": {
+    "schema": "bpp-idempotency-domain",
+    "value": {
+      "actor_binding_digest": "74a56a64e492411179d2cb1cd2911ba50087aae13ed9a8a758f50aed147d0480",
+      "operation": "society_prepare",
+      "endpoint_incarnation": "inc-0001",
+      "society_id": "soc-0001",
+      "society_recovery_epoch": 0,
+      "idempotency_key": "idem-0001"
+    }
+  },
+  "expected": { "valid": false, "reason": "digest fields must be typed DigestRef objects" }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "envelope/mutation-meta-invalid-oversized-request-id",
+  "description": "request_id of 129 bytes exceeds the 128-byte identifier ceiling (§14.9)",
+  "input": {
+    "schema": "bpp-mutation-meta",
+    "value": {
+      "request_id": "req-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "idempotency_key": "idem-0004",
+      "expected_endpoint_incarnation": "inc-0001",
+      "expected_recovery_epoch": 0
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "identifier longer than 128 bytes"
+  }
+}

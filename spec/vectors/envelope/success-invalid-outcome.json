@@ -1,0 +1,9 @@
+{
+  "name": "envelope/success-invalid-outcome",
+  "description": "outcome tag is an exact const; the casing variant \"OK\" fails closed",
+  "input": {
+    "schema": "bpp-success",
+    "value": { "outcome": "OK", "result": {} }
+  },
+  "expected": { "valid": false, "reason": "outcome must be the exact string ok" }
+}

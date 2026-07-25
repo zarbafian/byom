@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/hello-result.schema.json",
+  "title": "BPP hello result (DESIGN.md §14.1, §14.5): server version advertisement for negotiation",
+  "description": "The Success.result payload for op hello. versions lists the server's supported protocol minor versions so implementations can negotiate the highest common minor (§14.1); surface names the one §14.5 surface this channel is bound to; endpoint_incarnation identifies the endpoint (the hello closure is endpoint/version only, §14.7). DESIGN.md §14 does not enumerate these result fields; they are the minimal design-derived set and freeze with the bundle registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["versions", "surface", "endpoint_incarnation"],
+  "properties": {
+    "versions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+      }
+    },
+    "surface": {
+      "enum": [
+        "governance",
+        "candidate",
+        "participant",
+        "runtime",
+        "projection",
+        "admin"
+      ]
+    },
+    "endpoint_incarnation": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$"
+    }
+  }
+}

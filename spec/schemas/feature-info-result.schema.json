@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/feature-info-result.schema.json",
+  "title": "BPP feature_info result (DESIGN.md §14.1): advertised explicit feature bundles",
+  "description": "The Success.result payload for op feature_info. Implementations negotiate explicit feature bundles; a feature is advertised only when all of its operations, states, limits, authorization checks, crash semantics, and conformance fixtures are implemented (§14.1) — so each advertised feature names its operations. DESIGN.md §14 does not enumerate these result fields; they are the minimal design-derived set and freeze with the bundle registry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["features"],
+  "properties": {
+    "features": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feature", "operations"],
+        "properties": {
+          "feature": {
+            "type": "string",
+            "pattern": "^[\\x21-\\x7e]{1,128}$",
+            "description": "Feature-bundle id, e.g. a frozen spec bundle such as b0.1."
+          },
+          "operations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 512,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,127}$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

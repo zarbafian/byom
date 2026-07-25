@@ -1,0 +1,9 @@
+{
+  "name": "envelope/success-valid-minimal",
+  "description": "success envelope with only outcome and result; result may be any JSON value, here null",
+  "input": {
+    "schema": "bpp-success",
+    "value": { "outcome": "ok", "result": null }
+  },
+  "expected": { "valid": true }
+}

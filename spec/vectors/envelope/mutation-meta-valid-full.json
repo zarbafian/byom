@@ -1,0 +1,17 @@
+{
+  "name": "envelope/mutation-meta-valid-full",
+  "description": "MutationMeta with every field, including update revision CAS and ledger provenance refs",
+  "input": {
+    "schema": "bpp-mutation-meta",
+    "value": {
+      "request_id": "req-0002",
+      "idempotency_key": "idem-0002",
+      "expected_endpoint_incarnation": "inc-0001",
+      "expected_recovery_epoch": 4,
+      "expected_revision": 17,
+      "causation_event_ref": "evt-000041",
+      "correlation_ref": "corr-0002"
+    }
+  },
+  "expected": { "valid": true }
+}
