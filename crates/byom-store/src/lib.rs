@@ -49,6 +49,7 @@
 
 pub mod audit;
 pub mod effects;
+pub mod privacy;
 pub mod rows;
 pub mod schema;
 pub mod witness;
@@ -310,6 +311,16 @@ impl Store {
         Ok(audit::verify_chain(&self.conn)?)
     }
 
+    /// The local journal mirror generation (diagnostic surface, §15.3).
+    pub fn journal_mirror_generation(&self) -> Result<u64, StoreError> {
+        self.mirror_gen()
+    }
+
+    /// The witness head generation (diagnostic surface, §15.3).
+    pub fn witness_head(&self) -> Result<u64, StoreError> {
+        Ok(self.witness.head()?)
+    }
+
     // ------------------------------------------------------- key material ----
 
     fn index_root_key(&self) -> Result<Vec<u8>, StoreError> {
@@ -317,14 +328,17 @@ impl Store {
             .ok_or_else(|| StoreError::Corrupt("store is not bootstrapped".to_owned()))
     }
 
+    /// A derived per-scope key under the store root (PROFILE §5/§7 scope
+    /// keys: idempotency indexes, privacy chains).
+    pub(crate) fn scope_key(&self, label: &str) -> Result<[u8; 32], StoreError> {
+        let root = self.index_root_key()?;
+        Ok(hmac_sha256(&root, label.as_bytes()))
+    }
+
     /// The per-Society idempotency-index key — a SCOPE key (PROFILE §5):
     /// destroying it erases offline verifiability of the entire index.
     pub fn society_index_key(&self, society_id: &str) -> Result<[u8; 32], StoreError> {
-        let root = self.index_root_key()?;
-        Ok(hmac_sha256(
-            &root,
-            format!("idempotency-index:{society_id}").as_bytes(),
-        ))
+        self.scope_key(&format!("idempotency-index:{society_id}"))
     }
 
     /// The channel-derived actor binding digest (§14.2): a typed

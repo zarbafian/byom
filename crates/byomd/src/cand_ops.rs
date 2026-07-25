@@ -231,6 +231,114 @@ pub fn membership_accept(
     })
 }
 
+// -------------------------------------- candidate_self_policy_propose ----
+
+/// candidate_self_policy_propose (candidate, create; §7.3): the candidate
+/// authors its own pre-admission self-policy proposal over its
+/// offer-scoped channel. The proposal is retained exactly as authored and
+/// activates only at `participant_admit` — never before Standing.
+pub fn candidate_self_policy_propose(
+    store: &mut Store,
+    token: &str,
+    req: &ops::CandidateSelfPolicyProposeRequest,
+    body: &Value,
+    now: i64,
+    hooks: CrashHooks,
+) -> Result<Vec<u8>, Problem> {
+    let channel = match admit_candidate_mutation(
+        store,
+        token,
+        "candidate_self_policy_propose",
+        &req.onboarding_ref,
+        &req.meta,
+        body,
+        now,
+    )? {
+        Ok(channel) => channel,
+        Err(replayed) => return Ok(replayed),
+    };
+    let proposal_id = store
+        .new_id("candpol")
+        .map_err(|e| state::internal(&e.to_string()))?;
+    let propose_event = store
+        .new_id("evt")
+        .map_err(|e| state::internal(&e.to_string()))?;
+    let created_at = rfc3339_utc(now);
+    let actor = candidate_actor(&channel);
+    let scope = MutationScope {
+        society_id: channel.society_id.clone(),
+        operation: "candidate_self_policy_propose".into(),
+        actor: actor.clone(),
+        meta: req.meta.clone(),
+        body: body.clone(),
+    };
+    let req = req.clone();
+    run(store, scope, now, hooks, move |conn, scope| {
+        let offer = rows::get_offer(conn, &req.onboarding_ref)
+            .map_err(db_err)?
+            .ok_or_else(state::not_found)?;
+        if !matches!(offer.state.as_str(), "offered" | "onboarding" | "accepted") {
+            return Err(state::stale_binding("terminal offer"));
+        }
+        let effects = vec![Effect::Upsert {
+            table: "candidate_policy_proposals".into(),
+            row: obj_pairs([
+                ("proposal_id", json!(proposal_id)),
+                ("society_id", json!(offer.society_id)),
+                ("offer_ref", json!(offer.offer_id)),
+                ("participant_ref", json!(offer.participant_ref)),
+                ("kind", json!(req.proposed_policy_kind)),
+                ("state", json!("proposed")),
+                ("body", json!(req.proposed_policy_body.to_string())),
+                (
+                    "body_digest",
+                    serde_json::to_value(&req.proposed_policy_digest).unwrap_or(Value::Null),
+                ),
+                ("adoption_mode", json!(req.adoption_mode)),
+                (
+                    "adoption_control_domain_ref",
+                    json!(req.adoption_control_domain_ref),
+                ),
+                ("activated_policy_ref", Value::Null),
+                ("created_at", json!(created_at)),
+            ]),
+        }];
+        let events = vec![NewEvent {
+            event_id: propose_event.clone(),
+            society_id: offer.society_id.clone(),
+            kind: "candidate-self-policy.proposed".into(),
+            object_ref: proposal_id.clone(),
+            object_revision: 1,
+            participant_ref: Some(offer.participant_ref.clone()),
+            actor_ref: scope.actor.clone(),
+            causation_ref: format!("req:{}", req.meta.request_id),
+            correlation_ref: req
+                .meta
+                .correlation_ref
+                .clone()
+                .unwrap_or_else(|| req.meta.request_id.clone()),
+            payload: json!({"kind": req.proposed_policy_kind, "state": "proposed",
+                            "activation": "at participant_admit, never before Standing"}),
+            visibility_scope_ref: "scope:society".into(),
+        }];
+        Ok(Prepared {
+            result: json!({
+                "proposal_id": proposal_id,
+                "onboarding_ref": offer.offer_id,
+                "kind": req.proposed_policy_kind,
+                "state": "proposed",
+                "created_at": created_at,
+            }),
+            revision: Some(1),
+            cursor: CursorMint::AfterEvents {
+                society_id: offer.society_id.clone(),
+            },
+            effects,
+            events,
+        })
+    })
+}
+
 // ------------------------------------------------- membership_refuse ----
 
 pub fn membership_refuse(

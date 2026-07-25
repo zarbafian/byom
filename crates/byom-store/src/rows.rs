@@ -3,6 +3,276 @@
 //! prepare transaction) and daemon reads share one query surface.
 
 use rusqlite::{params, Connection, OptionalExtension as _, Row};
+use serde_json::{Map, Value};
+
+// ------------------------------------------------- generic row access ----
+//
+// The slice-2 domain tables are read as JSON maps keyed by their exact
+// column names (the same closed name set the effects whitelist pins), so
+// one reader serves every table and a read-modify-write round-trips
+// bit-stably through `Effect::Upsert`. JSON-carrying TEXT columns stay
+// serialized; `json_of` parses them on demand.
+
+fn value_of(r: &Row, i: usize) -> rusqlite::Result<Value> {
+    Ok(match r.get_ref(i)? {
+        rusqlite::types::ValueRef::Null => Value::Null,
+        rusqlite::types::ValueRef::Integer(n) => Value::from(n),
+        rusqlite::types::ValueRef::Real(f) => serde_json::Number::from_f64(f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        rusqlite::types::ValueRef::Text(t) => {
+            Value::String(String::from_utf8_lossy(t).into_owned())
+        }
+        rusqlite::types::ValueRef::Blob(_) => Value::Null,
+    })
+}
+
+fn row_to_map(names: &[String], r: &Row) -> rusqlite::Result<Map<String, Value>> {
+    let mut m = Map::new();
+    for (i, name) in names.iter().enumerate() {
+        m.insert(name.clone(), value_of(r, i)?);
+    }
+    Ok(m)
+}
+
+/// One whitelisted-table row as a column-keyed JSON map. `table` and
+/// `key_col` are handler-supplied constants, never caller input.
+pub fn get_row(
+    conn: &Connection,
+    table: &str,
+    key_col: &str,
+    key: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    debug_assert!(crate::effects::columns_of(table).is_some());
+    let mut stmt = conn.prepare(&format!("SELECT * FROM {table} WHERE {key_col} = ?1"))?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query([key])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(row_to_map(&names, r)?)),
+        None => Ok(None),
+    }
+}
+
+/// Every row of a whitelisted table matching `where_col = key`, ordered
+/// by `order_col`.
+pub fn rows_where(
+    conn: &Connection,
+    table: &str,
+    where_col: &str,
+    key: &str,
+    order_col: &str,
+) -> rusqlite::Result<Vec<Map<String, Value>>> {
+    debug_assert!(crate::effects::columns_of(table).is_some());
+    let mut stmt = conn.prepare(&format!(
+        "SELECT * FROM {table} WHERE {where_col} = ?1 ORDER BY {order_col} ASC"
+    ))?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query([key])?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        out.push(row_to_map(&names, r)?);
+    }
+    Ok(out)
+}
+
+/// String accessor (empty when absent/NULL).
+pub fn str_of<'m>(m: &'m Map<String, Value>, key: &str) -> &'m str {
+    m.get(key).and_then(Value::as_str).unwrap_or_default()
+}
+
+/// Integer accessor (0 when absent/NULL).
+pub fn u64_of(m: &Map<String, Value>, key: &str) -> u64 {
+    m.get(key).and_then(Value::as_u64).unwrap_or_default()
+}
+
+/// Parses a JSON-carrying TEXT column (Null when absent or unparseable).
+pub fn json_of(m: &Map<String, Value>, key: &str) -> Value {
+    m.get(key)
+        .and_then(Value::as_str)
+        .and_then(|t| serde_json::from_str(t).ok())
+        .unwrap_or(Value::Null)
+}
+
+/// The current seat head: the single active position on
+/// `(proposal_kind, proposal_ref, seat_ref)`.
+pub fn active_position(
+    conn: &Connection,
+    proposal_kind: &str,
+    proposal_ref: &str,
+    seat_ref: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    let mut stmt = conn.prepare(
+        "SELECT * FROM positions
+         WHERE proposal_kind = ?1 AND proposal_ref = ?2 AND seat_ref = ?3
+           AND status = 'active'
+         ORDER BY revision DESC LIMIT 1",
+    )?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query(params![proposal_kind, proposal_ref, seat_ref])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(row_to_map(&names, r)?)),
+        None => Ok(None),
+    }
+}
+
+/// Open (non-terminal) activity streams citing a mandate ref in their
+/// serialized `mandate_refs` JSON array.
+pub fn open_activities_citing_mandate(
+    conn: &Connection,
+    mandate_id: &str,
+) -> rusqlite::Result<u64> {
+    let needle = format!("\"{mandate_id}\"");
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM activity_streams
+         WHERE state IN ('ready', 'active', 'waiting', 'reviewing', 'held')
+           AND instr(mandate_refs, ?1) > 0",
+        [&needle],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
+}
+
+/// A live (still `proposed`) pledge successor occupying the one CAS
+/// successor slot of `pledge_id` (D-RT-3).
+pub fn live_successor_proposal(
+    conn: &Connection,
+    pledge_id: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    let mut stmt = conn.prepare(
+        "SELECT * FROM pledge_proposals
+         WHERE amendment_predecessor_ref = ?1 AND state = 'proposed' LIMIT 1",
+    )?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query([pledge_id])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(row_to_map(&names, r)?)),
+        None => Ok(None),
+    }
+}
+
+/// The one active self-policy of `(participant, kind)`, if any.
+pub fn active_self_policy(
+    conn: &Connection,
+    participant_ref: &str,
+    kind: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    let mut stmt = conn.prepare(
+        "SELECT * FROM self_policies
+         WHERE participant_ref = ?1 AND kind = ?2 AND status = 'active'
+         ORDER BY revision DESC LIMIT 1",
+    )?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query(params![participant_ref, kind])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(row_to_map(&names, r)?)),
+        None => Ok(None),
+    }
+}
+
+/// A wake intent of `participant` under `stable_wake_key` (§11.1
+/// uniqueness, enforced in the prepare closure — see schema note).
+pub fn wake_intent_by_key(
+    conn: &Connection,
+    participant_ref: &str,
+    stable_wake_key: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    let mut stmt = conn.prepare(
+        "SELECT * FROM wake_intents
+         WHERE participant_ref = ?1 AND stable_wake_key = ?2 LIMIT 1",
+    )?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query(params![participant_ref, stable_wake_key])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(row_to_map(&names, r)?)),
+        None => Ok(None),
+    }
+}
+
+/// The budget-account ledger row of `(account_ref, dimension)`.
+pub fn budget_account(
+    conn: &Connection,
+    account_ref: &str,
+    dimension: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    let mut stmt =
+        conn.prepare("SELECT * FROM budget_accounts WHERE account_ref = ?1 AND dimension = ?2")?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let mut rows = stmt.query(params![account_ref, dimension])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(row_to_map(&names, r)?)),
+        None => Ok(None),
+    }
+}
+
+/// The sole active human participant of the personal profile (the
+/// sovereign seat holder).
+pub fn sovereign_participant(
+    conn: &Connection,
+    society_id: &str,
+) -> rusqlite::Result<Option<ParticipantRow>> {
+    conn.query_row(
+        "SELECT participant_id, society_id, kind, revision, binding_epoch,
+                display_profile_ref, standing_ref, state, created_at
+         FROM participants WHERE society_id = ?1 AND kind = 'human' AND state = 'active'
+         ORDER BY created_at ASC LIMIT 1",
+        [society_id],
+        |r| {
+            Ok(ParticipantRow {
+                participant_id: r.get(0)?,
+                society_id: r.get(1)?,
+                kind: r.get(2)?,
+                revision: r.get::<_, i64>(3)? as u64,
+                binding_epoch: r.get::<_, i64>(4)? as u64,
+                display_profile_ref: r.get(5)?,
+                standing_ref: r.get(6)?,
+                state: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// One event row (id, kind, payload text, payload digest JSON, society).
+pub fn event_payload_row(
+    conn: &Connection,
+    event_id: &str,
+) -> rusqlite::Result<Option<(String, String, String, String)>> {
+    conn.query_row(
+        "SELECT society_id, kind, payload, payload_digest FROM events WHERE event_id = ?1",
+        [event_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )
+    .optional()
+}
 
 #[derive(Debug, Clone)]
 pub struct SocietyRow {
@@ -291,6 +561,30 @@ pub fn candidate_channel_by_token(
     conn.query_row(
         "SELECT channel_id, society_id, offer_ref, token, token_path, state
          FROM candidate_channels WHERE token = ?1",
+        [token],
+        |r| {
+            Ok(ChannelRow {
+                channel_id: r.get(0)?,
+                society_id: r.get(1)?,
+                scope_ref: r.get(2)?,
+                token: r.get(3)?,
+                token_path: r.get(4)?,
+                state: r.get(5)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// Resolves a presented participant token to its channel (open or
+/// closed).
+pub fn participant_channel_by_token(
+    conn: &Connection,
+    token: &str,
+) -> rusqlite::Result<Option<ChannelRow>> {
+    conn.query_row(
+        "SELECT channel_id, society_id, participant_ref, token, token_path, state
+         FROM participant_channels WHERE token = ?1",
         [token],
         |r| {
             Ok(ChannelRow {

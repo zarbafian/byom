@@ -36,6 +36,14 @@ pub fn forbidden() -> Problem {
     Problem::new(ProblemKind::Forbidden, "forbidden").with_status(403)
 }
 
+/// An authorization refusal that may safely name its reason (the caller
+/// already sees the record it is insufficiently authorized for).
+pub fn forbidden_detail(detail: &str) -> Problem {
+    Problem::new(ProblemKind::Forbidden, "forbidden")
+        .with_status(403)
+        .with_detail(detail.to_owned())
+}
+
 /// The §15.3 sealed endpoint: every non-diagnostic surface refuses.
 pub fn endpoint_sealed() -> Problem {
     Problem::new(

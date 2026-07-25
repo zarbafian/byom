@@ -428,3 +428,127 @@ fn post_admission_credential_fencing() {
     );
     assert_eq!(kind_of(&accept_again), "forbidden");
 }
+
+#[test]
+fn candidate_self_policy_activates_at_admission_exactly_as_authored() {
+    let mut daemon = TestDaemon::start("neg-selfpol");
+    let (_sid, _cursor, incarnation) = bootstrap_society(&daemon, "sp");
+    let (offer_id, token, subject) =
+        make_offer(&daemon, &incarnation, "sp", "part-agent-1", &far_future());
+
+    // The candidate authors TWO proposals over its own channel; the
+    // bodies are its exact words.
+    let assent_body = json!({"rules": [{"effect": "allow",
+        "atoms": {"operation": {"ids": ["pledge_position"]}}}]});
+    let propose = |key: &str, kind: &str, body: &serde_json::Value| {
+        daemon.call_candidate(
+            &token,
+            &json!({
+                "version": "0.2", "op": "candidate_self_policy_propose",
+                "meta": meta(&incarnation, key, None),
+                "onboarding_ref": offer_id,
+                "proposed_policy_kind": kind,
+                "proposed_policy_body": body,
+                "proposed_policy_digest": test_digest(0xe0),
+                "adoption_mode": "direct_candidate",
+                "adoption_control_domain_ref": "control-domain-1",
+            }),
+        )
+    };
+    let p1 = propose("sp-p1", "assent", &assent_body);
+    assert_eq!(p1["outcome"], "ok", "{p1}");
+    let p1_id = p1["result"]["proposal_id"].as_str().unwrap().to_owned();
+    let p2 = propose("sp-p2", "activation", &bpa1_allow_all());
+    assert_eq!(p2["outcome"], "ok", "{p2}");
+
+    // NEVER BEFORE STANDING: no self-policy exists before admission.
+    daemon.stop();
+    {
+        let store = byom_store::Store::open(&daemon.data_dir).unwrap();
+        let n: i64 = store
+            .conn()
+            .query_row("SELECT COUNT(*) FROM self_policies", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "no self-policy before Standing");
+    }
+    daemon.restart(&[]);
+
+    let accepted = accept_offer(&daemon, &incarnation, &token, "sp", &offer_id, &subject, 1);
+    assert_eq!(accepted["outcome"], "ok", "{accepted}");
+    let acceptance_id = accepted["result"]["acceptance_id"].as_str().unwrap();
+
+    // Citing a proposal that does not exist is citing a record that
+    // does not exist (non-enumerating not_found; nothing activates).
+    let ghost = daemon.call(
+        "governance",
+        &json!({
+            "version": "0.2", "op": "participant_admit",
+            "meta": meta(&incarnation, "sp-admit-ghost", Some(2)),
+            "offer_ref": offer_id,
+            "membership_acceptance_ref": acceptance_id,
+            "admitted_by_decision_ref": "dec-admit-1",
+            "admission_subject_digest": subject,
+            "included_self_policy_proposal_refs": ["candpol-none"],
+        }),
+    );
+    assert_eq!(kind_of(&ghost), "not_found", "{ghost}");
+
+    // Admission citing ONLY the assent proposal activates exactly that
+    // one, exactly as authored.
+    let admitted = daemon.call(
+        "governance",
+        &json!({
+            "version": "0.2", "op": "participant_admit",
+            "meta": meta(&incarnation, "sp-admit", Some(2)),
+            "offer_ref": offer_id,
+            "membership_acceptance_ref": acceptance_id,
+            "admitted_by_decision_ref": "dec-admit-1",
+            "admission_subject_digest": subject,
+            "included_self_policy_proposal_refs": [p1_id],
+        }),
+    );
+    assert_eq!(admitted["outcome"], "ok", "{admitted}");
+    let activated = admitted["result"]["activated_self_policy_refs"]
+        .as_array()
+        .unwrap();
+    assert_eq!(activated.len(), 1, "{admitted}");
+
+    daemon.stop();
+    let store = byom_store::Store::open(&daemon.data_dir).unwrap();
+    let rows: Vec<(String, String, String, String, String)> = {
+        let mut stmt = store
+            .conn()
+            .prepare(
+                "SELECT kind, status, body, provenance, adoption_mode
+                 FROM self_policies WHERE participant_ref = 'part-agent-1'",
+            )
+            .unwrap();
+        let out = stmt
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        out
+    };
+    assert_eq!(rows.len(), 1, "only the CITED proposal activated: {rows:?}");
+    let (kind, status, body, provenance, mode) = &rows[0];
+    assert_eq!(kind, "assent");
+    assert_eq!(status, "active");
+    assert_eq!(provenance, "candidate_authored");
+    assert_eq!(mode, "direct_candidate");
+    // EXACTLY as authored: the retained body is the candidate's words.
+    let stored: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(stored, assent_body, "policy body activated verbatim");
+    // The uncited activation proposal stayed un-activated.
+    let unactivated: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM candidate_policy_proposals WHERE state = 'proposed'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(unactivated, 1, "the uncited proposal remains proposed");
+}

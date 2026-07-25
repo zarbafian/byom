@@ -73,29 +73,29 @@ pub fn check_meta_binding(
     Ok(())
 }
 
-fn mint(store: &Store, prefix: &str) -> Result<String, Problem> {
+pub fn mint(store: &Store, prefix: &str) -> Result<String, Problem> {
     store
         .new_id(prefix)
         .map_err(|e| state::internal(&e.to_string()))
 }
 
-fn causation_of(meta: &MutationMeta) -> String {
+pub fn causation_of(meta: &MutationMeta) -> String {
     meta.causation_event_ref
         .clone()
         .unwrap_or_else(|| format!("req:{}", meta.request_id))
 }
 
-fn correlation_of(meta: &MutationMeta) -> String {
+pub fn correlation_of(meta: &MutationMeta) -> String {
     meta.correlation_ref
         .clone()
         .unwrap_or_else(|| meta.request_id.clone())
 }
 
-fn digest_json(d: &bpp_core::digest::DigestRef) -> Value {
+pub fn digest_json(d: &bpp_core::digest::DigestRef) -> Value {
     serde_json::to_value(d).unwrap_or(Value::Null)
 }
 
-fn db_err(e: rusqlite::Error) -> Problem {
+pub fn db_err(e: rusqlite::Error) -> Problem {
     state::internal(&e.to_string())
 }
 
@@ -300,6 +300,7 @@ pub fn society_prepare(
             ("state", json!("proposed")),
             ("adopted_by_decision_ref", Value::Null),
             ("created_at", json!(created_at)),
+            ("effective_at", Value::Null),
         ]),
     };
     let event = NewEvent {
@@ -500,7 +501,7 @@ pub fn society_bootstrap(
         let auth_note =
             "developer-profile-stub: fresh phishing-resistant challenge lands with the hosted slice";
 
-        let mut society_effect_row = society_row_from(&society);
+        let mut society_effect_row = society_effect_row(&society);
         society_effect_row.insert("revision".into(), json!(new_revision));
         society_effect_row.insert("state".into(), json!("active"));
         society_effect_row.insert("genesis_event_ref".into(), json!(genesis_event));
@@ -523,6 +524,7 @@ pub fn society_bootstrap(
                     ("state", json!("adopted")),
                     ("adopted_by_decision_ref", json!(decision_ref)),
                     ("created_at", json!(society.created_at)),
+                    ("effective_at", json!(created_at)),
                 ]),
             },
             Effect::Upsert {
@@ -652,7 +654,8 @@ pub fn society_bootstrap(
     Ok(bytes)
 }
 
-fn society_row_from(s: &rows::SocietyRow) -> Map<String, Value> {
+/// The full-row upsert map of one society row (every column named).
+pub fn society_effect_row(s: &rows::SocietyRow) -> Map<String, Value> {
     obj_pairs([
         ("society_id", json!(s.society_id)),
         ("revision", json!(s.revision)),
@@ -1001,14 +1004,64 @@ pub fn participant_admit(
                 "admission_subject_digest does not match the offer subject",
             ));
         }
-        // Slice 1 has no candidate self-policy proposals yet: citing one
-        // is citing a record that does not exist.
-        if req
-            .included_self_policy_proposal_refs
-            .as_ref()
-            .is_some_and(|refs| !refs.is_empty())
-        {
-            return Err(state::not_found());
+        // Pre-admission candidate self-policy proposals activate HERE,
+        // exactly as authored, never before Standing (B1 sheet). A cited
+        // proposal must exist, belong to THIS offer, and still be
+        // proposed; anything else is citing a record that does not exist.
+        let mut policy_effects = Vec::new();
+        let mut activated_policy_refs = Vec::new();
+        if let Some(refs) = &req.included_self_policy_proposal_refs {
+            for proposal_ref in refs {
+                let proposal = rows::get_row(
+                    conn,
+                    "candidate_policy_proposals",
+                    "proposal_id",
+                    proposal_ref,
+                )
+                .map_err(db_err)?
+                .ok_or_else(state::not_found)?;
+                if rows::str_of(&proposal, "offer_ref") != offer.offer_id
+                    || rows::str_of(&proposal, "state") != "proposed"
+                {
+                    return Err(state::not_found());
+                }
+                let policy_id = format!("selfpol-{proposal_ref}");
+                let mut activated = proposal.clone();
+                activated.insert("state".into(), json!("activated"));
+                activated.insert("activated_policy_ref".into(), json!(policy_id));
+                policy_effects.push(Effect::Upsert {
+                    table: "candidate_policy_proposals".into(),
+                    row: activated,
+                });
+                // The activated policy is the proposal body VERBATIM —
+                // governance activates, never edits (§7.3).
+                policy_effects.push(Effect::Upsert {
+                    table: "self_policies".into(),
+                    row: obj_pairs([
+                        ("policy_id", json!(policy_id)),
+                        ("society_id", json!(offer.society_id)),
+                        ("participant_ref", json!(offer.participant_ref)),
+                        ("kind", json!(rows::str_of(&proposal, "kind"))),
+                        ("revision", json!(1)),
+                        ("status", json!("active")),
+                        ("body", json!(rows::str_of(&proposal, "body"))),
+                        (
+                            "body_digest",
+                            json!(rows::json_of(&proposal, "body_digest")),
+                        ),
+                        (
+                            "adoption_mode",
+                            json!(rows::str_of(&proposal, "adoption_mode")),
+                        ),
+                        ("provenance", json!("candidate_authored")),
+                        ("previous_policy_ref", Value::Null),
+                        ("effective_at", json!(created_at)),
+                        ("expires_at", json!("9999-12-31T23:59:59Z")),
+                        ("created_at", json!(created_at)),
+                    ]),
+                });
+                activated_policy_refs.push(policy_id);
+            }
         }
         let participant = rows::get_participant(conn, &offer.participant_ref)
             .map_err(db_err)?
@@ -1023,7 +1076,7 @@ pub fn participant_admit(
         offer_row.insert("state".into(), json!("admitted"));
         offer_row.insert("revision".into(), json!(new_offer_revision));
         offer_row.insert("fence_epoch".into(), json!(offer.fence_epoch + 1));
-        let effects = vec![
+        let mut effects = vec![
             Effect::Upsert {
                 table: "membership_offers".into(),
                 row: offer_row,
@@ -1088,6 +1141,7 @@ pub fn participant_admit(
                 ]),
             },
         ];
+        effects.extend(policy_effects);
         let causation = causation_of(&req.meta);
         let correlation = correlation_of(&req.meta);
         let ev =
@@ -1111,7 +1165,8 @@ pub fn participant_admit(
                 &offer.offer_id,
                 new_offer_revision,
                 json!({"decision_ref": req.admitted_by_decision_ref,
-                       "acceptance_ref": req.membership_acceptance_ref}),
+                       "acceptance_ref": req.membership_acceptance_ref,
+                       "activated_self_policy_refs": activated_policy_refs.clone()}),
             ),
             ev(
                 &standing_event,
@@ -1139,7 +1194,7 @@ pub fn participant_admit(
                 "offer_state": "admitted",
                 "standing_ref": standing_id,
                 "standing_status": "active",
-                "activated_self_policy_refs": [],
+                "activated_self_policy_refs": activated_policy_refs,
             }),
             revision: Some(new_offer_revision),
             cursor: CursorMint::AfterEvents {

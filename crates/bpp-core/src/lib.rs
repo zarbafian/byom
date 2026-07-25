@@ -15,6 +15,7 @@
 //! assert!(req.meta.is_none()); // reads never carry meta
 //! ```
 
+pub mod bpa1;
 pub mod canonical;
 pub mod digest;
 pub mod envelope;

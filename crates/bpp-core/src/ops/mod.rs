@@ -21,6 +21,20 @@
 //! assert_eq!(req.offer_ref, "offer-1");
 //! ```
 
+pub mod activity;
+pub mod charter;
+pub mod mandate;
+pub mod policy;
+pub mod reads;
+pub mod work;
+
+pub use activity::*;
+pub use charter::*;
+pub use mandate::*;
+pub use policy::*;
+pub use reads::*;
+pub use work::*;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -28,6 +42,96 @@ use crate::digest::{DigestClass, DigestRef};
 use crate::envelope::{is_identifier, is_protocol_version, MutationMeta};
 use crate::limits::EVENTS_PAGE_ITEMS_MAX;
 use crate::time::parse_rfc3339_utc;
+
+/// A unique identifier array under the §14.9 item cap (shared by the
+/// slice-2 request shapes).
+fn check_id_array(name: &str, v: &[String], min: usize, max: usize) -> Result<(), String> {
+    if v.len() < min || v.len() > max {
+        return Err(format!("{name} is out of bounds ({min}..={max})"));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for item in v {
+        check_identifier(name, item)?;
+        if !seen.insert(item) {
+            return Err(format!("{name} items must be unique"));
+        }
+    }
+    Ok(())
+}
+
+/// A canonical BPA-1 policy body on the frozen AST (fails closed).
+fn check_bpa1(name: &str, v: &Value) -> Result<(), String> {
+    crate::bpa1::validate_policy(v).map_err(|e| format!("{name}: {e}"))
+}
+
+fn check_opt_bpa1(name: &str, v: &Option<Value>) -> Result<(), String> {
+    match v {
+        Some(v) => check_bpa1(name, v),
+        None => Ok(()),
+    }
+}
+
+fn check_opt_local_erasure_safe(name: &str, d: &Option<DigestRef>) -> Result<(), String> {
+    match d {
+        Some(d) => check_local_erasure_safe(name, d),
+        None => Ok(()),
+    }
+}
+
+fn check_opt_timestamp(name: &str, v: &Option<String>) -> Result<(), String> {
+    match v {
+        Some(v) => check_timestamp(name, v),
+        None => Ok(()),
+    }
+}
+
+/// The shared position `value` enum (§14.6 position operations).
+fn check_position_value(v: &str) -> Result<(), String> {
+    const VALUES: [&str; 7] = [
+        "assent",
+        "support",
+        "oppose",
+        "deny",
+        "abstain",
+        "changes_requested",
+        "refuse",
+    ];
+    if VALUES.contains(&v) {
+        Ok(())
+    } else {
+        Err("value is not a position value".to_owned())
+    }
+}
+
+/// The exact digest-pinned terms reference (RT-06 `termsRef`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TermsRef {
+    pub terms_ref: String,
+    pub terms_digest: DigestRef,
+}
+
+impl TermsRef {
+    fn validate(&self, name: &str) -> Result<(), String> {
+        check_identifier(&format!("{name}.terms_ref"), &self.terms_ref)?;
+        check_local_erasure_safe(&format!("{name}.terms_digest"), &self.terms_digest)
+    }
+}
+
+/// The exact digest-pinned BDPL decision-rule reference (RT-06).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecisionRuleRef {
+    pub rule_ref: String,
+    pub rule_digest: DigestRef,
+}
+
+impl DecisionRuleRef {
+    fn validate(&self, name: &str) -> Result<(), String> {
+        check_identifier(&format!("{name}.rule_ref"), &self.rule_ref)?;
+        check_local_erasure_safe(&format!("{name}.rule_digest"), &self.rule_digest)
+    }
+}
 
 fn parse_closed<T: for<'de> Deserialize<'de>>(body: &Value) -> Result<T, String> {
     serde_json::from_value(body.clone()).map_err(|e| e.to_string())

@@ -17,11 +17,15 @@
 
 pub mod cand_ops;
 pub mod dispatch;
+pub mod gov_authority;
 pub mod gov_ops;
+pub mod part_common;
+pub mod part_ops;
 pub mod peercred;
 pub mod reads;
 pub mod socket;
 pub mod state;
+pub mod work_ops;
 
 pub use dispatch::{AbortSpec, Daemon};
 pub use socket::SocketSurface;

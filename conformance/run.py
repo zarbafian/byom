@@ -2818,14 +2818,189 @@ class Runner:
         return 0
 
 
+# ------------------------------------------------------ live replay --------
+# `python3 conformance/run.py --live`: spawn the real byomd against
+# throwaway data/runtime dirs and replay every slice-op request vector
+# whose schema is the registry-pinned wire schema of an IMPLEMENTED
+# operation (feature_info is the honest source of truth). The contract:
+#   - a schema-INVALID vector must be refused with problem kind
+#     `invalid` (the closed request shape rejected it);
+#   - a schema-VALID vector must be ACCEPTED past the shape gate: the
+#     reply is `ok` or a STATE-level problem — never `invalid`,
+#     `unsupported_version`, `feature_unavailable`, `forbidden_surface`.
+# Continuation-carrying reads are exempt from the valid-side kind
+# restriction: their tokens are endpoint-minted and unreplayable by
+# design (§14.4), so a foreign token honestly answers invalid.
+
+LIVE_SCHEMA_REJECTIONS = frozenset({
+    "invalid", "unsupported_version", "feature_unavailable",
+    "forbidden_surface",
+})
+LIVE_CONTINUATION_OPS = frozenset({"events_read", "events_wait",
+                                   "cursor_recover"})
+# Which socket serves each registry surface (the originating reads
+# answer on any mutation-capable socket; pre_auth on every socket).
+LIVE_SURFACE_SOCKET = {
+    "participant": "participant", "governance": "governance",
+    "candidate": "candidate", "projection": "projection",
+    "originating": "participant", "pre_auth": "governance",
+}
+
+
+def _live_call(run_dir: Path, sock_name: str, line: str) -> dict:
+    import socket as socketlib
+    s = socketlib.socket(socketlib.AF_UNIX)
+    s.settimeout(30)
+    s.connect(str(run_dir / f"{sock_name}.sock"))
+    payload = b""
+    if sock_name == "candidate":
+        payload += b"\n"  # empty channel-token preamble
+    payload += line.encode("utf-8") + b"\n"
+    s.sendall(payload)
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+    s.close()
+    return json.loads(buf)
+
+
+def run_live(spec_dir: Path) -> int:
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    import time
+
+    root = spec_dir.parent
+    binary = os.environ.get("BYOMD_BIN")
+    if not binary:
+        meta = json.loads(subprocess.check_output(
+            ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+            cwd=root))
+        binary = str(Path(meta["target_directory"]) / "debug" / "byomd")
+    if not Path(binary).exists():
+        subprocess.check_call(["cargo", "build", "-q", "-p", "byomd"],
+                              cwd=root)
+
+    data_dir = Path(tempfile.mkdtemp(prefix="byomd-live-"))
+    run_dir = Path(tempfile.mkdtemp(prefix="byomd-lrt-"))
+    env = {**os.environ, "BYOM_DATA_DIR": str(data_dir),
+           "BYOM_RUNTIME_DIR": str(run_dir)}
+    env.pop("BYOMD_ABORT", None)
+    proc = subprocess.Popen([binary], env=env, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+    failures = 0
+    try:
+        deadline = time.time() + 15
+        surfaces = ("governance", "candidate", "participant", "projection")
+        while True:
+            if all((run_dir / f"{s}.sock").exists() for s in surfaces):
+                try:
+                    _live_call(run_dir, "governance",
+                               json.dumps({"version": "0.2", "op": "hello"}))
+                    break
+                except OSError:
+                    pass
+            if time.time() > deadline:
+                print("FAIL  live: byomd sockets never came up")
+                return 1
+            time.sleep(0.05)
+
+        # The daemon's honest feature advertisement decides what replays.
+        features = _live_call(run_dir, "governance", json.dumps(
+            {"version": "0.2", "op": "feature_info"}))
+        implemented: set[str] = set()
+        for feature in features.get("result", {}).get("features", []):
+            implemented.update(feature.get("operations", []))
+        if not implemented:
+            print("FAIL  live: feature_info advertised nothing")
+            return 1
+
+        # The registry pins each op's wire request schema; dual-surface
+        # rows keep their first (participant) row for socket choice.
+        registry = strict_parse((spec_dir / "registry.json").read_text(
+            encoding="utf-8"))
+        rows: dict[str, tuple[str, str]] = {}
+        for row in registry["operations"]:
+            rows.setdefault(row["operation"],
+                            (row["surface"], row["request_schema"]))
+
+        replayed = valid_n = invalid_n = skipped = 0
+        for path in sorted((spec_dir / "vectors" / "ops").glob("*.json")):
+            vector = strict_parse(path.read_text(encoding="utf-8"))
+            schema = vector.get("input", {}).get("schema", "")
+            value = vector.get("input", {}).get("value")
+            expected = vector.get("expected", {}).get("valid")
+            # Derive the op from the schema name; replay only vectors
+            # written against the registry-pinned wire schema of an
+            # implemented op.
+            base = schema[:-3] if schema.endswith("-v2") else schema
+            if not base.endswith("-request"):
+                skipped += 1
+                continue
+            op = base[:-len("-request")].replace("-", "_")
+            row = rows.get(op)
+            if row is None or row[1] != schema or op not in implemented \
+                    or not isinstance(expected, bool):
+                skipped += 1
+                continue
+            sock = LIVE_SURFACE_SOCKET[row[0]]
+            reply = _live_call(run_dir, sock, json.dumps(value))
+            replayed += 1
+            outcome = reply.get("outcome")
+            kind = reply.get("problem", {}).get("kind")
+            if expected:
+                ok = outcome == "ok" or (
+                    outcome == "problem"
+                    and (kind not in LIVE_SCHEMA_REJECTIONS
+                         or op in LIVE_CONTINUATION_OPS))
+                if ok:
+                    valid_n += 1
+                else:
+                    failures += 1
+                    print(f"FAIL  live {path.name}: valid vector refused "
+                          f"at the shape gate: {json.dumps(reply)}")
+            else:
+                if outcome == "problem" and kind == "invalid":
+                    invalid_n += 1
+                else:
+                    failures += 1
+                    print(f"FAIL  live {path.name}: invalid vector not "
+                          f"refused as invalid: {json.dumps(reply)}")
+        print(f"live:     {replayed} slice-op request vectors replayed "
+              f"against byomd ({valid_n} valid accepted past the shape "
+              f"gate, {invalid_n} invalid refused as invalid; "
+              f"{skipped} skipped: results/unpinned schemas/unimplemented)")
+        if failures:
+            print(f"result:   FAIL ({failures} live failure(s))")
+            return 1
+        if replayed == 0:
+            print("result:   FAIL (live replayed nothing)")
+            return 1
+        print("result:   PASS")
+        return 0
+    finally:
+        proc.kill()
+        proc.wait()
+        shutil.rmtree(data_dir, ignore_errors=True)
+        shutil.rmtree(run_dir, ignore_errors=True)
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) > 1:
-        spec_dir = Path(argv[1])
+    args = [a for a in argv[1:] if a != "--live"]
+    live = "--live" in argv[1:]
+    if args:
+        spec_dir = Path(args[0])
     else:
         spec_dir = Path(__file__).resolve().parent.parent / "spec"
     if not spec_dir.is_dir():
         print(f"FAIL  spec directory not found: {spec_dir}")
         return 1
+    if live:
+        return run_live(spec_dir)
     return Runner(spec_dir).run()
 
 

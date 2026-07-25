@@ -240,6 +240,90 @@ fn run_refusal(phase: &str) {
     assert_eq!(refused, 1, "{tag}");
 }
 
+/// The slice-2 governed-work mutations: for each, the full attached
+/// flow is driven with the daemon killed at the given §15.3 boundary of
+/// that op, restarted, and the exact retry must answer (fresh execution
+/// when provably unjournaled, byte-stable replay when recovered) with
+/// every effect landing exactly once — the flow then completes to a
+/// fulfilled pledge.
+const SLICE2_CRASH_OPS: [&str; 16] = [
+    "candidate_self_policy_propose",
+    "mandate_prepare",
+    "mandate_position",
+    "mandate_issue",
+    "activity_open",
+    "wake_intent_submit",
+    "continuation_write",
+    "endeavor_propose",
+    "endeavor_position",
+    "endeavor_finalize",
+    "call_open",
+    "pledge_propose",
+    "pledge_position",
+    "pledge_finalize",
+    "delivery_submit",
+    "review_record",
+];
+
+fn run_slice2_flow(index: usize, op: &str, phase: &str) {
+    // Short tag: the tag lands in the socket-directory path, which must
+    // stay under the ~108-byte SUN_LEN cap.
+    let abbrev: String = phase.split('_').filter_map(|w| w.chars().next()).collect();
+    let tag = format!("cm2-{index}{abbrev}");
+    let flow = governed_flow(&tag, FlowMode::CrashAt { op, phase });
+    // The surviving ledger: dense witness generations, the pledge
+    // fulfilled, the crash op's effect landed exactly once.
+    let entries = flow.daemon.witness_entries();
+    for (i, entry) in entries.iter().enumerate() {
+        assert_eq!(
+            entry["generation"].as_u64().unwrap(),
+            i as u64 + 1,
+            "{tag}: dense witness generations"
+        );
+    }
+    let snapshot = flow.daemon.call(
+        "projection",
+        &json!({"version": "0.2", "op": "snapshot_get",
+                "society_id": flow.society_id, "kinds": ["pledges"]}),
+    );
+    let state = snapshot["result"]["pledges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["pledge_id"] == json!(flow.pledge_id))
+        .expect("pledge")["state"]
+        .clone();
+    assert_eq!(state, "fulfilled", "{tag}: {snapshot}");
+}
+
+#[test]
+fn crash_matrix_slice2_before_witness() {
+    for (i, op) in SLICE2_CRASH_OPS.iter().enumerate() {
+        run_slice2_flow(i, op, "before_witness");
+    }
+}
+
+#[test]
+fn crash_matrix_slice2_after_witness() {
+    for (i, op) in SLICE2_CRASH_OPS.iter().enumerate() {
+        run_slice2_flow(i, op, "after_witness");
+    }
+}
+
+#[test]
+fn crash_matrix_slice2_before_finalize() {
+    for (i, op) in SLICE2_CRASH_OPS.iter().enumerate() {
+        run_slice2_flow(i, op, "before_finalize");
+    }
+}
+
+#[test]
+fn crash_matrix_slice2_after_finalize() {
+    for (i, op) in SLICE2_CRASH_OPS.iter().enumerate() {
+        run_slice2_flow(i, op, "after_finalize");
+    }
+}
+
 #[test]
 fn crash_matrix_before_witness() {
     for op in [

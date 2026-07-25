@@ -36,7 +36,11 @@ echo "== cargo clippy (workspace lints, warnings denied)"
 cargo clippy --workspace --all-targets --locked -- -D warnings
 
 echo "== cargo test (workspace: vector round-trips, journal fault injection,"
-echo "   onboarding negatives, crash matrix, e2e over real sockets)"
+echo "   onboarding negatives, mandate negatives, cease, privacy chain,"
+echo "   classification, acceptance + crash matrix, e2e over real sockets)"
 cargo test --workspace --locked
+
+echo "== conformance live replay (slice-op request vectors against a spawned byomd)"
+python3 conformance/run.py --live
 
 echo "run-checks: OK"
