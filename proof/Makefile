@@ -1,6 +1,7 @@
 JAR   := tools/tla2tools.jar
 SPECS := MembershipOfferStanding Pledge EpisodeLease ActIntentPermit \
-         MandateChain BudgetConservation AuthorityJournal
+         MandateChain BudgetConservation AuthorityJournal \
+         GreenfieldEnablement
 
 all: $(SPECS)
 

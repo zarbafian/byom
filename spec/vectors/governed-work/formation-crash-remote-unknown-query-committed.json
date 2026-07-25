@@ -1,0 +1,69 @@
+{
+  "name": "governed-work/formation-crash-remote-unknown-query-committed",
+  "description": "crash after send → remote_unknown → query returns committed with the retained signed envelope → linking → linked; the exact link-commit replay is a no-op returning the retained digest (§16.3).",
+  "input": {
+    "machine": "endeavor-formation",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "formation_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "kovee_endeavor_form",
+        "to": "submitting",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "submitting",
+        "via": "transport_outcome_unknown",
+        "to": "remote_unknown",
+        "expect": "accepted"
+      },
+      {
+        "from": "remote_unknown",
+        "via": "committed_result_verified",
+        "to": "byom_committed",
+        "expect": "accepted"
+      },
+      {
+        "from": "byom_committed",
+        "via": "committed_result_verified",
+        "to": "byom_committed",
+        "expect": "accepted"
+      },
+      {
+        "from": "byom_committed",
+        "via": "external_link_begin",
+        "to": "linking",
+        "expect": "accepted"
+      },
+      {
+        "from": "linking",
+        "via": "external_link_retry",
+        "to": "linking",
+        "expect": "accepted"
+      },
+      {
+        "from": "linking",
+        "via": "external_link_commit",
+        "to": "linked",
+        "expect": "accepted"
+      },
+      {
+        "from": "linked",
+        "via": "external_link_commit",
+        "to": "linked",
+        "expect": "replay"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "linked"
+  }
+}

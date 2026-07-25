@@ -1,0 +1,51 @@
+{
+  "name": "governed-work/restore-lineage-proof-hop-count-mismatch-invalid",
+  "description": "the declared hop count MUST equal the array length (§16.3) — enforced by the conformance runner's cross-member check",
+  "input": {
+    "schema": "restore-lineage-proof",
+    "value": {
+      "proof_id": "rlp-1",
+      "endpoint_root_id": "root-1",
+      "society_ref": "soc-1",
+      "target_endpoint_incarnation": "inc-0001",
+      "target_society_recovery_epoch": 0,
+      "current_endpoint_incarnation": "inc-0003",
+      "current_society_recovery_epoch": 2,
+      "hop_count": 3,
+      "ordered_hops": [
+        {
+          "lineage_ref": "rl-1",
+          "lineage_digest": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        },
+        {
+          "lineage_ref": "rl-2",
+          "lineage_digest": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        }
+      ],
+      "target_idempotency_domain_digest": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-idx-key-1",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "composed_at": "2026-07-26T12:00:00Z",
+      "verifier_version": "rlp-verifier-1",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

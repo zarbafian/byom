@@ -1,0 +1,74 @@
+{
+  "name": "governed-work/external-command-result-query-result-committed-valid",
+  "description": "fact 1/5 committed: carries the retained signed KoveeEndeavorFormResult envelope — no second actor-only fetch (§16.3)",
+  "input": {
+    "schema": "external-command-result-query-result",
+    "value": {
+      "query_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "current_endpoint_incarnation": "inc-0002",
+      "target_endpoint_incarnation": "inc-0001",
+      "idempotency_domain_digest": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-idx-key-1",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "observed_at": "2026-07-26T12:00:00Z",
+      "server_signature": "sig-ed25519-b64u.MEUCIQDx0fGoverned0WorkSliceOneExampleSignature",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "status": "committed",
+      "committed_result_envelope": {
+        "kovee_formation_intent_ref": "fmt-1001",
+        "canonical_command_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "society_ref": "soc-1",
+        "society_recovery_epoch": 0,
+        "idempotency_domain_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-idx-key-1",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "endeavor_ref": "endeavor-77",
+        "endeavor_revision": 1,
+        "endeavor_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "formation_decision_ref": "gdec-5",
+        "formation_slot_snapshot_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "source_cursor": "cursor-000121",
+        "digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        }
+      },
+      "committed_result_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "committed_result_signature": "sig-ed25519-b64u.MEUCIQDx0fGoverned0WorkSliceOneExampleSignature"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

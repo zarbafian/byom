@@ -1,0 +1,344 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/external-command-terminalize-result.schema.json",
+  "title": "ExternalCommandTerminalizeResult — closed union (DESIGN.md §16.3 verbatim; C2, R40)",
+  "description": "The §16.3 result verbatim, a closed union. Byom locks the idempotency domain and its authority-journal state: if a result committed it returns the committed envelope; if execution is prepared/in flight or lineage is incomplete it returns not_terminalizable without mutation; otherwise it atomically installs the restore-safe non-reexecuting tombstone. A delayed command racing this operation either commits first or observes the tombstone; both cannot win. committed and not_terminalizable are Byom no-op results; only terminalized directly releases the Kovee pair through its tombstone transition. All variants carry the exact target/domain, observation time, and server signature.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "target_endpoint_incarnation",
+    "target_society_ref",
+    "target_society_recovery_epoch",
+    "canonical_command_digest",
+    "idempotency_domain_digest",
+    "observed_at",
+    "server_signature",
+    "digest"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "committed",
+        "terminalized",
+        "not_terminalizable"
+      ],
+      "description": "§16.3 verbatim closed union."
+    },
+    "target_endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_society_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_society_recovery_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "canonical_command_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "idempotency_domain_digest": {
+      "$ref": "#/$defs/idempotencyDomainDigest"
+    },
+    "committed_result_envelope": {
+      "$ref": "#/$defs/koveeEndeavorFormResult"
+    },
+    "committed_result_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "committed_result_signature": {
+      "$ref": "#/$defs/signature"
+    },
+    "tombstone_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "tombstone_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "tombstone_reason": {
+      "$ref": "#/$defs/reason"
+    },
+    "authority_journal_receipt_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "authority_journal_receipt_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "blocking_state": {
+      "enum": [
+        "prepared_or_in_flight",
+        "lineage_incomplete",
+        "witness_unavailable",
+        "domain_conflict"
+      ],
+      "description": "§16.3 verbatim: the closed blocking states; any invalid, incomplete, unavailable, or unverified lineage hop makes terminalization not_terminalizable."
+    },
+    "blocking_evidence_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "observed_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "server_signature": {
+      "$ref": "#/$defs/signature"
+    },
+    "digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "status": {
+          "const": "committed"
+        },
+        "tombstone_ref": false,
+        "tombstone_digest": false,
+        "tombstone_reason": false,
+        "authority_journal_receipt_ref": false,
+        "authority_journal_receipt_digest": false,
+        "blocking_state": false,
+        "blocking_evidence_digest": false
+      },
+      "required": [
+        "committed_result_envelope",
+        "committed_result_digest",
+        "committed_result_signature"
+      ],
+      "$comment": "committed requires the signed result envelope/digest and forbids tombstone, journal, and blocking fields; it drives Kovee's ordinary committed-result transition (§16.3)."
+    },
+    {
+      "properties": {
+        "status": {
+          "const": "terminalized"
+        },
+        "committed_result_envelope": false,
+        "committed_result_digest": false,
+        "committed_result_signature": false,
+        "blocking_state": false,
+        "blocking_evidence_digest": false
+      },
+      "required": [
+        "tombstone_ref",
+        "tombstone_digest",
+        "tombstone_reason",
+        "authority_journal_receipt_ref",
+        "authority_journal_receipt_digest"
+      ],
+      "$comment": "terminalized requires the tombstone plus the synchronous AuthorityJournalReceipt and forbids result/blocking fields (§16.3)."
+    },
+    {
+      "properties": {
+        "status": {
+          "const": "not_terminalizable"
+        },
+        "committed_result_envelope": false,
+        "committed_result_digest": false,
+        "committed_result_signature": false,
+        "tombstone_ref": false,
+        "tombstone_digest": false,
+        "tombstone_reason": false,
+        "authority_journal_receipt_ref": false,
+        "authority_journal_receipt_digest": false
+      },
+      "required": [
+        "blocking_state",
+        "blocking_evidence_digest"
+      ],
+      "$comment": "not_terminalizable requires one closed blocking state and evidence digest and forbids result, tombstone, and journal fields; it leaves the Kovee pair unchanged (§16.3)."
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "idempotencyDomainDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "key_ref",
+        "value_hex"
+      ],
+      "properties": {
+        "class": {
+          "const": "scope_erasure_safe"
+        },
+        "algorithm": {
+          "const": "hmac-sha-256"
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Per-Society index key id; the raw key is never part of the ref."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "description": "The IdempotencyDomain digest (§14.2; PROFILE.md §5, D-R0-1): always the keyed scope_erasure_safe class over the per-Society index key — a public class here is a conformance failure."
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,4096}$",
+      "description": "Detached signature envelope, opaque bounded visible-ASCII (algorithm suite is pinned by the endpoint identity material, §19)."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Short human-readable reason; free text, bounded."
+    },
+    "koveeEndeavorFormResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kovee_formation_intent_ref",
+        "canonical_command_digest",
+        "society_ref",
+        "society_recovery_epoch",
+        "idempotency_domain_digest",
+        "endeavor_ref",
+        "endeavor_revision",
+        "endeavor_digest",
+        "formation_decision_ref",
+        "formation_slot_snapshot_digest",
+        "source_cursor",
+        "digest"
+      ],
+      "properties": {
+        "kovee_formation_intent_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "canonical_command_digest": {
+          "$ref": "#/$defs/digestRef"
+        },
+        "society_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "society_recovery_epoch": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "idempotency_domain_digest": {
+          "$ref": "#/$defs/idempotencyDomainDigest"
+        },
+        "endeavor_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "endeavor_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "endeavor_digest": {
+          "$ref": "#/$defs/digestRef"
+        },
+        "formation_decision_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "formation_slot_snapshot_digest": {
+          "$ref": "#/$defs/digestRef"
+        },
+        "source_cursor": {
+          "$ref": "#/$defs/identifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/digestRef"
+        }
+      },
+      "description": "KoveeEndeavorFormResult (§16.3 verbatim): the exact idempotent result — Position, immutable GovernanceDecision, active Endeavor, idempotency result, event/outbox set, and authority-journal transition committed as one visible atomic result."
+    }
+  }
+}

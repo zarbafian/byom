@@ -1,0 +1,276 @@
+{
+  "machine": "EndeavorFormationIntent/Slot",
+  "owner": "kovee (C2)",
+  "states": [
+    "prepared",
+    "submitting",
+    "remote_unknown",
+    "awaiting_principal",
+    "byom_committed",
+    "linking",
+    "linked",
+    "ambiguous",
+    "canceled"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "prepared",
+      "via": "formation_prepare",
+      "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "notes": "Kovee starts one durable formation intent and uniqueness slot (§16.3); slot: held; UNIQUE(realm_id, requested_by_principal, client_formation_key) WHERE state != released."
+    },
+    {
+      "from": "prepared",
+      "to": "canceled",
+      "via": "formation_cancel",
+      "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "notes": "Local cancel durably precedes first send (§16.3 table row 1); slot: released. The only pre-send release; after bytes may have left, cancel is not a row of this machine."
+    },
+    {
+      "from": "prepared",
+      "to": "submitting",
+      "via": "kovee_endeavor_form",
+      "authority": "governance (R39): source-qualified human via the exact Kovee delegated-principal channel, personally filling the sole computed formation seat; fresh attempt proof over the stable command/idempotency domain",
+      "notes": "Exact submit begins with a fresh valid attempt (§16.3 table row 2); slot: submitting; stable semantic command bytes + fresh per-attempt authentication envelope (EndeavorFormationAttempt)."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "submitting",
+      "via": "kovee_endeavor_form",
+      "authority": "governance (R39): source-qualified human via the exact Kovee delegated-principal channel, personally filling the sole computed formation seat; fresh attempt proof over the stable command/idempotency domain",
+      "notes": "Resubmission (§16.3 table row 2): a fresh human authentication attempt over the unchanged semantic command, original actor-binding/idempotency domain, and current same-human actor/binding proof; requires the command endpoint incarnation and Society recovery epoch still active; slot: submitting."
+    },
+    {
+      "from": "submitting",
+      "to": "remote_unknown",
+      "via": "transport_outcome_unknown",
+      "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "notes": "Reply lost or transport outcome unknown (§16.3 table row 3); slot: remote_unknown; no release — after an external call may have committed there is no timeout-based release."
+    },
+    {
+      "from": "prepared",
+      "to": "byom_committed",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
+    },
+    {
+      "from": "submitting",
+      "to": "byom_committed",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
+    },
+    {
+      "from": "remote_unknown",
+      "to": "byom_committed",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "byom_committed",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
+    },
+    {
+      "from": "ambiguous",
+      "to": "byom_committed",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Committed reply, query, or terminalization result with valid signed result envelope (§16.3 table row 4); slot: byom_committed; SQL loss after Byom commit is recovered from the signed result envelope."
+    },
+    {
+      "from": "byom_committed",
+      "to": "byom_committed",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Repeated valid committed query or terminalization result: unchanged (§16.3 table row 10)."
+    },
+    {
+      "from": "linking",
+      "to": "linking",
+      "via": "committed_result_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Repeated valid committed query or terminalization result: unchanged (§16.3 table row 10)."
+    },
+    {
+      "from": "submitting",
+      "to": "awaiting_principal",
+      "via": "absence_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
+    },
+    {
+      "from": "remote_unknown",
+      "to": "awaiting_principal",
+      "via": "absence_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "awaiting_principal",
+      "via": "absence_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
+    },
+    {
+      "from": "ambiguous",
+      "to": "awaiting_principal",
+      "via": "absence_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified five-fact `absent` (§16.3 table row 5): a complete live-domain query found neither result nor tombstone; proves nothing about later arrival; slot: awaiting_principal; NO release."
+    },
+    {
+      "from": "submitting",
+      "to": "ambiguous",
+      "via": "unknown_result",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
+    },
+    {
+      "from": "remote_unknown",
+      "to": "ambiguous",
+      "via": "unknown_result",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "ambiguous",
+      "via": "unknown_result",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
+    },
+    {
+      "from": "ambiguous",
+      "to": "ambiguous",
+      "via": "unknown_result",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "`unknown`, invalid, or incomplete-lineage result (§16.3 table row 6); slot: ambiguous; ambiguity never releases the slot — conservative hold, no guessing."
+    },
+    {
+      "from": "prepared",
+      "to": "canceled",
+      "via": "tombstone_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
+    },
+    {
+      "from": "submitting",
+      "to": "canceled",
+      "via": "tombstone_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
+    },
+    {
+      "from": "remote_unknown",
+      "to": "canceled",
+      "via": "tombstone_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "canceled",
+      "via": "tombstone_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
+    },
+    {
+      "from": "ambiguous",
+      "to": "canceled",
+      "via": "tombstone_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified non-reexecuting tombstone, including successful terminalization (§16.3 table row 7); slot: released. Byom has claimed the exact IdempotencyDomain and MUST reject every future execution under it."
+    },
+    {
+      "from": "prepared",
+      "to": "canceled",
+      "via": "historically_fenced_absent_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
+    },
+    {
+      "from": "submitting",
+      "to": "canceled",
+      "via": "historically_fenced_absent_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
+    },
+    {
+      "from": "remote_unknown",
+      "to": "canceled",
+      "via": "historically_fenced_absent_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "canceled",
+      "via": "historically_fenced_absent_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
+    },
+    {
+      "from": "ambiguous",
+      "to": "canceled",
+      "via": "historically_fenced_absent_verified",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Verified `historically_fenced_absent` under a complete externally witnessed RestoreLineageProof (§16.3 table row 8); slot: released; never relabelled as an idempotency tombstone that never existed."
+    },
+    {
+      "from": "submitting",
+      "to": "submitting",
+      "via": "terminalize_not_terminalizable",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
+    },
+    {
+      "from": "remote_unknown",
+      "to": "remote_unknown",
+      "via": "terminalize_not_terminalizable",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
+    },
+    {
+      "from": "awaiting_principal",
+      "to": "awaiting_principal",
+      "via": "terminalize_not_terminalizable",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
+    },
+    {
+      "from": "ambiguous",
+      "to": "ambiguous",
+      "via": "terminalize_not_terminalizable",
+      "authority": "kovee (C2): Kovee recovery workload consuming a verified external_command_result_query / external_command_terminalize fact (R42/R40); verification, not authority",
+      "notes": "Terminalization returns `not_terminalizable` (§16.3 table row 9): a Byom no-op — the pair is unchanged and nothing releases."
+    },
+    {
+      "from": "byom_committed",
+      "to": "linking",
+      "via": "external_link_begin",
+      "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "notes": "Begin idempotent Kovee ExternalLink commit (§16.3 table row 11); slot: linking."
+    },
+    {
+      "from": "linking",
+      "to": "linking",
+      "via": "external_link_retry",
+      "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "notes": "Retryable ExternalLink failure or retry (§16.3 table row 12); link creation is idempotent over its digest."
+    },
+    {
+      "from": "linking",
+      "to": "linked",
+      "via": "external_link_commit",
+      "authority": "kovee (C2): Kovee-owned executor over the paired intent/slot records; every row CASes both under the slot generation (§16.3)",
+      "notes": "ExternalLink commits the exact result digest (§16.3 table row 13); slot: released; terminal pair."
+    }
+  ]
+}

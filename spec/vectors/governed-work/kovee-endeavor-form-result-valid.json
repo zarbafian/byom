@@ -1,0 +1,45 @@
+{
+  "name": "governed-work/kovee-endeavor-form-result-valid",
+  "description": "the exact idempotent result: Endeavor, formation decision, slot snapshot digest, source cursor (§16.3)",
+  "input": {
+    "schema": "kovee-endeavor-form-result",
+    "value": {
+      "kovee_formation_intent_ref": "fmt-1001",
+      "canonical_command_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "society_ref": "soc-1",
+      "society_recovery_epoch": 0,
+      "idempotency_domain_digest": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-idx-key-1",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "endeavor_ref": "endeavor-77",
+      "endeavor_revision": 1,
+      "endeavor_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "formation_decision_ref": "gdec-5",
+      "formation_slot_snapshot_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "source_cursor": "cursor-000121",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

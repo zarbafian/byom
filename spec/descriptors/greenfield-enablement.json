@@ -1,0 +1,61 @@
+{
+  "machine": "GreenfieldEnablement",
+  "owner": "kovee (C2)",
+  "states": [
+    "bindings_created",
+    "active",
+    "rolled_back",
+    "disabled"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "bindings_created",
+      "via": "governance_enable",
+      "authority": "kovee (C2): human realm-owner principal only, per the frozen governance_enable KCP authority row (family contract §2.A) — never a service identity, session, assistant, or connector",
+      "notes": "Saga step 1 (D10, amendment A2): durably create KoveeRealmByomBinding + KoveeSocietyMapping, not yet authoritative; the owner binding stays none. Requires the pre-existing Society (native society_prepare/society_bootstrap; Kovee is never the genesis governance actor). An overlapping active owner selector rejects the enable — overlap rejection is the absence of any row here (§14.8 closed-machine rule)."
+    },
+    {
+      "from": "bindings_created",
+      "to": "bindings_created",
+      "via": "governance_enable",
+      "authority": "kovee (C2): same frozen authority row",
+      "notes": "Retry before activation returns the identical pending bindings — idempotent over (realm, exact scope digest, binding epoch); never a second creation (GreenfieldEnablement.tla RetryIdempotent)."
+    },
+    {
+      "from": "bindings_created",
+      "to": "active",
+      "via": "owner_cas_none_to_byom",
+      "authority": "kovee (C2): the same governance_enable invocation's step 2 under the frozen authority row; a CAS proves concurrency, not authority",
+      "notes": "Saga step 2: CAS KoveeGovernanceOwnerBinding none→byom at the expected revision, atomic with binding/mapping activation; re-checks that no overlapping owner selector is active. Exact-CAS: a changed revision or epoch conflicts and commits nothing."
+    },
+    {
+      "from": "active",
+      "to": "active",
+      "via": "governance_enable",
+      "authority": "kovee (C2): same frozen authority row",
+      "notes": "Retry after activation returns the identical binding (stored result); never a second creation, CAS, or epoch advance."
+    },
+    {
+      "from": "bindings_created",
+      "to": "rolled_back",
+      "via": "governance_enable_rollback",
+      "authority": "kovee (C2): the enabling human realm-owner principal, or the saga's own definite pre-CAS failure handling",
+      "notes": "Rollback strictly before activation: voids the pending bindings, the owner binding stays none, and the binding epoch is spent — the rolled-back epoch can never activate (GreenfieldEnablement.tla NoActivationAfterRollback). After the CAS there is no rollback, only governance_disable."
+    },
+    {
+      "from": "rolled_back",
+      "to": "bindings_created",
+      "via": "governance_enable",
+      "authority": "kovee (C2): same frozen authority row",
+      "notes": "A fresh enablement after rollback opens a NEW binding epoch (generation increments); it never resurrects or reuses the rolled-back epoch's bindings."
+    },
+    {
+      "from": "active",
+      "to": "disabled",
+      "via": "governance_disable",
+      "authority": "kovee (C2): human realm-owner principal, always step-up (frozen authority row)",
+      "notes": "Freezes the owner binding (status active→frozen, owner arm retained for audit); derived channels and permits invalidate. Terminal here: re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine. Distinct from §25's GovernanceCutover (sage→none→byom), a different machine (amendment A2)."
+    }
+  ]
+}

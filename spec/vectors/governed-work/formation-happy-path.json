@@ -1,0 +1,48 @@
+{
+  "name": "governed-work/formation-happy-path",
+  "description": "intent happy path (§16.3): prepare, one submit, committed reply, idempotent ExternalLink; the terminal linked pair accepts nothing further.",
+  "input": {
+    "machine": "endeavor-formation",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "formation_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "kovee_endeavor_form",
+        "to": "submitting",
+        "expect": "accepted"
+      },
+      {
+        "from": "submitting",
+        "via": "committed_result_verified",
+        "to": "byom_committed",
+        "expect": "accepted"
+      },
+      {
+        "from": "byom_committed",
+        "via": "external_link_begin",
+        "to": "linking",
+        "expect": "accepted"
+      },
+      {
+        "from": "linking",
+        "via": "external_link_commit",
+        "to": "linked",
+        "expect": "accepted"
+      },
+      {
+        "from": "linked",
+        "via": "kovee_endeavor_form",
+        "to": "submitting",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "linked"
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/external-command-result-query.schema.json",
+  "title": "ExternalCommandResultQuery (DESIGN.md §16.3 verbatim; read-only recovery query; C2, R42)",
+  "description": "The §16.3 query verbatim. A service reconciler may use only this: authorized to the exact formation intent through the BPP projection registry row, it cannot submit, terminalize, modify, or impersonate the original human (R42). It authenticates through a current recovery binding while the target command and original binding remain immutable; a historical target incarnation or Society epoch answers only under an externally witnessed RestoreLineageProof — missing or incomplete lineage returns unknown, never live absent (§16.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "current_byom_endpoint_ref",
+    "current_endpoint_incarnation",
+    "current_recovery_binding_ref",
+    "current_recovery_binding_revision",
+    "current_recovery_binding_epoch",
+    "current_recovery_binding_digest",
+    "kovee_formation_intent_ref",
+    "target_byom_endpoint_ref",
+    "target_endpoint_incarnation",
+    "target_realm_byom_binding_ref",
+    "target_realm_byom_binding_revision",
+    "target_realm_byom_binding_epoch",
+    "target_realm_byom_binding_digest",
+    "target_society_ref",
+    "target_society_recovery_epoch",
+    "source_principal_ref",
+    "source_actor_binding_digest",
+    "operation",
+    "byom_command_idempotency_key",
+    "canonical_command_digest",
+    "idempotency_domain_digest"
+  ],
+  "properties": {
+    "current_byom_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "current_endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "current_recovery_binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "current_recovery_binding_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "current_recovery_binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "current_recovery_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "kovee_formation_intent_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_byom_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_realm_byom_binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_realm_byom_binding_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "target_realm_byom_binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "target_realm_byom_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "target_society_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_society_recovery_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "source_principal_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "source_actor_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "operation": {
+      "$ref": "#/$defs/identifier",
+      "description": "The original external command operation, e.g. kovee_endeavor_form."
+    },
+    "byom_command_idempotency_key": {
+      "$ref": "#/$defs/identifier"
+    },
+    "canonical_command_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "idempotency_domain_digest": {
+      "$ref": "#/$defs/idempotencyDomainDigest"
+    },
+    "restore_lineage_proof_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "restore_lineage_proof_digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "idempotencyDomainDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "key_ref",
+        "value_hex"
+      ],
+      "properties": {
+        "class": {
+          "const": "scope_erasure_safe"
+        },
+        "algorithm": {
+          "const": "hmac-sha-256"
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Per-Society index key id; the raw key is never part of the ref."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "description": "The IdempotencyDomain digest (§14.2; PROFILE.md §5, D-R0-1): always the keyed scope_erasure_safe class over the per-Society index key — a public class here is a conformance failure."
+    }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "name": "governed-work/kovee-endeavor-form-arguments-valid",
+  "description": "the argument envelope: unchanged command plus fresh attempt id, nonce, recovery binding, observation, and proof (§16.3)",
+  "input": {
+    "schema": "kovee-endeavor-form-arguments",
+    "value": {
+      "command": {
+        "kovee_formation_intent_ref": "fmt-1001",
+        "byom_endpoint_ref": "byomd-local",
+        "command_endpoint_incarnation": "inc-0001",
+        "realm_byom_binding_ref": "krbb-1",
+        "realm_byom_binding_revision": 1,
+        "realm_byom_binding_epoch": 1,
+        "realm_byom_binding_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "society_ref": "soc-1",
+        "society_recovery_epoch": 0,
+        "source_principal_ref": "principal-ada",
+        "source_actor_binding_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "context_bundle_ref": "ccb-5",
+        "context_bundle_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "endeavor_proposal": {
+          "title": "Ship the atlas gateway",
+          "purpose": "governed delivery of the v0 gateway"
+        },
+        "endeavor_proposal_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "source_principal_position": {
+          "seat": "formation-human-seat",
+          "position": "approve"
+        },
+        "source_principal_position_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "expected_governance_rule_set_ref": "grs-12",
+        "expected_slot_snapshot_digest": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        "byom_command_idempotency_key": "idem-fmt-1001",
+        "idempotency_domain_digest": {
+          "class": "scope_erasure_safe",
+          "algorithm": "hmac-sha-256",
+          "key_ref": "society-idx-key-1",
+          "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        }
+      },
+      "canonical_command_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "attempt_id": "att-1",
+      "attempt_nonce": "nonce-7f3a01",
+      "attempt_recovery_binding_ref": "arb-1",
+      "attempt_recovery_binding_revision": 1,
+      "attempt_recovery_binding_epoch": 1,
+      "attempt_recovery_binding_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "authentication_observation_ref": "auth-obs-9",
+      "authentication_observation_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "authentication_proof": "proof-b64u.eyJhbGciOiJFUzI1NiJ9.formation-attempt-1"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

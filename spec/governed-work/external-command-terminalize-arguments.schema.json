@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/external-command-terminalize-arguments.schema.json",
+  "title": "ExternalCommandTerminalizeArguments (DESIGN.md §16.3 verbatim; C2, R40)",
+  "description": "The §16.3 arguments verbatim. external_command_terminalize is the only liveness mutation after an ambiguous formation: the same source human principal, freshly authenticated through a current recovery binding, over the exact original domain/command plus restore lineage when historical. The same-source-human check runs from the durable source-principal binding: the request retains the target actor-binding digest and separately carries the current actor-binding digest derived from the fresh channel — a binding-epoch change may fence execution while still allowing the same human to deny future execution; another principal, service, controller, or successor Participant cannot terminalize (§16.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kovee_formation_intent_ref",
+    "current_recovery_binding_ref",
+    "current_recovery_binding_revision",
+    "current_recovery_binding_epoch",
+    "current_recovery_binding_digest",
+    "target_byom_endpoint_ref",
+    "target_endpoint_incarnation",
+    "target_society_ref",
+    "target_society_recovery_epoch",
+    "source_principal_ref",
+    "target_source_actor_binding_digest",
+    "current_source_actor_binding_digest",
+    "operation",
+    "byom_command_idempotency_key",
+    "canonical_command_digest",
+    "idempotency_domain_digest",
+    "reason",
+    "authentication_observation_ref",
+    "authentication_observation_digest",
+    "authentication_proof"
+  ],
+  "properties": {
+    "kovee_formation_intent_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "current_recovery_binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "current_recovery_binding_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "current_recovery_binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "current_recovery_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "target_byom_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_society_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_society_recovery_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "source_principal_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "target_source_actor_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "current_source_actor_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "operation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "byom_command_idempotency_key": {
+      "$ref": "#/$defs/identifier"
+    },
+    "canonical_command_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "idempotency_domain_digest": {
+      "$ref": "#/$defs/idempotencyDomainDigest"
+    },
+    "reason": {
+      "$ref": "#/$defs/reason"
+    },
+    "authentication_observation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "authentication_observation_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "authentication_proof": {
+      "$ref": "#/$defs/opaqueProof"
+    },
+    "restore_lineage_proof_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "restore_lineage_proof_digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "idempotencyDomainDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "key_ref",
+        "value_hex"
+      ],
+      "properties": {
+        "class": {
+          "const": "scope_erasure_safe"
+        },
+        "algorithm": {
+          "const": "hmac-sha-256"
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Per-Society index key id; the raw key is never part of the ref."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "description": "The IdempotencyDomain digest (§14.2; PROFILE.md §5, D-R0-1): always the keyed scope_erasure_safe class over the per-Society index key — a public class here is a conformance failure."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Short human-readable reason; free text, bounded."
+    },
+    "opaqueProof": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,4096}$",
+      "description": "Opaque bounded authentication-proof envelope (sender-constrained, phishing-resistant per Charter assurance, §14.4)."
+    }
+  }
+}

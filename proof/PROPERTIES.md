@@ -23,6 +23,13 @@ authored-only.
 | `specs/BudgetConservation.tla` | 600 | 2,937 | 12 |
 | `specs/AuthorityJournal.tla` | 2,902 | 6,933 | 17 |
 
+C2 slice 1 adds one model beyond the B0.1 sheet, checked the same way
+(TLC exhaustive, `-deadlock`, zero errors, 2026-07-26):
+
+| Model | Distinct states | States generated | Graph depth |
+|---|---:|---:|---:|
+| `specs/GreenfieldEnablement.tla` | 65 | 121 | 11 |
+
 **Liveness: none is claimed, anywhere.** Every checked property is safety
 (state invariants plus `[][...]_vars` action invariants, which are safety);
 no fairness is assumed by any spec. Honest reason: every model treats daemon
@@ -253,6 +260,40 @@ machine-checked); the endpoint-incarnation machine itself
 flag; no code yet. **Fairness**: none; safety only (in particular, no claim
 that a witness_unknown transaction is eventually resolved). **Coverage**:
 `T = {t1, t2}`, `MaxGen = 2`; 2,902 distinct states, exhaustive.
+
+### specs/GreenfieldEnablement.tla — the D10 greenfield enablement saga (C2 slice 1)
+
+Per governed scope: create `KoveeRealmByomBinding` + `KoveeSocietyMapping`
+durably (inert), then CAS `KoveeGovernanceOwnerBinding` `none → byom` at the
+expected revision (byom §16.6 item 1; kovee amendment A2; the frozen
+`governance_enable` authority row, family contract §2.A), exactly as
+committed in `greenfield-enablement.json` and specified in
+`../spec/governed-work/greenfield-saga.md`.
+
+| Model invariant | Design | Descriptor rows |
+|---|---|---|
+| `NoOverlappingActiveOwners`, `NoOverlappingEnablementSlots` | §16.6 no overlapping active owner selectors — no scope under two owners | `governance_enable` / `owner_cas_none_to_byom` guards (rejection is the absence of a row) |
+| `RetryIdempotent` | frozen row: retry returns the identical binding; exact-CAS at expected revision | the two `governance_enable` self-rows |
+| `NoActivationAfterRollback`, `ActiveEpochNeverRolledBack` | D10: rollback-before-activation; re-enable only under a new binding epoch | `governance_enable_rollback`, `rolled_back → bindings_created` |
+| `SageNeverExercised` | amendment A1: the sage arm is spec fidelity, never exercised | (no row sets it) |
+| `OwnerMatchesPhase` | the owner arm flips exactly at the CAS and survives the freeze | `owner_cas_none_to_byom`, `governance_disable` |
+
+**Projection**: saga phase, binding epoch, and owner arm per scope; two
+scopes with one overlapping pair; record bytes, subject digests, principal
+identity, and step-up assurance abstracted (the frozen row fixes them — a
+CAS proves concurrency, not authority). Restore honesty: durable state plus
+stuttering crashes; the rewind of durable state by a store restore is out
+of model scope — the saga doc §5 requires query-first resolution there, and
+that behavior is not machine-checked yet. **Refinement boundary**:
+`greenfield-enablement.json` (exact, machine-checked); the paired
+`endeavor-formation.json` machine is descriptor + executable-walk covered
+only (no C2 slice 1 model — its recovery table is exercised by the six
+`../spec/vectors/governed-work/` walks). **Fairness**: none; safety only.
+**Non-vacuity probes** (run ad hoc, not yet in a harness): allowing
+`Activate` from `rolled_back` violates `NoActivationAfterRollback`;
+dropping `EnableCreate`'s overlap guard violates
+`NoOverlappingEnablementSlots`. **Coverage**: 65 distinct states,
+exhaustive at `{s1, s2}`, one overlap pair, `MaxEpoch = 2`.
 
 ### check-descriptors.py — descriptor ↔ model parity, as CI
 

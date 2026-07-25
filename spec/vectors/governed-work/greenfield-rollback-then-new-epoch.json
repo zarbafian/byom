@@ -1,0 +1,42 @@
+{
+  "name": "governed-work/greenfield-rollback-then-new-epoch",
+  "description": "D10 saga: rollback strictly before activation; the rolled-back epoch can never activate; a fresh enable opens a new binding epoch and only then the CAS commits.",
+  "input": {
+    "machine": "greenfield-enablement",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "governance_enable",
+        "to": "bindings_created",
+        "expect": "accepted"
+      },
+      {
+        "from": "bindings_created",
+        "via": "governance_enable_rollback",
+        "to": "rolled_back",
+        "expect": "accepted"
+      },
+      {
+        "from": "rolled_back",
+        "via": "owner_cas_none_to_byom",
+        "to": "active",
+        "expect": "rejected"
+      },
+      {
+        "from": "rolled_back",
+        "via": "governance_enable",
+        "to": "bindings_created",
+        "expect": "accepted"
+      },
+      {
+        "from": "bindings_created",
+        "via": "owner_cas_none_to_byom",
+        "to": "active",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "active"
+  }
+}

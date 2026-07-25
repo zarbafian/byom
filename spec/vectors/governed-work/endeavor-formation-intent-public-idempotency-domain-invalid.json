@@ -1,0 +1,86 @@
+{
+  "name": "governed-work/endeavor-formation-intent-public-idempotency-domain-invalid",
+  "description": "the IdempotencyDomain digest is always the keyed scope_erasure_safe class (PROFILE.md §5, D-R0-1); a public sha-256 leaks the erasable index",
+  "input": {
+    "schema": "endeavor-formation-intent",
+    "value": {
+      "formation_id": "fmt-1001",
+      "revision": 3,
+      "realm_id": "realm-1",
+      "project_id": "proj-atlas",
+      "space_id": "space-atlas-main",
+      "branch_id": "branch-9",
+      "frontier_ref": "frontier-42",
+      "frontier_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "collaboration_context_bundle_ref": "ccb-5",
+      "context_bundle_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "society_ref": "soc-1",
+      "society_recovery_epoch": 0,
+      "endeavor_proposal_ref": "eprop-3",
+      "endeavor_proposal_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "byom_endpoint_ref": "byomd-local",
+      "command_endpoint_incarnation": "inc-0001",
+      "realm_byom_binding_ref": "krbb-1",
+      "realm_byom_binding_revision": 1,
+      "realm_byom_binding_epoch": 1,
+      "realm_byom_binding_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "requested_by_principal": "principal-ada",
+      "source_actor_binding_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "delegated_principal_subject_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "client_formation_key": "cfk-2026-07-26-a",
+      "byom_command_idempotency_key": "idem-fmt-1001",
+      "idempotency_domain_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "canonical_byom_command_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "formation_slot_ref": "slot-1001",
+      "formation_slot_generation": 1,
+      "authorization_dependency_set_ref": "authdep-11",
+      "authority_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "state": "prepared",
+      "created_at": "2026-07-26T12:00:00Z",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

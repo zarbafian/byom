@@ -1,0 +1,48 @@
+{
+  "name": "governed-work/greenfield-enable-retry-identical",
+  "description": "D10 saga: create bindings, retry returns the identical pending bindings, CAS none→byom activates, the CAS replay is a no-op, a later enable retry returns the identical binding, and rollback after activation is not a row.",
+  "input": {
+    "machine": "greenfield-enablement",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "governance_enable",
+        "to": "bindings_created",
+        "expect": "accepted"
+      },
+      {
+        "from": "bindings_created",
+        "via": "governance_enable",
+        "to": "bindings_created",
+        "expect": "accepted"
+      },
+      {
+        "from": "bindings_created",
+        "via": "owner_cas_none_to_byom",
+        "to": "active",
+        "expect": "accepted"
+      },
+      {
+        "from": "active",
+        "via": "owner_cas_none_to_byom",
+        "to": "active",
+        "expect": "replay"
+      },
+      {
+        "from": "active",
+        "via": "governance_enable",
+        "to": "active",
+        "expect": "accepted"
+      },
+      {
+        "from": "active",
+        "via": "governance_enable_rollback",
+        "to": "rolled_back",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "active"
+  }
+}

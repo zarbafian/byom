@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/endeavor-formation-intent.schema.json",
+  "title": "EndeavorFormationIntent (DESIGN.md §16.3 verbatim; Kovee-owned formation-recovery record; C2)",
+  "description": "The §16.3 record verbatim. UNIQUE(realm_id, requested_by_principal, client_formation_key): the uniqueness scope deduplicates one explicit human formation command — it does not imply one Endeavor per Branch, frontier, purpose, or Society (§16.3; cross-record uniqueness enforced in code). Paired with EndeavorFormationSlot through the closed intent/slot recovery machine (spec/descriptors/endeavor-formation.json); every row CASes both records under the slot generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formation_id",
+    "revision",
+    "realm_id",
+    "project_id",
+    "space_id",
+    "branch_id",
+    "frontier_ref",
+    "frontier_digest",
+    "collaboration_context_bundle_ref",
+    "context_bundle_digest",
+    "society_ref",
+    "society_recovery_epoch",
+    "endeavor_proposal_ref",
+    "endeavor_proposal_digest",
+    "byom_endpoint_ref",
+    "command_endpoint_incarnation",
+    "realm_byom_binding_ref",
+    "realm_byom_binding_revision",
+    "realm_byom_binding_epoch",
+    "realm_byom_binding_digest",
+    "requested_by_principal",
+    "source_actor_binding_digest",
+    "delegated_principal_subject_digest",
+    "client_formation_key",
+    "byom_command_idempotency_key",
+    "idempotency_domain_digest",
+    "canonical_byom_command_digest",
+    "formation_slot_ref",
+    "formation_slot_generation",
+    "authorization_dependency_set_ref",
+    "authority_digest",
+    "state",
+    "created_at",
+    "digest"
+  ],
+  "properties": {
+    "formation_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "realm_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "project_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "space_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "branch_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "frontier_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "frontier_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "collaboration_context_bundle_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "context_bundle_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "society_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "society_recovery_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "endeavor_proposal_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "endeavor_proposal_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "byom_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "command_endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "realm_byom_binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "realm_byom_binding_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "realm_byom_binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "realm_byom_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "requested_by_principal": {
+      "$ref": "#/$defs/identifier"
+    },
+    "source_actor_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "delegated_principal_subject_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "client_formation_key": {
+      "$ref": "#/$defs/identifier"
+    },
+    "byom_command_idempotency_key": {
+      "$ref": "#/$defs/identifier"
+    },
+    "idempotency_domain_digest": {
+      "$ref": "#/$defs/idempotencyDomainDigest"
+    },
+    "canonical_byom_command_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "formation_slot_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "formation_slot_generation": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "authorization_dependency_set_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "authority_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "latest_attempt_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "latest_authentication_observation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "byom_result_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "byom_result_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "external_link_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "state": {
+      "enum": [
+        "prepared",
+        "submitting",
+        "remote_unknown",
+        "awaiting_principal",
+        "byom_committed",
+        "linking",
+        "linked",
+        "ambiguous",
+        "canceled"
+      ],
+      "description": "§16.3 verbatim. linked and canceled are terminal; timeout, absence, authentication expiry, binding rotation, an unverified historical lookup, or ambiguous never releases the paired slot."
+    },
+    "created_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "terminal_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "idempotencyDomainDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "key_ref",
+        "value_hex"
+      ],
+      "properties": {
+        "class": {
+          "const": "scope_erasure_safe"
+        },
+        "algorithm": {
+          "const": "hmac-sha-256"
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Per-Society index key id; the raw key is never part of the ref."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "description": "The IdempotencyDomain digest (§14.2; PROFILE.md §5, D-R0-1): always the keyed scope_erasure_safe class over the per-Society index key — a public class here is a conformance failure."
+    }
+  }
+}

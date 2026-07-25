@@ -1,0 +1,57 @@
+{
+  "name": "governed-work/formation-terminalize-released",
+  "description": "unknown result → ambiguous holds the slot (a not_terminalizable answer changes nothing, and cancel is not a row); successful terminalization installs the verified tombstone and releases (§16.3).",
+  "input": {
+    "machine": "endeavor-formation",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "formation_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "kovee_endeavor_form",
+        "to": "submitting",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "submitting",
+        "via": "transport_outcome_unknown",
+        "to": "remote_unknown",
+        "expect": "accepted"
+      },
+      {
+        "from": "remote_unknown",
+        "via": "unknown_result",
+        "to": "ambiguous",
+        "expect": "accepted"
+      },
+      {
+        "from": "ambiguous",
+        "via": "terminalize_not_terminalizable",
+        "to": "ambiguous",
+        "expect": "accepted"
+      },
+      {
+        "from": "ambiguous",
+        "via": "formation_cancel",
+        "to": "canceled",
+        "expect": "rejected"
+      },
+      {
+        "from": "ambiguous",
+        "via": "tombstone_verified",
+        "to": "canceled",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "canceled"
+  }
+}

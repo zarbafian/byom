@@ -1,0 +1,54 @@
+{
+  "name": "governed-work/endeavor-formation-attempt-canceled-sent-invalid",
+  "description": "prepared→canceled happens only before bytes may first leave Kovee (§16.3): a canceled attempt cannot carry a send time",
+  "input": {
+    "schema": "endeavor-formation-attempt",
+    "value": {
+      "attempt_id": "att-1",
+      "formation_id": "fmt-1001",
+      "attempt_ordinal": 1,
+      "canonical_byom_command_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "idempotency_domain_digest": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-idx-key-1",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "attempt_recovery_binding_ref": "arb-1",
+      "attempt_recovery_binding_revision": 1,
+      "attempt_recovery_binding_epoch": 1,
+      "attempt_recovery_binding_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "authentication_observation_ref": "auth-obs-9",
+      "authentication_observation_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "attempt_nonce": "nonce-7f3a01",
+      "authentication_proof_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "state": "canceled",
+      "prepared_at": "2026-07-26T12:00:00Z",
+      "sent_at": "2026-07-26T12:00:00Z",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

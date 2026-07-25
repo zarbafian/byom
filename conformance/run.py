@@ -60,6 +60,17 @@ Checks, in order:
    gated (the akson-mcp marking); and zero governance, runtime, or admin
    operations are bound. Tool-call vectors (spec/vectors/mcp/) replay
    call shapes against the committed document.
+8. the C2 governed-work family (spec/governed-work/, byom §16.3/§16.6,
+   family contract §2.A/2.B): the closed slice-1 record-schema inventory is
+   present and compiled; every §16 state/status enum equals its transcription
+   below verbatim (order included); the two Kovee-owned executor descriptors
+   (greenfield-enablement, endeavor-formation) exist, declare owner
+   "kovee (C2)", and the formation descriptor's states equal the §16.3
+   intent list verbatim. Kovee-owned descriptors never own a BPP operation,
+   so the exactly-once descriptor-parity rule below is not polluted; the
+   restore-lineage-proof schema additionally gets a cross-member check
+   (declared hop_count equals the ordered_hops length — the bpp-failure
+   type/kind pattern, since JSON Schema cannot compare the two).
 
 Exit code 0 only when everything passes. Self-contained: Python stdlib only,
 with `jsonschema` used opportunistically when installed and `node` used
@@ -242,6 +253,62 @@ NAMED_TRANSITIONS = frozenset({
     "journal_sql_prepare", "journal_witness_cas", "journal_abandon",
     "journal_sql_finalize",
 })
+
+# ------------------------------------------------- C2 governed-work slice ---
+# byom_governed_work_v1 slice 1 (C2): the byom-normative binding/enablement/
+# formation record shapes under spec/governed-work/ (DESIGN.md §16.3/§16.6;
+# family contract §2.A/2.B; plan D10 via kovee amendment A2). Kovee owns the
+# host schemas; these are the byom-side normative shapes, so their machines
+# are Kovee-owned executors and their descriptors carry owner
+# KOVEE_DESCRIPTOR_OWNER (the C2 descriptor ownership rule).
+GOVERNED_WORK_SCHEMAS = (
+    "kovee-realm-byom-binding", "kovee-society-mapping",
+    "kovee-governance-owner-binding", "delegated-principal-credential",
+    "endeavor-formation-intent", "endeavor-formation-slot",
+    "endeavor-formation-attempt", "kovee-endeavor-form-command",
+    "kovee-endeavor-form-arguments", "kovee-endeavor-form-result",
+    "external-command-result-query", "external-command-result-query-result",
+    "external-command-terminalize-arguments",
+    "external-command-terminalize-result",
+    "restore-lineage", "restore-lineage-proof",
+)
+# §16 state/enum lists, transcribed verbatim (order included); the committed
+# schema enums must equal them exactly — the machine-checked "states
+# verbatim" gate of the C2 sheet.
+GOVERNED_WORK_ENUMS = {
+    ("endeavor-formation-intent", "state"): [
+        "prepared", "submitting", "remote_unknown", "awaiting_principal",
+        "byom_committed", "linking", "linked", "ambiguous", "canceled"],
+    ("endeavor-formation-slot", "state"): [
+        "held", "submitting", "remote_unknown", "awaiting_principal",
+        "byom_committed", "linking", "ambiguous", "released"],
+    ("endeavor-formation-attempt", "state"): [
+        "prepared", "sent", "reply_received", "transport_unknown",
+        "reconciled", "canceled"],
+    ("kovee-governance-owner-binding", "governance_owner"): [
+        "sage", "byom", "none"],
+    ("kovee-governance-owner-binding", "status"): ["active", "frozen"],
+    ("kovee-realm-byom-binding", "historical_recovery_mode"): [
+        "disabled", "exact_formation_intent_only"],
+    ("external-command-result-query-result", "status"): [
+        "committed", "absent", "historically_fenced_absent",
+        "non_reexecuting_tombstone", "unknown"],
+    ("external-command-terminalize-result", "status"): [
+        "committed", "terminalized", "not_terminalizable"],
+    ("external-command-terminalize-result", "blocking_state"): [
+        "prepared_or_in_flight", "lineage_incomplete", "witness_unavailable",
+        "domain_conflict"],
+    ("restore-lineage", "idempotency_retention"): [
+        "complete", "incomplete", "unavailable"],
+    ("restore-lineage", "status"): ["current", "superseded"],
+}
+# The two C2 slice-1 descriptors: file stem -> machine name. Both are
+# Kovee-owned executor machines over byom-normative shapes.
+GOVERNED_WORK_DESCRIPTORS = {
+    "greenfield-enablement": "GreenfieldEnablement",
+    "endeavor-formation": "EndeavorFormationIntent/Slot",
+}
+KOVEE_DESCRIPTOR_OWNER = "kovee (C2)"
 
 # ------------------------------------------------------ C3a MCP bundle ------
 # The C3a MCP tool op lists, transcribed verbatim from plan/sheets/C3a.md
@@ -730,6 +797,20 @@ def hmac_sha256_hex(secret_hex: str, canonical: str) -> str:
 PROBLEM_TYPE_PREFIX = "https://byom.dev/problems/"
 
 
+def _restore_lineage_proof_ok(value) -> bool:
+    """The declared hop_count must equal the ordered_hops length
+    (DESIGN.md §16.3); JSON Schema cannot compare a member against an array
+    length, so the runner enforces it (the bpp-failure type/kind pattern).
+    Applied only where both members carry their schema-checked shapes."""
+    if not isinstance(value, dict):
+        return True
+    count, hops = value.get("hop_count"), value.get("ordered_hops")
+    if isinstance(count, int) and not isinstance(count, bool) \
+            and isinstance(hops, list):
+        return count == len(hops)
+    return True
+
+
 def _failure_type_kind_ok(envelope) -> bool:
     """Problem type must equal exactly PROBLEM_TYPE_PREFIX + kind (PROFILE.md
     §3, profile-pinned decision 3). Applied only where both members are
@@ -948,6 +1029,11 @@ class Runner:
     def load_schemas(self) -> int:
         schema_dir = self.spec_dir / "schemas"
         paths = sorted(schema_dir.rglob("*.schema.json"))
+        # C2 governed-work record schemas live in their own bundle directory
+        # (spec/governed-work/) but share one schema namespace with
+        # spec/schemas/ — duplicate names fail below.
+        paths += sorted((self.spec_dir / "governed-work")
+                        .glob("*.schema.json"))
         if not paths:
             self.fail(f"no schemas found under {schema_dir}")
             return 0
@@ -1032,6 +1118,66 @@ class Runner:
             if ok:
                 covered += 1
         return covered
+
+    # -- C2 governed-work family --
+
+    def check_governed_work(self) -> dict:
+        """C2 slice 1 (byom §16.3/§16.6; family contract §2.A/2.B): the
+        closed record-schema inventory is present; every §16 enum equals its
+        verbatim transcription (order included); the two Kovee-owned
+        executor descriptors exist, declare owner KOVEE_DESCRIPTOR_OWNER and
+        the expected machine name; and the formation descriptor's states
+        equal the §16.3 EndeavorFormationIntent list verbatim."""
+        info = {"schemas": 0, "enums": 0, "descriptors": 0}
+        for name in GOVERNED_WORK_SCHEMAS:
+            if name not in self.schemas:
+                self.fail(f"governed-work: record schema {name} is missing "
+                          "from spec/governed-work/")
+                continue
+            info["schemas"] += 1
+        for (name, field), want in GOVERNED_WORK_ENUMS.items():
+            schema = self.schemas.get(name)
+            if schema is None:
+                continue  # already failed above
+            got = schema.get("properties", {}).get(field, {}).get("enum")
+            if got != want:
+                self.fail(f"governed-work: {name}.{field} enum is not the "
+                          f"§16 list verbatim\n      schema: {got}\n"
+                          f"      §16:    {want}")
+                continue
+            info["enums"] += 1
+        for stem, machine in GOVERNED_WORK_DESCRIPTORS.items():
+            path = self.spec_dir / "descriptors" / f"{stem}.json"
+            if not path.is_file():
+                self.fail(f"governed-work: descriptor {stem}.json is missing")
+                continue
+            try:
+                body = strict_parse(path.read_text(encoding="utf-8"))
+            except ValueError:
+                continue  # run_descriptors reports the parse failure
+            ok = True
+            if body.get("owner") != KOVEE_DESCRIPTOR_OWNER:
+                self.fail(f"governed-work: {stem}.json owner is "
+                          f"{body.get('owner')!r}, expected "
+                          f"{KOVEE_DESCRIPTOR_OWNER!r} (Kovee-owned executor "
+                          "over byom-normative shapes)")
+                ok = False
+            if body.get("machine") != machine:
+                self.fail(f"governed-work: {stem}.json machine is "
+                          f"{body.get('machine')!r}, expected {machine!r}")
+                ok = False
+            if stem == "endeavor-formation":
+                want = GOVERNED_WORK_ENUMS[("endeavor-formation-intent",
+                                            "state")]
+                if body.get("states") != want:
+                    self.fail("governed-work: endeavor-formation.json states "
+                              "are not the §16.3 intent list verbatim\n"
+                              f"      descriptor: {body.get('states')}\n"
+                              f"      §16.3:      {want}")
+                    ok = False
+            if ok:
+                info["descriptors"] += 1
+        return info
 
     # -- C3a MCP tool bundle --
 
@@ -1151,10 +1297,15 @@ class Runner:
 
     def _descriptor_shape_errors(self, body) -> list[str]:
         errs = []
-        if not isinstance(body, dict) or set(body) != {"machine", "states",
-                                                       "transitions"}:
+        keys = set(body) if isinstance(body, dict) else set()
+        if not isinstance(body, dict) or not (
+                {"machine", "states", "transitions"} <= keys
+                and keys <= {"machine", "states", "transitions", "owner"}):
             return ["top-level keys must be exactly "
-                    "{machine, states, transitions}"]
+                    "{machine, states, transitions} plus optional owner"]
+        if "owner" in body and not (isinstance(body["owner"], str)
+                                    and body["owner"]):
+            errs.append("owner, when present, must be a non-empty string")
         if not (isinstance(body["machine"], str) and body["machine"]):
             errs.append("machine must be a non-empty string")
         states = body["states"]
@@ -1207,7 +1358,8 @@ class Runner:
         and must cite an operation owned by a different descriptor (gap
         note G13 in spec/schemas/ops/README.md)."""
         desc_dir = self.spec_dir / "descriptors"
-        counts = {"files": 0, "states": 0, "transitions": 0, "owned": 0}
+        counts = {"files": 0, "states": 0, "transitions": 0, "owned": 0,
+                  "kovee": 0}
         paths = sorted(desc_dir.glob("*.json"))
         if not paths:
             self.fail(f"no descriptors found under {desc_dir}")
@@ -1235,16 +1387,28 @@ class Runner:
             counts["files"] += 1
             counts["states"] += len(body["states"])
             counts["transitions"] += len(body["transitions"])
+            # C2 descriptor ownership rule: a descriptor declaring a Kovee
+            # owner describes a Kovee-owned executor machine over
+            # byom-normative shapes (§16.3/§16.6). Its vias are Kovee-side
+            # transition names or host-integration operations; they never own
+            # a BPP operation, so they stay out of the exactly-once owners
+            # map below. Reads still cannot drive transitions.
+            kovee_owned = isinstance(body.get("owner"), str) \
+                and body["owner"].startswith("kovee")
+            if kovee_owned:
+                counts["kovee"] += 1
             for row in body["transitions"]:
                 via = row["via"]
+                if via in SLICE_READS:
+                    self.fail(f"{name}: read operation {via!r} cannot drive "
+                              "a transition (reads never mutate, §14.2)")
+                    continue
+                if kovee_owned:
+                    continue
                 if via not in ALL_CATALOG_OPS and via not in NAMED_TRANSITIONS:
                     self.fail(f"{name}: via {via!r} is neither a §14.6 "
                               "catalog operation nor a named kernel/server "
                               "transition")
-                    continue
-                if via in SLICE_READS:
-                    self.fail(f"{name}: read operation {via!r} cannot drive "
-                              "a transition (reads never mutate, §14.2)")
                     continue
                 if row.get("cascade"):
                     if via not in ALL_CATALOG_OPS:
@@ -1324,6 +1488,10 @@ class Runner:
             # cross-reference two members, so the schema's $comment defers to
             # this convention check (R0/BYOM-02).
             verdict = _failure_type_kind_ok(inp["value"])
+        if verdict and schema_name == "restore-lineage-proof" \
+                and inp.get("ref") is None:
+            # §16.3: declared hop count MUST equal the array length.
+            verdict = _restore_lineage_proof_ok(inp["value"])
         if verdict != expected["valid"]:
             self.fail(f"{rel}: expected valid={expected['valid']}, got {verdict}")
             return
@@ -1611,6 +1779,7 @@ class Runner:
             backend = "minimal structural validator (jsonschema not installed)"
         n_schemas = self.load_schemas()
         covered = self.check_bundle()
+        gw = self.check_governed_work()
         mcp = self.check_mcp_tools()
         desc = self.run_descriptors()
         counts = self.run_vectors()
@@ -1622,10 +1791,16 @@ class Runner:
               f"schema-covered ({len(SLICE_MUTATING)} mutating, "
               f"{len(SLICE_READS)} reads; complete sheet, "
               f"{len(B01_SHEET)} families)")
-        print(f"descriptors: {desc['files']} machines, {desc['states']} "
+        print(f"descriptors: {desc['files']} machines "
+              f"({desc['kovee']} kovee-owned), {desc['states']} "
               f"states, {desc['transitions']} transitions — "
               f"{desc['owned']}/{len(SLICE_MUTATING)} mutating ops owned "
               "exactly once")
+        print(f"governed-work: {gw['schemas']}/{len(GOVERNED_WORK_SCHEMAS)} "
+              f"C2 record schemas, {gw['enums']}/"
+              f"{len(GOVERNED_WORK_ENUMS)} §16 enums verbatim, "
+              f"{gw['descriptors']}/{len(GOVERNED_WORK_DESCRIPTORS)} "
+              "kovee-owned descriptors")
         pending = (f"; pending op schemas: {', '.join(mcp['pending'])}"
                    if mcp["pending"] else "; all ops schema-backed")
         print(f"mcp:      c3a — {mcp['candidate']} candidate + "

@@ -1,0 +1,54 @@
+{
+  "name": "governed-work/formation-awaiting-principal-resubmit",
+  "description": "verified absent → awaiting_principal; a cancel there is NOT a row (absence never releases the slot); the same human resubmits the unchanged semantic command with a fresh attempt (§16.3).",
+  "input": {
+    "machine": "endeavor-formation",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "formation_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "kovee_endeavor_form",
+        "to": "submitting",
+        "expect": "accepted"
+      },
+      {
+        "from": "submitting",
+        "via": "transport_outcome_unknown",
+        "to": "remote_unknown",
+        "expect": "accepted"
+      },
+      {
+        "from": "remote_unknown",
+        "via": "absence_verified",
+        "to": "awaiting_principal",
+        "expect": "accepted"
+      },
+      {
+        "from": "awaiting_principal",
+        "via": "formation_cancel",
+        "to": "canceled",
+        "expect": "rejected"
+      },
+      {
+        "from": "awaiting_principal",
+        "via": "kovee_endeavor_form",
+        "to": "submitting",
+        "expect": "accepted"
+      },
+      {
+        "from": "submitting",
+        "via": "committed_result_verified",
+        "to": "byom_committed",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "byom_committed"
+  }
+}

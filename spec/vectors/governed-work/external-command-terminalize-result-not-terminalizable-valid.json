@@ -1,0 +1,40 @@
+{
+  "name": "governed-work/external-command-terminalize-result-not-terminalizable-valid",
+  "description": "not_terminalizable: execution prepared/in flight — no mutation, the Kovee pair stays unchanged (§16.3)",
+  "input": {
+    "schema": "external-command-terminalize-result",
+    "value": {
+      "target_endpoint_incarnation": "inc-0001",
+      "target_society_ref": "soc-1",
+      "target_society_recovery_epoch": 0,
+      "canonical_command_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "idempotency_domain_digest": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-idx-key-1",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "observed_at": "2026-07-26T12:00:00Z",
+      "server_signature": "sig-ed25519-b64u.MEUCIQDx0fGoverned0WorkSliceOneExampleSignature",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "status": "not_terminalizable",
+      "blocking_state": "prepared_or_in_flight",
+      "blocking_evidence_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

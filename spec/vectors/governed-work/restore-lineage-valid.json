@@ -1,0 +1,42 @@
+{
+  "name": "governed-work/restore-lineage-valid",
+  "description": "one sealed-restore hop: complete retention, permanently fenced predecessor, external witness receipt (§15.3, §16.3)",
+  "input": {
+    "schema": "restore-lineage",
+    "value": {
+      "lineage_id": "rl-1",
+      "endpoint_root_id": "root-1",
+      "predecessor_endpoint_incarnation": "inc-0001",
+      "successor_endpoint_incarnation": "inc-0002",
+      "society_ref": "soc-1",
+      "predecessor_society_recovery_epoch": 0,
+      "successor_society_recovery_epoch": 1,
+      "predecessor_authority_journal_head": "journal-head-341",
+      "predecessor_idempotency_checkpoint_ref": "ick-3",
+      "predecessor_idempotency_checkpoint_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "idempotency_retention": "complete",
+      "predecessor_domain_execution": "permanently_fenced",
+      "recovery_event_ref": "recov-8",
+      "external_witness_ref": "witness-2",
+      "external_witness_receipt_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "issued_at": "2026-07-26T12:00:00Z",
+      "status": "current",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

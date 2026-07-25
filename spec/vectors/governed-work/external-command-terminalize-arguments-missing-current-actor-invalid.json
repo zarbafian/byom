@@ -1,0 +1,58 @@
+{
+  "name": "governed-work/external-command-terminalize-arguments-missing-current-actor-invalid",
+  "description": "the same-source-human check needs BOTH the retained target actor-binding digest and the current one from the fresh channel (§16.3)",
+  "input": {
+    "schema": "external-command-terminalize-arguments",
+    "value": {
+      "kovee_formation_intent_ref": "fmt-1001",
+      "current_recovery_binding_ref": "crb-4",
+      "current_recovery_binding_revision": 2,
+      "current_recovery_binding_epoch": 2,
+      "current_recovery_binding_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "target_byom_endpoint_ref": "byomd-local",
+      "target_endpoint_incarnation": "inc-0001",
+      "target_society_ref": "soc-1",
+      "target_society_recovery_epoch": 0,
+      "source_principal_ref": "principal-ada",
+      "target_source_actor_binding_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "operation": "kovee_endeavor_form",
+      "byom_command_idempotency_key": "idem-fmt-1001",
+      "canonical_command_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "idempotency_domain_digest": {
+        "class": "scope_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-idx-key-1",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "reason": "principal denies future execution after ambiguous submit",
+      "authentication_observation_ref": "auth-obs-11",
+      "authentication_observation_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "authentication_proof": "proof-b64u.eyJhbGciOiJFUzI1NiJ9.terminalize-1",
+      "restore_lineage_proof_ref": "rlp-1",
+      "restore_lineage_proof_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/kovee-realm-byom-binding.schema.json",
+  "title": "KoveeRealmByomBinding (DESIGN.md §16.6; C2 byom_governed_work_v1; family contract L2/L8)",
+  "description": "The §16.6 field list verbatim: one Realm's binding to one byomd endpoint under the all-or-nothing byom_governed_work_v1 bundle. Created durably (not yet authoritative) by step 1 of the D10 greenfield enablement saga and activated atomically with the KoveeGovernanceOwnerBinding none→byom CAS (spec/governed-work/greenfield-saga.md). Epoch advance invalidates derived channels and permits (family contract L2); every formation intent and slot pins ref, revision, epoch, and digest (§16.6 item 1). Kovee owns the host schema; this is the byom-normative shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "binding_ref",
+    "realm_ref",
+    "binding_revision",
+    "binding_epoch",
+    "byom_endpoint_ref",
+    "endpoint_incarnation",
+    "compatibility_bundle",
+    "delegated_principal_audience",
+    "external_authorization_audience",
+    "historical_recovery_mode",
+    "recovery_authorization_policy_ref",
+    "recovery_authorization_policy_digest",
+    "status",
+    "dependency_digest",
+    "digest"
+  ],
+  "properties": {
+    "binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "realm_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "binding_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "predecessor_binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "predecessor_binding_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "binding_lineage_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "binding_lineage_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "byom_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "compatibility_bundle": {
+      "const": "byom_governed_work_v1",
+      "description": "Compatibility is one explicit, all-or-nothing feature bundle (§16.6); this binding shape exists only under it. A new bundle is a new schema version."
+    },
+    "delegated_principal_audience": {
+      "$ref": "#/$defs/identifier",
+      "description": "Audience every DelegatedPrincipalCredential minted under this binding must carry."
+    },
+    "external_authorization_audience": {
+      "$ref": "#/$defs/identifier",
+      "description": "Audience for external authorization consumption (execution_permit_consume driver audience side)."
+    },
+    "historical_recovery_mode": {
+      "enum": [
+        "disabled",
+        "exact_formation_intent_only"
+      ],
+      "description": "Closed §16.6 enum: whether RestoreLineage-backed historical lookup is available, and then only per exact formation intent (R42)."
+    },
+    "recovery_authorization_policy_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "recovery_authorization_policy_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "status": {
+      "$ref": "#/$defs/identifier",
+      "description": "Kovee-owned status value set; §16.6 leaves it untyped (recorded gap — see the C2 slice 1 gap notes in greenfield-saga.md). Byom pins presence and the saga semantics: not authoritative before the owner CAS, active atomically with it, void after rollback."
+    },
+    "dependency_digest": {
+      "$ref": "#/$defs/digestRef",
+      "description": "Digest over the authorization dependency set of the frozen governance_enable authority row (realm revision, society_ref + recovery epoch, byomd endpoint identity/incarnation, expected owner-binding row, mapping revision — family contract §2.A)."
+    },
+    "digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    }
+  }
+}
