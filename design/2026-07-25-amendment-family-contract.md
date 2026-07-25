@@ -38,13 +38,66 @@ README/DESIGN references to the gateway via the historical `../axon` path read
 
 ## A3 — Review-cadence completion
 
-The program adds **RC4**, a contract review of the frozen
-`akson_byom_exchange_v1` surface that makes C4 implementation-ready for its
-consumers (K6/B5) — the plan's §8 table named only R0–R5; `plan/dag.json`
-carries the node.
+The program adds **RT** (tracer-contracts review: makes B0.1 and C3a
+implementation-ready before B1/I0) and **RC4** (contract review of the frozen
+`akson_byom_exchange_v1` surface: makes C4 implementation-ready for K6/B5) —
+the plan's §9 diagram and review list carry both; `plan/dag.json` encodes the
+grants.
+
+## A4 — Candidate MCP binding (normative amendment to §14.10)
+
+§14.10 defines MCP as a participant/harness binding. This amendment adds a
+**candidate profile**: a sender-constrained MCP binding scoped to exactly one
+`MembershipOffer`, its proposed Manifestation, its control-domain binding, and
+its onboarding fence, exposing exactly `membership_refuse`,
+`membership_accept`, and `candidate_self_policy_propose` (registry row for the
+candidate surface, unchanged closure). Lifecycle: minted with the offer;
+closed server-side on admission, refusal, revocation, or expiry (terminal
+offer fencing per §7.4 — while an exact refusal retry still returns its
+retained receipt); it never converts in place — the participant channel is a
+new credential minted at admission. Elicitation through the binding is never
+assent; no human-authority, governance, or admin tool exists on it.
+
+## A5 — Directory evidence operations (tracked obligation, B0.4)
+
+Δ6 routing currently maps to `participant_show` + `engram_search` evidence.
+Typed **ProfileClaim/evidence publish, read, and search operations** (with
+§14.7 registry rows, closures, and conformance vectors) are a tracked design
+obligation frozen with the B0.4 bundle; until they exist, no ranked-routing
+claim is advertised beyond what R4/R37 reads support.
+
+## A6 — Manual developer profile for sovereign exchange (normative amendment to §17/B5)
+
+v0.2 specifies the akson-confined remote worker as the B5 execution path.
+This amendment adds a second, weaker, honestly-labeled profile for the I2
+gate: **manual developer profile** — the remote performer forms its own
+finalized local Pledge, executes via its own locally attached harness
+(developer profile), discloses through its own outbound
+ActIntent/`execution_permit_consume` chain, and returns the result through
+akson **manual fulfillment** (signed manifest over exact output bytes;
+**no execution evidence claimed** — evidence slots empty unless genuinely
+supplied). No inbound object authors the performer-side Standing, Pledge,
+WakeIntent, or execution authority. The confined-worker path remains the
+default for any stronger claim; the capability matrix records which profile a
+peer exchange used.
+
+## A7 — B1/B3 re-slice and B0.2 scope (normative amendment to §24)
+
+- **B1** is delivered in two slices with independent exit criteria:
+  *attached slice* (I0): offer→acceptance→`participant_admit`+
+  `manifestation_admit`→Standing, mandate chain, exploration, endeavor
+  formation, call/pledge full seat sequence, deterministic delivery, review,
+  pending `wake_intent_submit`, kill/restart honesty. *Hosted slice* (I1,
+  with K2/C3b): Kovee-hosted episodic participant, full activation pipeline,
+  dual fences, cross-Manifestation Continuation resume. I0 confirms only the
+  attached slice; §24 B1's full exit is met when both slices pass.
+- **B3** hosts the complete B1 flow at I1; hosting the B2 flow is accepted at
+  B2's own exit, not I1.
+- **B0.2** covers the complete B2 operation families: assemblies, procedures,
+  seeds, ControlDomain revisions, disputes/appeals, and StandingMandates.
 
 ## Follow-through
 
 Folded into DESIGN.md at the next design revision (v0.3); until then this
-record rides alongside the pinned v0.2 text. R0 reviews it with the family
-contract.
+record rides alongside the pinned v0.2 text. The C0 three-lens review covers
+it; the blocker-only confirmation pass verifies A4–A7.
