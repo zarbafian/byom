@@ -1,0 +1,57 @@
+{
+  "name": "machines/authority-journal-abandon-proven",
+  "description": "Abandonment only after proof: the query proves no journal entry, the transaction retries against the current head, then abandons; an abandoned transaction is inert — no witness, no finalize, no re-prepare under the same id (section 15.3).",
+  "input": {
+    "machine": "authority-journal",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "journal_sql_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "journal_witness_cas",
+        "to": "witness_unknown",
+        "expect": "accepted"
+      },
+      {
+        "from": "witness_unknown",
+        "via": "journal_sql_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "prepared",
+        "via": "journal_abandon",
+        "to": "abandoned",
+        "expect": "accepted"
+      },
+      {
+        "from": "abandoned",
+        "via": "journal_witness_cas",
+        "to": "witnessed",
+        "expect": "rejected"
+      },
+      {
+        "from": "abandoned",
+        "via": "journal_sql_finalize",
+        "to": "finalized",
+        "expect": "rejected"
+      },
+      {
+        "from": "abandoned",
+        "via": "journal_sql_prepare",
+        "to": "prepared",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "abandoned"
+  }
+}

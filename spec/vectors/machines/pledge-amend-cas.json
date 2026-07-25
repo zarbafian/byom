@@ -1,0 +1,57 @@
+{
+  "name": "machines/pledge-amend-cas",
+  "description": "Pledge amendment CAS: acceptance atomically supersedes; the amendment replay is a no-op, a competing relinquish finds no open state, and expiry cannot leave the terminal state (G22, section 14.8).",
+  "input": {
+    "machine": "pledge",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "pledge_propose",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_position",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_finalize",
+        "to": "active",
+        "expect": "accepted"
+      },
+      {
+        "from": "active",
+        "via": "pledge_amend",
+        "to": "superseded",
+        "expect": "accepted"
+      },
+      {
+        "from": "superseded",
+        "via": "pledge_amend",
+        "to": "superseded",
+        "expect": "replay"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "superseded",
+        "via": "pledge_relinquish",
+        "to": "relinquished",
+        "expect": "rejected"
+      },
+      {
+        "from": "superseded",
+        "via": "server_time",
+        "to": "expired",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "superseded"
+  }
+}

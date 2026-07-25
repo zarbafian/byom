@@ -1,0 +1,75 @@
+{
+  "name": "machines/pledge-revision-resume",
+  "description": "Pledge revision cycle: waiting finalize, review to revision_requested, crash, resume into a new Activity generation with resume replay a no-op, then fulfilled (section 9.5).",
+  "input": {
+    "machine": "pledge",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "pledge_propose",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_position",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_finalize",
+        "to": "waiting",
+        "expect": "accepted"
+      },
+      {
+        "from": "waiting",
+        "via": "activity_open",
+        "to": "underway",
+        "expect": "accepted"
+      },
+      {
+        "from": "underway",
+        "via": "delivery_submit",
+        "to": "submitted",
+        "expect": "accepted"
+      },
+      {
+        "from": "submitted",
+        "via": "review_record",
+        "to": "revision_requested",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "revision_requested",
+        "via": "pledge_resume",
+        "to": "underway",
+        "expect": "accepted"
+      },
+      {
+        "from": "underway",
+        "via": "pledge_resume",
+        "to": "underway",
+        "expect": "replay"
+      },
+      {
+        "from": "underway",
+        "via": "delivery_submit",
+        "to": "submitted",
+        "expect": "accepted"
+      },
+      {
+        "from": "submitted",
+        "via": "review_record",
+        "to": "fulfilled",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "fulfilled"
+  }
+}

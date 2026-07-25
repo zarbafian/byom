@@ -1,0 +1,39 @@
+{
+  "name": "machines/act-intent-decision-fences",
+  "description": "A deny decision fences consumption: the one-shot use slot is spent by decision, not by execution — no consumption or expiry leaves the terminal state (section 13.1).",
+  "input": {
+    "machine": "act-intent",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "act_intent_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "act_intent_finalize",
+        "to": "denied",
+        "expect": "accepted"
+      },
+      {
+        "from": "denied",
+        "via": "execution_permit_consume",
+        "to": "consumed",
+        "expect": "rejected"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "denied",
+        "via": "server_time",
+        "to": "expired",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "denied"
+  }
+}

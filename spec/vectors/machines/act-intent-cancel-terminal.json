@@ -1,0 +1,48 @@
+{
+  "name": "machines/act-intent-cancel-terminal",
+  "description": "Cancellation is terminal and replay does not execute: the canceled intent never consumes the permit (section 13.1, section 14.8).",
+  "input": {
+    "machine": "act-intent",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "act_intent_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "act_intent_position",
+        "to": "awaiting_decision",
+        "expect": "accepted"
+      },
+      {
+        "from": "awaiting_decision",
+        "via": "act_intent_finalize",
+        "to": "authorized",
+        "expect": "accepted"
+      },
+      {
+        "from": "authorized",
+        "via": "act_intent_cancel",
+        "to": "canceled",
+        "expect": "accepted"
+      },
+      {
+        "from": "canceled",
+        "via": "act_intent_cancel",
+        "to": "canceled",
+        "expect": "replay"
+      },
+      {
+        "from": "canceled",
+        "via": "execution_permit_consume",
+        "to": "consumed",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "canceled"
+  }
+}

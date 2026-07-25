@@ -1,0 +1,4 @@
+# The model checker is downloaded by the Makefile on first use, never vendored.
+tools/
+# TLC run output.
+states/

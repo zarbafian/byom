@@ -1,0 +1,69 @@
+{
+  "name": "machines/act-intent-consume-once",
+  "description": "ActIntent to succeeded: prepare, seat positions, deterministic finalize, one-shot permit consumption whose exact replay returns the retained receipt (no second consumption), host attempt, source-qualified outcome admission (section 13.1).",
+  "input": {
+    "machine": "act-intent",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "act_intent_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "act_intent_position",
+        "to": "awaiting_decision",
+        "expect": "accepted"
+      },
+      {
+        "from": "awaiting_decision",
+        "via": "act_intent_position",
+        "to": "awaiting_decision",
+        "expect": "accepted"
+      },
+      {
+        "from": "awaiting_decision",
+        "via": "act_intent_finalize",
+        "to": "authorized",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "authorized",
+        "via": "execution_permit_consume",
+        "to": "consumed",
+        "expect": "accepted"
+      },
+      {
+        "from": "consumed",
+        "via": "execution_permit_consume",
+        "to": "consumed",
+        "expect": "replay"
+      },
+      {
+        "from": "consumed",
+        "via": "host_effect_attempt",
+        "to": "executing",
+        "expect": "accepted"
+      },
+      {
+        "from": "executing",
+        "via": "effect_outcome_admit",
+        "to": "succeeded",
+        "expect": "accepted"
+      },
+      {
+        "from": "succeeded",
+        "via": "execution_permit_consume",
+        "to": "consumed",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "succeeded"
+  }
+}

@@ -4,8 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "== conformance (schemas + envelope vectors)"
+echo "== conformance (schemas + envelope/machine vectors)"
 python3 conformance/run.py
+
+echo "== descriptor-model parity (proof/specs <-> spec/descriptors)"
+python3 proof/check-descriptors.py
 
 echo "== family vectors (independent rederiver)"
 python3 family-vectors/xcheck.py

@@ -1,0 +1,57 @@
+{
+  "name": "machines/episode-ambiguous-timeout",
+  "description": "Crash honesty: a lease/deadline expiry with unknown external use is ambiguous — never completed, never blindly restarted (section 14.8).",
+  "input": {
+    "machine": "episode",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "episode_request",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "episode_request",
+        "to": "eligible",
+        "expect": "accepted"
+      },
+      {
+        "from": "eligible",
+        "via": "resource_allocate",
+        "to": "queued",
+        "expect": "accepted"
+      },
+      {
+        "from": "queued",
+        "via": "episode_start",
+        "to": "running",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "running",
+        "via": "server_time",
+        "to": "ambiguous",
+        "expect": "accepted"
+      },
+      {
+        "from": "ambiguous",
+        "via": "episode_complete",
+        "to": "completed",
+        "expect": "rejected"
+      },
+      {
+        "from": "ambiguous",
+        "via": "episode_start",
+        "to": "running",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "ambiguous"
+  }
+}

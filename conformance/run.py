@@ -31,7 +31,14 @@ Checks, in order:
    65 536-node caps, `$domain` reservation at every depth, surrogate and
    float rules — R0/BYOM-03); digest vectors re-derive $domain-tagged JCS
    canonical bytes and the keyed scope_erasure_safe HMAC DigestRef
-   (PROFILE.md sections 2/5/6, normative; D-R0-1 — R0/BYOM-01).
+   (PROFILE.md sections 2/5/6, normative; D-R0-1 — R0/BYOM-01);
+5. machine state-walk vectors (spec/vectors/machines/) replay crash/replay
+   transition sequences through a small interpreter over the committed
+   descriptor JSON: accepted steps must be exact descriptor rows, rejected
+   steps must be absent rows (the §14.8 closed-machine rule: an unlisted
+   transition is invalid), replay steps must be state-idempotent, and a
+   {"crash": true} marker restarts the daemon without moving the durable
+   descriptor-level state.
 
 Exit code 0 only when everything passes. Self-contained: Python stdlib only,
 with `jsonschema` used opportunistically when installed.
@@ -207,6 +214,11 @@ NAMED_TRANSITIONS = frozenset({
     "server_time", "activation_admit", "resource_allocate",
     "standing_replacement", "pledge_disposition_decision",
     "host_effect_attempt",
+    # §15.3 internal mutation protocol (the §14.8 "Authority mutation
+    # journal" machine; B0.1 sheet: "the named internal kernel transitions
+    # (activation_admit, resource_allocate, journal mutation protocol)").
+    "journal_sql_prepare", "journal_witness_cas", "journal_abandon",
+    "journal_sql_finalize",
 })
 
 
@@ -1083,7 +1095,7 @@ class Runner:
     def run_vectors(self) -> dict:
         vector_dir = self.spec_dir / "vectors"
         counts = {"schema-valid": 0, "schema-invalid": 0, "acceptance": 0,
-                  "digest": 0}
+                  "digest": 0, "machine-walk": 0}
         paths = sorted(p for p in vector_dir.rglob("*.json"))
         if not paths:
             self.fail(f"no vectors found under {vector_dir}")
@@ -1105,6 +1117,8 @@ class Runner:
                 self._run_acceptance_vector(rel, inp, expected, counts)
             elif "domain" in inp:
                 self._run_digest_vector(rel, inp, expected, counts)
+            elif "machine" in inp:
+                self._run_machine_vector(rel, inp, expected, counts)
             else:
                 self.fail(f"{rel}: unknown vector kind (input keys {sorted(inp)})")
         return counts
@@ -1176,6 +1190,109 @@ class Runner:
         if ok:
             counts["digest"] += 1
 
+    def _descriptor_rows(self, machine: str):
+        """Load spec/descriptors/<machine>.json once and return its
+        transition rows as a set of (from, to, via) triples."""
+        cache = getattr(self, "_machine_rows", None)
+        if cache is None:
+            cache = self._machine_rows = {}
+        if machine not in cache:
+            path = self.spec_dir / "descriptors" / f"{machine}.json"
+            if not path.is_file():
+                cache[machine] = None
+            else:
+                body = strict_parse(path.read_text(encoding="utf-8"))
+                cache[machine] = frozenset(
+                    (row["from"], row["to"], row["via"])
+                    for row in body["transitions"])
+        return cache[machine]
+
+    def _run_machine_vector(self, rel, inp, expected, counts):
+        """Machine state-walk vectors (spec/vectors/machines/): a transition
+        sequence interpreted over the committed descriptor JSON — the §14.8
+        closed-machine rule as an executable oracle.
+
+        Interpreter contract:
+        - the walk starts at the implicit pre-creation state "absent";
+        - {"crash": true} is the crash-marker convention: every
+          descriptor-level variable is durable, so a daemon crash/restart
+          does not move the state and the walk continues where it stopped
+          (§14.8 crash-outcome column);
+        - {"from", "via", "to", "expect": "accepted"}: the exact
+          (from, to, via) row must exist; the walk advances to `to`;
+        - "expect": "rejected": the exact row must NOT exist — an unlisted
+          transition is invalid (§14.8) — and the state does not move;
+        - "expect": "replay": exact retry of the immediately preceding
+          accepted mutation (same via and to). It must be state-idempotent:
+          either no row matches from the post-transition state (the guard
+          makes the retry a no-op returning the retained receipt) or the
+          matching row is a self-transition;
+        - expected.final_state pins where the walk must end."""
+        machine = inp["machine"]
+        rows = self._descriptor_rows(machine)
+        if rows is None:
+            self.fail(f"{rel}: references unknown descriptor {machine!r}")
+            return
+        state = "absent"
+        last_accepted = None
+        ok = True
+        for i, step in enumerate(inp.get("steps", ())):
+            where = f"{rel}: steps[{i}]"
+            if step.get("crash") is True:
+                if set(step) != {"crash"}:
+                    self.fail(f"{where}: a crash marker carries no other keys")
+                    ok = False
+                continue  # durable state: the walk resumes unchanged
+            missing = {"from", "via", "to", "expect"} - set(step)
+            if missing:
+                self.fail(f"{where}: missing {sorted(missing)}")
+                ok = False
+                break
+            if step["from"] != state:
+                self.fail(f"{where}: from {step['from']!r} but the walk is "
+                          f"in {state!r}")
+                ok = False
+                break
+            row = (state, step["to"], step["via"])
+            expect = step["expect"]
+            if expect == "accepted":
+                if row not in rows:
+                    self.fail(f"{where}: {row} is not a descriptor row of "
+                              f"{machine} (expected accepted)")
+                    ok = False
+                    break
+                state = step["to"]
+                last_accepted = (step["via"], step["to"])
+            elif expect == "rejected":
+                if row in rows:
+                    self.fail(f"{where}: {row} IS a descriptor row of "
+                              f"{machine} (expected rejected)")
+                    ok = False
+                    break
+            elif expect == "replay":
+                if last_accepted != (step["via"], step["to"]):
+                    self.fail(f"{where}: replay must retry the immediately "
+                              f"preceding accepted mutation {last_accepted}, "
+                              f"got ({step['via']!r}, {step['to']!r})")
+                    ok = False
+                    break
+                if row in rows and step["to"] != state:
+                    self.fail(f"{where}: replay of {row} would re-execute "
+                              f"(descriptor row moves the state) — not "
+                              "idempotent")
+                    ok = False
+                    break
+            else:
+                self.fail(f"{where}: unknown expect {expect!r}")
+                ok = False
+                break
+        if ok and state != expected.get("final_state"):
+            self.fail(f"{rel}: walk ended in {state!r}, expected "
+                      f"{expected.get('final_state')!r}")
+            ok = False
+        if ok:
+            counts["machine-walk"] += 1
+
     # -- entry --
 
     def run(self) -> int:
@@ -1203,7 +1320,8 @@ class Runner:
               f"{counts['schema-valid']} schema-valid, "
               f"{counts['schema-invalid']} schema-invalid, "
               f"{counts['acceptance']} acceptance, "
-              f"{counts['digest']} digest")
+              f"{counts['digest']} digest, "
+              f"{counts['machine-walk']} machine-walk")
         if self.failures:
             print(f"result:   FAIL ({len(self.failures)} failure(s))")
             return 1

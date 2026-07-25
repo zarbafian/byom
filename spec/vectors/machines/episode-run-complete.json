@@ -1,0 +1,63 @@
+{
+  "name": "machines/episode-run-complete",
+  "description": "Episode pipeline to completed: request, eligibility, queue only after the bridged allocation, crash before start, start replay a no-op, complete; no start from eligible or completed (section 11.2, section 14.8).",
+  "input": {
+    "machine": "episode",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "episode_request",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "episode_request",
+        "to": "eligible",
+        "expect": "accepted"
+      },
+      {
+        "from": "eligible",
+        "via": "episode_start",
+        "to": "running",
+        "expect": "rejected"
+      },
+      {
+        "from": "eligible",
+        "via": "resource_allocate",
+        "to": "queued",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "queued",
+        "via": "episode_start",
+        "to": "running",
+        "expect": "accepted"
+      },
+      {
+        "from": "running",
+        "via": "episode_start",
+        "to": "running",
+        "expect": "replay"
+      },
+      {
+        "from": "running",
+        "via": "episode_complete",
+        "to": "completed",
+        "expect": "accepted"
+      },
+      {
+        "from": "completed",
+        "via": "episode_start",
+        "to": "running",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "completed"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "machines/pledge-no-skip",
+  "description": "Closed-machine rule: no stage of the pledge pipeline is skippable (no finalize from absent, no activity or review from the proposal stage), and proposal replay is idempotent (section 14.8).",
+  "input": {
+    "machine": "pledge",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "pledge_finalize",
+        "to": "active",
+        "expect": "rejected"
+      },
+      {
+        "from": "absent",
+        "via": "pledge_propose",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "activity_open",
+        "to": "underway",
+        "expect": "rejected"
+      },
+      {
+        "from": "proposed",
+        "via": "review_record",
+        "to": "fulfilled",
+        "expect": "rejected"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_propose",
+        "to": "proposed",
+        "expect": "replay"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "proposed"
+  }
+}

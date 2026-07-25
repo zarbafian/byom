@@ -1,0 +1,75 @@
+{
+  "machine": "AuthorityMutationJournal",
+  "states": [
+    "prepared",
+    "witness_unknown",
+    "witnessed",
+    "finalized",
+    "abandoned"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "prepared",
+      "via": "journal_sql_prepare",
+      "authority": "endpoint (§15.3 step 1): the authority endpoint's own serializable SQL transaction, revalidating dependencies against the observed journal head — internal mutation protocol, never a callable BPP operation",
+      "notes": "Writes the full transition, idempotency result, reservations, events, and AuthorityMutationPending as invisible and unusable; commits no externally consumable permit or reply (§15.3). §14.8 row: Authority mutation journal, absent → SQL prepared."
+    },
+    {
+      "from": "prepared",
+      "to": "prepared",
+      "via": "journal_sql_prepare",
+      "authority": "endpoint (§15.3 step 1): the authority endpoint's own serializable SQL transaction, revalidating dependencies against the observed journal head — internal mutation protocol, never a callable BPP operation",
+      "notes": "A competing CAS advanced the head: complete dependency revalidation under a new proposed generation; the old pending transition stays inert (§15.3 crash semantics)."
+    },
+    {
+      "from": "prepared",
+      "to": "witnessed",
+      "via": "journal_witness_cas",
+      "authority": "witness (§15.3 step 2): the external non-rollbackable journal facility compare-and-swapping (incarnation, prior generation, prior digest) to the exact next AuthorityJournalEntry — internal mutation protocol, never a callable BPP operation",
+      "notes": "Returns a signed AuthorityJournalReceipt; the transaction id and transition digest make the CAS retry/query-safe — a re-sent request for an already-journaled transaction returns the existing receipt, never a second entry (§15.3)."
+    },
+    {
+      "from": "prepared",
+      "to": "witness_unknown",
+      "via": "journal_witness_cas",
+      "authority": "witness (§15.3 step 2): the external non-rollbackable journal facility compare-and-swapping (incarnation, prior generation, prior digest) to the exact next AuthorityJournalEntry — internal mutation protocol, never a callable BPP operation",
+      "notes": "A witness timeout (receipt lost in flight, request lost, or CAS lost with the response vanished) is queried by transaction id and never guessed (§15.3 crash semantics; problem kind authority_witness_unknown, §14.9)."
+    },
+    {
+      "from": "witness_unknown",
+      "to": "witnessed",
+      "via": "journal_witness_cas",
+      "authority": "witness (§15.3 step 2): the query by transaction id against the external journal — internal mutation protocol, never a callable BPP operation",
+      "notes": "The query finds the exact entry: witness success before SQL finalize is recovered by the exact receipt and finalized once (§15.3 crash semantics)."
+    },
+    {
+      "from": "witness_unknown",
+      "to": "prepared",
+      "via": "journal_sql_prepare",
+      "authority": "endpoint (§15.3 step 1): the authority endpoint's own serializable SQL transaction, revalidating dependencies against the observed journal head — internal mutation protocol, never a callable BPP operation",
+      "notes": "The query by transaction id proved no journal entry exists: the exact transaction is retried against the current head (§15.3 crash semantics)."
+    },
+    {
+      "from": "prepared",
+      "to": "abandoned",
+      "via": "journal_abandon",
+      "authority": "endpoint (§15.3): abandonment of inert pending state, only after proving no journal entry exists for the transaction — internal mutation protocol, never a callable BPP operation",
+      "notes": "SQL prepare before witness leaves inert pending state that is retried or abandoned after proving no journal entry (§15.3 crash semantics); §14.8 row: unwitnessed → abandoned after proof."
+    },
+    {
+      "from": "witness_unknown",
+      "to": "abandoned",
+      "via": "journal_abandon",
+      "authority": "endpoint (§15.3): abandonment of inert pending state, only after proving no journal entry exists for the transaction — internal mutation protocol, never a callable BPP operation",
+      "notes": "Abandonment never orphans a witnessed entry: it requires the same proof of absence (§15.3)."
+    },
+    {
+      "from": "witnessed",
+      "to": "finalized",
+      "via": "journal_sql_finalize",
+      "authority": "endpoint (§15.3 step 3): the second SQL transaction verifying the exact witness receipt — internal mutation protocol, never a callable BPP operation",
+      "notes": "Marks the exact pending set finalized/visible, advances the local journal mirror, and makes the retained result readable; only then may Byom return success, release a credential or permit, publish an event, or allow a dependent transition (§15.3). §14.8 crash outcome: every crash state follows section 15.3."
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "name": "machines/authority-journal-witness-unknown-recover",
+  "description": "A witness timeout is queried by transaction id and never guessed: witness_unknown recovers to witnessed by the exact receipt and finalizes once; no visibility ever precedes finalize (section 15.3).",
+  "input": {
+    "machine": "authority-journal",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "journal_sql_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "journal_witness_cas",
+        "to": "witness_unknown",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "witness_unknown",
+        "via": "journal_sql_finalize",
+        "to": "finalized",
+        "expect": "rejected"
+      },
+      {
+        "from": "witness_unknown",
+        "via": "journal_witness_cas",
+        "to": "witnessed",
+        "expect": "accepted"
+      },
+      {
+        "from": "witnessed",
+        "via": "journal_sql_finalize",
+        "to": "finalized",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "finalized"
+  }
+}

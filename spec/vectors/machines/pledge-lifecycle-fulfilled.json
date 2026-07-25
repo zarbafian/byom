@@ -1,0 +1,84 @@
+{
+  "name": "machines/pledge-lifecycle-fulfilled",
+  "description": "Pledge happy path to fulfilled with crash markers, position and finalize replay idempotency, and terminal-is-final rejections (section 9.3-9.5, section 14.8).",
+  "input": {
+    "machine": "pledge",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "pledge_propose",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_position",
+        "to": "proposed",
+        "expect": "accepted"
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_position",
+        "to": "proposed",
+        "expect": "replay"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "proposed",
+        "via": "pledge_finalize",
+        "to": "active",
+        "expect": "accepted"
+      },
+      {
+        "from": "active",
+        "via": "pledge_finalize",
+        "to": "active",
+        "expect": "replay"
+      },
+      {
+        "from": "active",
+        "via": "activity_open",
+        "to": "underway",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "underway",
+        "via": "delivery_submit",
+        "to": "submitted",
+        "expect": "accepted"
+      },
+      {
+        "from": "submitted",
+        "via": "delivery_submit",
+        "to": "submitted",
+        "expect": "replay"
+      },
+      {
+        "from": "submitted",
+        "via": "review_record",
+        "to": "fulfilled",
+        "expect": "accepted"
+      },
+      {
+        "from": "fulfilled",
+        "via": "pledge_amend",
+        "to": "superseded",
+        "expect": "rejected"
+      },
+      {
+        "from": "fulfilled",
+        "via": "server_time",
+        "to": "expired",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "fulfilled"
+  }
+}

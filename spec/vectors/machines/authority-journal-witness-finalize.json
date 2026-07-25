@@ -1,0 +1,54 @@
+{
+  "name": "machines/authority-journal-witness-finalize",
+  "description": "The section 15.3 mutation protocol across crashes at both commit boundaries: SQL prepare, re-prepare against an advanced head, witness CAS, SQL finalize; finalize replay is a no-op and a finalized transaction cannot be abandoned.",
+  "input": {
+    "machine": "authority-journal",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "journal_sql_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "prepared",
+        "via": "journal_sql_prepare",
+        "to": "prepared",
+        "expect": "accepted"
+      },
+      {
+        "from": "prepared",
+        "via": "journal_witness_cas",
+        "to": "witnessed",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "witnessed",
+        "via": "journal_sql_finalize",
+        "to": "finalized",
+        "expect": "accepted"
+      },
+      {
+        "from": "finalized",
+        "via": "journal_sql_finalize",
+        "to": "finalized",
+        "expect": "replay"
+      },
+      {
+        "from": "finalized",
+        "via": "journal_abandon",
+        "to": "abandoned",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "finalized"
+  }
+}
