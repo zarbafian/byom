@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/mandate-hold-request.schema.json",
+  "title": "BPP mandate_hold request (DESIGN.md §10.1, §14.8; registry R18 governance)",
+  "description": "Mutation (meta required); an update — meta.expected_revision carries the last observed revision (§14.2, registry rule). Actor: exact issuer/human-authority actor under the decided rule (R18); held_by_decision_ref and hold_reason_ref derive from R18 and the G2/G8 precedents — gap note G32. A hold fences new uses; the catalog has no mandate un-hold operation and §14.8's Mandate row lists no held → nonterminal transition — none is derived (G25 precedent, gap note G32).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "op",
+    "meta",
+    "mandate_id",
+    "held_by_decision_ref"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "#/$defs/protocolVersion"
+    },
+    "op": {
+      "const": "mandate_hold"
+    },
+    "meta": {
+      "$ref": "#/$defs/mutationMeta"
+    },
+    "mandate_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "held_by_decision_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "hold_reason_ref": {
+      "$ref": "#/$defs/identifier"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    },
+    "mutationMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "idempotency_key",
+        "expected_endpoint_incarnation",
+        "expected_recovery_epoch"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_endpoint_incarnation": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_recovery_epoch": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "causation_event_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "correlation_ref": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "MutationMeta (§14.2). Required on every mutation; update operations additionally supply expected_revision (registry rule enforced in code, not expressible here)."
+    }
+  }
+}

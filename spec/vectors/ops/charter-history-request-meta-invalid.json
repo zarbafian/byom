@@ -1,0 +1,23 @@
+{
+  "name": "ops/charter-history-request-meta-invalid",
+  "description": "read carrying meta: reads never mutate and never carry meta (§14.2); closed schema rejects it",
+  "input": {
+    "schema": "charter-history-request",
+    "value": {
+      "version": "0.2",
+      "op": "charter_history",
+      "meta": {
+        "request_id": "req-0322",
+        "idempotency_key": "idem-0322",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "charter_id": "charter-1",
+      "page_size": 64
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "charter_history is an R4 projection read; meta is a mutation-only field"
+  }
+}

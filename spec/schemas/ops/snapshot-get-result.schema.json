@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/snapshot-get-result.schema.json",
+  "title": "BPP snapshot_get result (DESIGN.md §14.4, §14.9; registry R4 projection)",
+  "description": "Success.result for snapshot_get (gap notes G4/G38/G39): a snapshot descriptor by immutable reference (§14.9 moves larger content by reference) plus the opaque audience-bound continuation token from which events_read continues strictly after the snapshot point. Tokens never expose hidden counts (§14.4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_ref",
+    "snapshot_digest",
+    "endpoint_incarnation",
+    "recovery_epoch",
+    "continuation",
+    "taken_at"
+  ],
+  "properties": {
+    "snapshot_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "snapshot_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "recovery_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "continuation": {
+      "$ref": "#/$defs/continuationToken"
+    },
+    "taken_at": {
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    },
+    "continuationToken": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,4096}$",
+      "description": "Opaque scope- and audience-bound continuation token (§14.4): it carries an authenticated cursor, endpoint incarnation, recovery epoch, filter digest, and retention semantics and is never parsed or constructed by the caller; 4096-byte visible-ASCII bound — gap note G38."
+    }
+  }
+}

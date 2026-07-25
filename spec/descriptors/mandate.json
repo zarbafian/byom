@@ -1,0 +1,78 @@
+{
+  "machine": "Mandate",
+  "states": [
+    "prepared",
+    "active",
+    "held",
+    "exhausted",
+    "revoked",
+    "expired",
+    "superseded"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "prepared",
+      "via": "mandate_prepare",
+      "authority": "participant (R15): proposed grantee or authorized issuer in its scope",
+      "notes": "Server-prepared from an exact proposal (§10.1: a caller cannot obtain approval for an arbitrary digest and later attach a different action); R15 fence: preparation trace and parent revisions. §10.1's state enum has no prepared state — 'prepared' is the folded pre-issue state of the §14.8 Mandate row, gap note G30. Stage-capable."
+    },
+    {
+      "from": "absent",
+      "to": "prepared",
+      "via": "mandate_derive",
+      "authority": "participant (R15): proposed grantee or authorized issuer in its scope",
+      "notes": "Child Mandate as a mechanical subset of every parent (§10.2): no new operation, resource, data class, destination, participant class, or manifestation; no later deadline or expiry; no larger budget, concurrency, use count, output size, disclosure, or retention ceiling; no greater delegation depth or fanout; no weaker security, evidence, review, or classification requirement; purpose restricted to the parent purpose and current Pledge lineage. Budget is reserved from the parent atomically; incomparable classification or policy domains block derivation; human non-delegable powers never appear in a child; a widening attempt fails authority_widening — gap note G33."
+    },
+    {
+      "from": "prepared",
+      "to": "prepared",
+      "via": "mandate_position",
+      "authority": "participant (R16) or governance (R17): Participant for its exact prepared participant/resource-owner seat, or human principal for its exact prepared human-authority seat with a fresh challenge as required",
+      "notes": "Seat Position record lifecycle under the §14.8 Position/Decision row, folded as a proposal-stage self-transition — gap note G19. Dual-surface operation: one schema pair, surface is a registry key — gap note G35."
+    },
+    {
+      "from": "prepared",
+      "to": "active",
+      "via": "mandate_issue",
+      "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "notes": "§14.8: prepared/positions → active / issue. Locks the exact decision, the complete parent closure, and budgets; fresh challenge for root issue (R18); no bearer authority escapes commit; crash result: child delegated quantity conserved."
+    },
+    {
+      "from": "active",
+      "to": "superseded",
+      "via": "mandate_issue",
+      "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "notes": "Successor issuance: when the prepared subject names a prior active revision, issuing the successor atomically supersedes it (§14.8 active → superseded / matching operation) — gap note G32."
+    },
+    {
+      "from": "active",
+      "to": "held",
+      "via": "mandate_hold",
+      "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "notes": "A hold fences new uses. The catalog has no mandate un-hold operation and §14.8's Mandate row lists no held → nonterminal transition; none is derived (G25 precedent) — gap note G32."
+    },
+    {
+      "from": "active",
+      "to": "exhausted",
+      "via": "execution_permit_consume",
+      "authority": "runtime (R34): trusted host effect service bound to exact prepared host Effect",
+      "cascade": true,
+      "notes": "Consumption cascade of the ActIntent machine's owning consume: MandateUse ordinal slots are created on consumption (§14.8); the use consuming the last slot moves the Mandate to exhausted — gap note G32."
+    },
+    {
+      "from": "active",
+      "to": "revoked",
+      "via": "mandate_revoke",
+      "authority": "governance (R18): exact issuer/human-authority actor under decided rule",
+      "notes": "Revocation blocks new uses and cannot un-send prior effects; child delegated quantity stays conserved (§14.8); derived field names revoked_by_decision_ref/revocation_reason_ref — gap note G32."
+    },
+    {
+      "from": "active",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "§14.8: active → expired / matching operation; deadlines and expiry use authoritative server time (§10.5)."
+    }
+  ]
+}

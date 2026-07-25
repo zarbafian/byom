@@ -1,0 +1,16 @@
+{
+  "name": "ops/events-read-request-valid",
+  "description": "cursored event read: opaque audience-bound continuation token plus the required explicit page size (§14.4, §14.9, gap note G38)",
+  "input": {
+    "schema": "events-read-request",
+    "value": {
+      "version": "0.2",
+      "op": "events_read",
+      "continuation": "ct-4f7a1b0e29c8d6a35e12f90b7c44d8e1",
+      "page_size": 256
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

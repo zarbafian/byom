@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/idempotency-result-result.schema.json",
+  "title": "BPP idempotency_result result (DESIGN.md §14.2, §14.9, §15.3; registry R41 originating)",
+  "description": "Success.result for idempotency_result (gap notes G4/G40): the durable disposition of the cited idempotency domain. completed carries the stored outcome (outcome plus stored_result or stored_problem and the result digest); in_flight reports an unfinalized §15.3 pending mutation without guessing; tombstone is a definite non-reexecuting rejection record (§14.9). Irreversible keys outlive effects (§14.9 retention); an unknown domain fails not_found without re-executing anything.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "operation",
+    "idempotency_key",
+    "status"
+  ],
+  "properties": {
+    "operation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "idempotency_key": {
+      "$ref": "#/$defs/identifier"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "in_flight",
+        "tombstone"
+      ],
+      "description": "Durable disposition — gap note G40."
+    },
+    "outcome": {
+      "enum": [
+        "ok",
+        "problem"
+      ]
+    },
+    "stored_result": {
+      "type": "object",
+      "description": "The stored Success.result of the original mutation, returned unchanged — gap note G40."
+    },
+    "stored_problem": {
+      "type": "object",
+      "description": "The stored problem of the original mutation's definite rejection, returned unchanged — gap note G40."
+    },
+    "result_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "completed_at": {
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (§14.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class per the §14.2 table; substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex digest bytes."
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for keyed classes (raw HMAC keys and per-object salts are never part of a DigestRef)."
+        }
+      },
+      "description": "Typed DigestRef (§14.2): every digest field is typed, never an unlabelled hash."
+    }
+  }
+}

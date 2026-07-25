@@ -1,0 +1,41 @@
+{
+  "name": "ops/recovery-checkpoint-show-result-valid",
+  "description": "endpoint recovery checkpoint projection with the RestoreLineage idempotency-retention label (§15.3, R4, gap note G40)",
+  "input": {
+    "schema": "recovery-checkpoint-show-result",
+    "value": {
+      "endpoint_incarnation": "inc-0002",
+      "witnessed_generation": 41235,
+      "status": "active",
+      "previous_checkpoint_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "authority_journal_head_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "database_checkpoint_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "erasure_journal_checkpoint_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "society_recovery_epoch": 1,
+      "restore_lineage_refs": [
+        "restore-lineage-7"
+      ],
+      "idempotency_retention": "complete",
+      "created_at": "2026-07-25T12:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

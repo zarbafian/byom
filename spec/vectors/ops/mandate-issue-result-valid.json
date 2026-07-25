@@ -1,0 +1,64 @@
+{
+  "name": "ops/mandate-issue-result-valid",
+  "description": "issued Mandate projection: exact decision refs, slot snapshot digests, root authority trace, complete scope (§10.1, §14.8, R18, gap note G32)",
+  "input": {
+    "schema": "mandate-issue-result",
+    "value": {
+      "mandate_id": "mandate-23",
+      "revision": 1,
+      "state": "active",
+      "issuer_ref": "part-human-2",
+      "grantee_participant_ref": "part-agent-9",
+      "purpose_ref": "purpose-web-research",
+      "purpose_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "allowed_operations": [
+        "act_intent_prepare",
+        "execution_permit_consume"
+      ],
+      "resource_selectors": [
+        "sel-resource-web"
+      ],
+      "data_class_selectors": [
+        "sel-data-public"
+      ],
+      "destination_selectors": [
+        "sel-dest-docs-example"
+      ],
+      "budget_ceiling_set_ref": "budget-set-11",
+      "concurrency_ceiling": 2,
+      "delegation": {
+        "allowed": true,
+        "max_depth": 1,
+        "max_children": 4,
+        "grantee_selectors": [
+          "sel-grantee-team"
+        ]
+      },
+      "decision_refs": [
+        "decision-52"
+      ],
+      "decision_slot_snapshot_digests": [
+        {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        }
+      ],
+      "root_authority_trace_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "dependency_set_ref": "depset-77",
+      "issued_at": "2026-07-25T12:00:00Z",
+      "expires_at": "2026-08-01T00:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

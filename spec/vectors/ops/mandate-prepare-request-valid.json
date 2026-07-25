@@ -1,0 +1,47 @@
+{
+  "name": "ops/mandate-prepare-request-valid",
+  "description": "issuer-prepared mandate proposal: exact scope selectors, delegation ceiling, budget set (§10.1, R15, gap notes G30/G31)",
+  "input": {
+    "schema": "mandate-prepare-request",
+    "value": {
+      "version": "0.2",
+      "op": "mandate_prepare",
+      "meta": {
+        "request_id": "req-0301",
+        "idempotency_key": "idem-0301",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "grantee_participant_ref": "part-agent-9",
+      "purpose_ref": "purpose-web-research",
+      "allowed_operations": [
+        "act_intent_prepare",
+        "execution_permit_consume"
+      ],
+      "resource_selectors": [
+        "sel-resource-web"
+      ],
+      "data_class_selectors": [
+        "sel-data-public"
+      ],
+      "destination_selectors": [
+        "sel-dest-docs-example"
+      ],
+      "context_ceiling_ref": "ctx-ceiling-3",
+      "budget_ceiling_set_ref": "budget-set-11",
+      "concurrency_ceiling": 2,
+      "delegation": {
+        "allowed": true,
+        "max_depth": 1,
+        "max_children": 4,
+        "grantee_selectors": [
+          "sel-grantee-team"
+        ]
+      },
+      "expires_at": "2026-08-01T00:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

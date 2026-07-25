@@ -1,0 +1,16 @@
+{
+  "name": "ops/idempotency-result-request-valid",
+  "description": "stored-outcome recovery on the originating surface: operation plus idempotency key only — the domain's actor binding, incarnation, and society scope are channel-derived (R41, gap note G40)",
+  "input": {
+    "schema": "idempotency-result-request",
+    "value": {
+      "version": "0.2",
+      "op": "idempotency_result",
+      "operation": "pledge_finalize",
+      "idempotency_key": "idem-0210"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

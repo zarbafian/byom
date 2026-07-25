@@ -1,0 +1,20 @@
+{
+  "name": "ops/snapshot-get-request-valid",
+  "description": "authorized snapshot read with narrowing-only filters (§14.4, R4, gap note G39)",
+  "input": {
+    "schema": "snapshot-get-request",
+    "value": {
+      "version": "0.2",
+      "op": "snapshot_get",
+      "society_id": "society-1",
+      "kinds": [
+        "pledge",
+        "endeavor"
+      ],
+      "endeavor_ref": "endeavor-12"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

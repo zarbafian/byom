@@ -1,0 +1,34 @@
+{
+  "name": "ops/mandate-derive-request-missing-parent-invalid",
+  "description": "derivation without the exact parent digest: the parent pin (ref, revision, digest) is required — R15 'parent revisions', gap note G33",
+  "input": {
+    "schema": "mandate-derive-request",
+    "value": {
+      "version": "0.2",
+      "op": "mandate_derive",
+      "meta": {
+        "request_id": "req-0303",
+        "idempotency_key": "idem-0303",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "parent_mandate_ref": "mandate-23",
+      "parent_mandate_revision": 1,
+      "grantee_participant_ref": "part-agent-12",
+      "purpose_ref": "purpose-web-research",
+      "budget_ceiling_set_ref": "budget-set-12",
+      "concurrency_ceiling": 1,
+      "delegation": {
+        "allowed": false,
+        "max_depth": 0,
+        "max_children": 0,
+        "grantee_selectors": []
+      },
+      "expires_at": "2026-07-28T00:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "a child must pin the exact parent it subsets; parent_mandate_digest is required"
+  }
+}

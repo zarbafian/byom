@@ -1,0 +1,21 @@
+{
+  "name": "ops/events-read-request-cursor-audience-shape-invalid",
+  "description": "caller-shaped cursor naming its own audience: continuation tokens are one opaque scope- and audience-bound string, never a caller-built structure (§14.4, gap note G38)",
+  "input": {
+    "schema": "events-read-request",
+    "value": {
+      "version": "0.2",
+      "op": "events_read",
+      "continuation": {
+        "cursor": "seq-90112",
+        "audience": "participant",
+        "recovery_epoch": 0
+      },
+      "page_size": 128
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "the token is authenticated and opaque; a structured cursor claiming an audience or raw sequence fails closed"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "ops/events-read-request-page-over-cap-invalid",
+  "description": "page size over the §14.9 cap: at most 512 events per page",
+  "input": {
+    "schema": "events-read-request",
+    "value": {
+      "version": "0.2",
+      "op": "events_read",
+      "continuation": "ct-4f7a1b0e29c8d6a35e12f90b7c44d8e1",
+      "page_size": 600
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "maximum 512 events per page (§14.9)"
+  }
+}

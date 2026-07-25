@@ -1,0 +1,156 @@
+{
+  "machine": "ActIntent",
+  "states": [
+    "prepared",
+    "awaiting_decision",
+    "authorized",
+    "consumed",
+    "executing",
+    "succeeded",
+    "failed",
+    "ambiguous",
+    "denied",
+    "expired",
+    "canceled"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "prepared",
+      "via": "act_intent_prepare",
+      "authority": "participant (R19): requesting Participant or collective Manifestation inside current executive policy",
+      "notes": "Deterministic field-complete preparation from authenticated typed input and server-owned state, emitting the PreparationTrace (§13.1 step 1, §10.5); exact subject and one-shot use slot; crash result: none or recoverable intent (§14.8). Stage-capable."
+    },
+    {
+      "from": "prepared",
+      "to": "awaiting_decision",
+      "via": "act_intent_position",
+      "authority": "participant (R20) or governance (R21): Participant for its exact prepared participant/resource-owner seat, or human principal for its exact prepared human-authority seat with a fresh challenge as required",
+      "notes": "First seat Position on the exact prepared intent digest (§13.1 step 2). Dual-surface operation: one schema pair, surface is a registry key — gap note G35."
+    },
+    {
+      "from": "awaiting_decision",
+      "to": "awaiting_decision",
+      "via": "act_intent_position",
+      "authority": "participant (R20) or governance (R21): Participant for its exact prepared participant/resource-owner seat, or human principal for its exact prepared human-authority seat with a fresh challenge as required",
+      "notes": "Remaining seats and pre-finalization withdraw/supersede via seat-head CAS (§10.3) — gap notes G18/G19."
+    },
+    {
+      "from": "awaiting_decision",
+      "to": "authorized",
+      "via": "act_intent_finalize",
+      "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "notes": "Locks the exact active slot snapshot and binds one GovernanceDecision to the intent digest (§13.1 step 2); revision CAS (R22/R23); crash result: none or recoverable authorized intent (§14.8)."
+    },
+    {
+      "from": "prepared",
+      "to": "denied",
+      "via": "act_intent_finalize",
+      "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "notes": "§14.8: prepared/awaiting/authorized → denied via decision — the deciding operation is act_intent_finalize recording a deny outcome; the closed row is transcribed as written. Unspent reservations released only when unambiguous."
+    },
+    {
+      "from": "awaiting_decision",
+      "to": "denied",
+      "via": "act_intent_finalize",
+      "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat"
+    },
+    {
+      "from": "authorized",
+      "to": "denied",
+      "via": "act_intent_finalize",
+      "authority": "participant (R22) or governance (R23): caller requesting deterministic finalization; authors no seat",
+      "notes": "§14.8 lists authorized among the denial sources: a later exact decision may deny an authorized-but-unconsumed intent under changed dependencies; the one-shot use slot is never consumable afterward."
+    },
+    {
+      "from": "prepared",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)",
+      "notes": "§14.8: prepared/awaiting/authorized → expired via server time; terminal — replay does not execute."
+    },
+    {
+      "from": "awaiting_decision",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    },
+    {
+      "from": "authorized",
+      "to": "expired",
+      "via": "server_time",
+      "authority": "server: deterministic expiry at the record's expires_at (server time)"
+    },
+    {
+      "from": "prepared",
+      "to": "canceled",
+      "via": "act_intent_cancel",
+      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority",
+      "notes": "Cancellation cannot claim effect rollback (R24/R25); unspent reservations released only when unambiguous; terminal — replay does not execute (§14.8)."
+    },
+    {
+      "from": "awaiting_decision",
+      "to": "canceled",
+      "via": "act_intent_cancel",
+      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority"
+    },
+    {
+      "from": "authorized",
+      "to": "canceled",
+      "via": "act_intent_cancel",
+      "authority": "participant (R24) or governance (R25): original requester while intent unconsumed or exact cancellation grantee; or exact decided cancellation authority"
+    },
+    {
+      "from": "authorized",
+      "to": "consumed",
+      "via": "execution_permit_consume",
+      "authority": "runtime (R34): trusted host effect service bound to exact prepared host Effect",
+      "notes": "One-shot consumption (§13.1 steps 4–6): atomic recheck of charter, standing, Mandate, decisions, dependencies, ceilings, expiry, and both fences; inserts MandateUse once; returns one immutable ExecutionConsumptionReceipt (max_uses 1). Exact replay of the same canonical request and key returns the same receipt; a changed request conflicts; a different key cannot consume the spent decision — gap note G37."
+    },
+    {
+      "from": "consumed",
+      "to": "executing",
+      "via": "host_effect_attempt",
+      "authority": "host (Kovee): the execution host stores the receipt, intersects it with stricter current platform policy, mints its local permit, and only then creates a driver attempt (§13.1 step 7; named transition, gap note G36)",
+      "notes": "§14.8's ActIntent row lists 'host attempt' with no catalog operation; recorded as the named transition host_effect_attempt pending the registry freeze (G12/G22 precedent) — never callable on BPP."
+    },
+    {
+      "from": "executing",
+      "to": "succeeded",
+      "via": "effect_outcome_admit",
+      "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "cascade": true,
+      "notes": "Cascade of the runtime family's owning source admission (its owner lands with the runtime slice, G29 precedent): source-qualified EffectOutcomeAdmission once; conservative settlement; Byom never rewrites the host Effect or receipt (§13.1 step 8)."
+    },
+    {
+      "from": "executing",
+      "to": "failed",
+      "via": "effect_outcome_admit",
+      "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "cascade": true
+    },
+    {
+      "from": "executing",
+      "to": "ambiguous",
+      "via": "effect_outcome_admit",
+      "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "cascade": true,
+      "notes": "If Byom cannot prove whether a non-idempotent driver acted, the state remains ambiguous and requires the charter's reconciliation procedure (§13.1); never blindly repeats a non-idempotent effect (§14.8)."
+    },
+    {
+      "from": "ambiguous",
+      "to": "succeeded",
+      "via": "effect_outcome_admit",
+      "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "cascade": true,
+      "notes": "Source-authoritative reconciliation (§13.1, §14.8 ActIntent source reconciliation row): requires the independently committed, signed final host Effect/receipt successor and reconciles_admission_*; no GovernanceDecision is invented and no disposition can block the source fact."
+    },
+    {
+      "from": "ambiguous",
+      "to": "failed",
+      "via": "effect_outcome_admit",
+      "authority": "runtime (R35): narrow trusted effect-admission adapter with no judgmental field",
+      "cascade": true
+    }
+  ]
+}

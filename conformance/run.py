@@ -11,7 +11,9 @@ Checks, in order:
    remote $ref, resolvable internal $refs, compilable patterns), and
    compiles — with `jsonschema` when installed, otherwise against this
    file's minimal structural validator;
-2. the B0.1 slice bundle op list (registry-derived, §14.6 catalog) is
+2. the complete B0.1 bundle op list — transcribed from the
+   plan/sheets/B0.1.md family lists (the interim freeze source until
+   spec/registry/ lands) and cross-checked against the §14.6 catalog — is
    schema-covered: every op has a closed <op>-request and <op>-result
    schema, the request pins the exact op const, mutations require meta and
    reads carry none;
@@ -122,23 +124,78 @@ CATALOG = {
 }
 ALL_CATALOG_OPS = frozenset(op for ops in CATALOG.values() for op in ops)
 
-# The B0.1 slice under test here: society + participants + candidates
-# (slice 1) plus the work-lifecycle families — endeavors, calls and
-# pledges, activities (slice 2).
-SLICE_FAMILIES = ("society", "participants", "candidates", "endeavors",
-                  "calls_and_pledges", "activities")
-SLICE_OPS = tuple(op for fam in SLICE_FAMILIES for op in CATALOG[fam])
-SLICE_READS = frozenset({"society_show", "participant_show", "activity_show"})
+# ------------------------------------------------------ B0.1 sheet bundle ----
+# The complete B0.1 bundle, transcribed verbatim from the family lists in
+# plan/sheets/B0.1.md (the interim freeze source until spec/registry/ lands;
+# counts are sheet-derived, never prose). Standing mandates stay out per byom
+# amendment A7 (B0.2); the sheet's recovery core deliberately excludes
+# external_command_*/effect_reconcile (later bundles). After slice 3
+# (mandates, acts, charter, events + recovery core) every op below must have
+# a schema pair — check_bundle fails on any gap.
+B01_SHEET = {
+    "negotiation": ("hello", "protocol_info", "feature_info"),
+    "society": ("society_prepare", "society_bootstrap", "society_show",
+                "society_hold", "society_release", "society_dissolve"),
+    "charter": ("charter_propose", "charter_position", "charter_finalize",
+                "charter_history"),
+    "participants": ("participant_propose", "membership_offer",
+                     "membership_offer_revoke", "onboarding_offer",
+                     "participant_admit", "participant_show",
+                     "participant_suspend", "participation_cease",
+                     "participant_retire", "manifestation_propose",
+                     "manifestation_admit", "manifestation_disable",
+                     "assent_policy_adopt", "assent_policy_revoke",
+                     "activation_policy_adopt", "activation_policy_revoke",
+                     "continuity_root_update"),
+    "candidates": ("membership_refuse", "membership_accept",
+                   "candidate_self_policy_propose"),
+    "endeavors": ("endeavor_propose", "endeavor_position",
+                  "endeavor_finalize", "endeavor_hold", "endeavor_release",
+                  "endeavor_close"),
+    "calls_and_pledges": ("call_open", "call_withdraw", "pledge_propose",
+                          "pledge_position", "pledge_finalize",
+                          "pledge_amend", "pledge_resume",
+                          "pledge_relinquish", "delivery_submit",
+                          "delivery_withdraw", "review_record"),
+    "mandates": ("mandate_prepare", "mandate_position", "mandate_issue",
+                 "mandate_derive", "mandate_hold", "mandate_revoke"),
+    "acts": ("act_intent_prepare", "act_intent_position",
+             "act_intent_finalize", "act_intent_cancel",
+             "execution_permit_consume"),
+    "activities": ("activity_open", "activity_show", "activity_hold",
+                   "activity_close", "wake_intent_submit",
+                   "wake_intent_withdraw", "episode_request",
+                   "continuation_write"),
+    "events_and_recovery_core": ("snapshot_get", "events_read", "events_wait",
+                                 "event_payload", "idempotency_result",
+                                 "cursor_recover",
+                                 "recovery_checkpoint_show"),
+}
+SLICE_OPS = tuple(op for ops in B01_SHEET.values() for op in ops)
+# Reads never mutate and never carry meta (§14.2). idempotency_result and
+# cursor_recover are classed as reads: R41 "never re-executes" (gap note G40
+# in spec/schemas/ops/README.md); charter_history and the events family are
+# R4 projection reads; negotiation is pre-auth read-only (R1).
+SLICE_READS = frozenset({
+    "hello", "protocol_info", "feature_info",
+    "society_show", "participant_show", "activity_show",
+    "charter_history", "snapshot_get", "events_read", "events_wait",
+    "event_payload", "idempotency_result", "cursor_recover",
+    "recovery_checkpoint_show",
+})
 SLICE_MUTATING = tuple(op for op in SLICE_OPS if op not in SLICE_READS)
 
 # Named non-callable kernel/server transitions that may appear as a
 # descriptor `via` (§14.8, spec/README.md). `standing_replacement` is the
 # gap-note G12 name for the Standing row's operation-less 'replacement';
 # `pledge_disposition_decision` is the gap-note G22 name for the Pledge
-# row's operation-less 'decision' (→ canceled/failed).
+# row's operation-less 'decision' (→ canceled/failed);
+# `host_effect_attempt` is the gap-note G36 name for the ActIntent row's
+# operation-less 'host attempt' (consumed → executing, Kovee-owned).
 NAMED_TRANSITIONS = frozenset({
     "server_time", "activation_admit", "resource_allocate",
     "standing_replacement", "pledge_disposition_decision",
+    "host_effect_attempt",
 })
 
 
@@ -464,9 +521,17 @@ class Runner:
 
     def check_bundle(self) -> int:
         """B0.1 registry-derived rule (spec/README.md bundle-freeze): the
-        slice's op list, not prose, decides schema membership. Every op has a
+        bundle op list, not prose, decides schema membership. The list is the
+        B0.1 sheet transcription above — completeness assertion: every op in
+        every sheet family must be a §14.6 catalog operation and must have a
         closed request/result schema pair; the request pins the exact op
         const; mutations require meta; reads carry none."""
+        for family, ops in B01_SHEET.items():
+            for op in ops:
+                if op not in ALL_CATALOG_OPS:
+                    self.fail(f"sheet: {family} op {op} is not a §14.6 "
+                              "catalog operation (bad transcription or "
+                              "catalog drift)")
         covered = 0
         for op in SLICE_OPS:
             base = op.replace("_", "-")
@@ -734,9 +799,10 @@ class Runner:
         total = sum(counts.values())
         print()
         print(f"schemas:  {len(self.schemas)}/{n_schemas} compiled ({backend})")
-        print(f"bundle:   {covered}/{len(SLICE_OPS)} B0.1 slice ops "
+        print(f"bundle:   {covered}/{len(SLICE_OPS)} B0.1 sheet ops "
               f"schema-covered ({len(SLICE_MUTATING)} mutating, "
-              f"{len(SLICE_READS)} reads)")
+              f"{len(SLICE_READS)} reads; complete sheet, "
+              f"{len(B01_SHEET)} families)")
         print(f"descriptors: {desc['files']} machines, {desc['states']} "
               f"states, {desc['transitions']} transitions — "
               f"{desc['owned']}/{len(SLICE_MUTATING)} mutating ops owned "
