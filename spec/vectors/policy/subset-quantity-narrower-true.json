@@ -1,0 +1,47 @@
+{
+  "name": "policy/subset-quantity-narrower-true",
+  "description": "is_subset positive, quantity domain: no larger budget ceiling (§10.2)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 50,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

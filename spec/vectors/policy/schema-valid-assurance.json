@@ -1,0 +1,30 @@
+{
+  "name": "policy/schema-valid-assurance",
+  "description": "bpa1-policy accepts a well-formed assurance atom (DESIGN.md §10.5 assurance row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "assurance": {
+              "order": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              },
+              "admitted": [
+                "audited",
+                "attested"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "policy/malformed-not-object",
+  "description": "a policy must be an object",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": 42
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": ""
+      }
+    }
+  }
+}

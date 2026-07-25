@@ -1,0 +1,26 @@
+{
+  "name": "policy/schema-invalid-purpose",
+  "description": "bpa1-policy rejects: the snapshot pin is a typed DigestRef, never an unlabelled hash (PROFILE.md §6.1)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "purpose": {
+              "snapshot": "ab12",
+              "path": [
+                "p:root"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "the snapshot pin is a typed DigestRef, never an unlabelled hash (PROFILE.md §6.1)"
+  }
+}

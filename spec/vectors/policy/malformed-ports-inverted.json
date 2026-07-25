@@ -1,0 +1,44 @@
+{
+  "name": "policy/malformed-ports-inverted",
+  "description": "first > last is not a port range",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 2000,
+                "last": 1000
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/network_destination/ports/last"
+      }
+    }
+  }
+}

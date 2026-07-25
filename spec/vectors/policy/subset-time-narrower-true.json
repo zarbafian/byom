@@ -1,0 +1,39 @@
+{
+  "name": "policy/subset-time-narrower-true",
+  "description": "is_subset positive, time domain: no later deadline or expiry (§10.2): the child interval must be contained (§10.5)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 10,
+              "not_after": 90
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

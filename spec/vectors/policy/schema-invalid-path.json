@@ -1,0 +1,27 @@
+{
+  "name": "policy/schema-invalid-path",
+  "description": "bpa1-policy rejects: '..' is never a path segment (§10.5: string comparison never authorizes a filesystem open; the broker enforces no escape)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                ".."
+              ],
+              "match": "subtree"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "'..' is never a path segment (§10.5: string comparison never authorizes a filesystem open; the broker enforces no escape)"
+  }
+}

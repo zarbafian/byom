@@ -1,0 +1,15 @@
+{
+  "name": "policy/schema-invalid-request-atoms-unknown-domain",
+  "description": "requestAtoms is closed over the same twelve domains",
+  "input": {
+    "schema": "bpa1-policy",
+    "ref": "#/$defs/requestAtoms",
+    "value": {
+      "regex": "x"
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "unknown request domain fails closed"
+  }
+}

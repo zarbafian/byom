@@ -1,0 +1,67 @@
+{
+  "name": "policy/intersect-idempotent-single",
+  "description": "semantic idempotence on a single-rule policy: a ∩ a is canonical(a)",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            },
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            },
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "operation": {
+                "ids": [
+                  "events_read"
+                ]
+              },
+              "time": {
+                "not_before": 0,
+                "not_after": 100
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"operation\":{\"ids\":[\"events_read\"]},\"time\":{\"not_after\":100,\"not_before\":0}},\"effect\":\"allow\"}]}"
+    }
+  }
+}

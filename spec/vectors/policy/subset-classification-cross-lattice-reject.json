@@ -1,0 +1,55 @@
+{
+  "name": "policy/subset-classification-cross-lattice-reject",
+  "description": "is_subset typed rejection (never an exception, never false): elements of different pinned lattices are incomparable (§10.5; §10.2: incomparable classification blocks derivation)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "classification": {
+              "lattice": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "allowed": [
+                "public"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "classification": {
+              "lattice": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              },
+              "allowed": [
+                "public",
+                "internal"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "classification"
+      }
+    }
+  }
+}

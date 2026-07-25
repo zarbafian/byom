@@ -1,0 +1,40 @@
+{
+  "name": "policy/schema-invalid-network-destination",
+  "description": "bpa1-policy rejects: host is exactly one closed constructor (dns | ip4_cidr | ip6_cidr), never a mixture",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "dns": "example.com",
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 443,
+                "last": 443
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "host is exactly one closed constructor (dns | ip4_cidr | ip6_cidr), never a mixture"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "policy/decide-empty-rules",
+  "description": "adversarial empty policy: no rules, nothing allowed",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": []
+    },
+    "request": {}
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 0,
+      "matched_deny": 0
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "policy/subset-quantity-currency-reject",
+  "description": "is_subset typed rejection (never an exception, never false): currency conversion rejects (§10.5): USD and EUR ceilings never compare",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 50,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100,
+              "currency": "EUR",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "quantity"
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "policy/schema-valid-path",
+  "description": "bpa1-policy accepts a well-formed path atom (DESIGN.md §10.5 path row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                "src"
+              ],
+              "match": "subtree"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "policy/intersect-currency-reject",
+  "description": "incomparable values reject (§10.5 currency conversion): intersect is total via the typed rejection, never a silent empty result",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 50,
+              "currency": "EUR",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "quantity"
+      }
+    }
+  }
+}

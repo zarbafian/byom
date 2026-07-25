@@ -1,0 +1,32 @@
+{
+  "name": "policy/decide-allow-simple",
+  "description": "a matching allow with no matching deny decides allow",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "operation": "events_read"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "allow",
+      "matched_allow": 1,
+      "matched_deny": 0
+    }
+  }
+}

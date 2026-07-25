@@ -1,0 +1,42 @@
+{
+  "name": "policy/subset-object-wider-false",
+  "description": "is_subset negative, object domain — the widening shape proof/specs/MandateChain.tla models abstractly (AttemptWiden -> authority_widening, §14.9/G33): no new resource (§10.2); exact source-qualified ids only (§10.5)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "object": {
+              "ids": [
+                "obj:doc-3"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "object": {
+              "ids": [
+                "obj:doc-1",
+                "obj:doc-2"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

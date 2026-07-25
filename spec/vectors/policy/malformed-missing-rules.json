@@ -1,0 +1,17 @@
+{
+  "name": "policy/malformed-missing-rules",
+  "description": "rules is required",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {}
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules"
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "policy/subset-rate-wider-false",
+  "description": "is_subset negative, rate domain — the widening shape proof/specs/MandateChain.tla models abstractly (AttemptWiden -> authority_widening, §14.9/G33): §10.5 capacity/refill/burst containment: a larger max_burst exceeds the parent",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 100,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 30,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 100,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 20,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

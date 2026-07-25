@@ -1,0 +1,22 @@
+{
+  "name": "policy/malformed-request-value",
+  "description": "decide validates the request side too: a non-canonical operation id fails closed at /request/operation",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": []
+    },
+    "request": {
+      "operation": "Bad-Op!"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/request/operation"
+      }
+    }
+  }
+}

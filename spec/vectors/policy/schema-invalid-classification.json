@@ -1,0 +1,31 @@
+{
+  "name": "policy/schema-invalid-classification",
+  "description": "bpa1-policy rejects: allowed is a set: duplicate members reject",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "classification": {
+              "lattice": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "allowed": [
+                "public",
+                "public"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "allowed is a set: duplicate members reject"
+  }
+}

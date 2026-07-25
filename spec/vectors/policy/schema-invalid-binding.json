@@ -1,0 +1,25 @@
+{
+  "name": "policy/schema-invalid-binding",
+  "description": "bpa1-policy rejects: binding ids are source-qualified (§10.5: source-qualified immutable binding id)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "no-colon"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "binding ids are source-qualified (§10.5: source-qualified immutable binding id)"
+  }
+}

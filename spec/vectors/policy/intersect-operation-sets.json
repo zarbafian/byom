@@ -1,0 +1,60 @@
+{
+  "name": "policy/intersect-operation-sets",
+  "description": "atom meet on the operation domain is set intersection (§10.5: subset is set inclusion); the JCS-canonical result sorts members",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_wait",
+                "diagnose",
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "backup",
+                "events_wait"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "operation": {
+                "ids": [
+                  "events_read",
+                  "events_wait"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"operation\":{\"ids\":[\"events_read\",\"events_wait\"]}},\"effect\":\"allow\"}]}"
+    }
+  }
+}

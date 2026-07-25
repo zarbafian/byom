@@ -1,0 +1,43 @@
+{
+  "name": "policy/decide-deny-wins",
+  "description": "deny wins (§10.5): a matching deny overrides a matching allow",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "operation": "events_read",
+      "binding": "prov:us-1"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 1,
+      "matched_deny": 1
+    }
+  }
+}

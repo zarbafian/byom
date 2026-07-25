@@ -1,0 +1,53 @@
+{
+  "name": "policy/subset-assurance-wider-false",
+  "description": "is_subset negative, assurance domain — the widening shape proof/specs/MandateChain.tla models abstractly (AttemptWiden -> authority_widening, §14.9/G33): no weaker evidence/assurance requirement (§10.2): the upward-closed admitted set may only shrink",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "assurance": {
+              "order": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              },
+              "admitted": [
+                "audited",
+                "basic"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "assurance": {
+              "order": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              },
+              "admitted": [
+                "audited",
+                "attested"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "policy/subset-empty-parent-rules-false",
+  "description": "a parent with no rules allows nothing: no child allow rule can be covered (deny-by-absence, §10.5)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": []
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

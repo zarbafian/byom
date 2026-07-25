@@ -1,0 +1,23 @@
+{
+  "name": "policy/schema-invalid-unknown-domain",
+  "description": "the twelve §10.5 domains are the only atom keys; an unknown domain (here a regex constraint, which §10.5 excludes from policy values) is not extensible data — it fails closed (ADR-0001 closed enum)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "regex": {
+              "pattern": ".*"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "unknown atom domain fails closed"
+  }
+}

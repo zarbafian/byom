@@ -1,0 +1,35 @@
+{
+  "name": "policy/malformed-rate-wrong-clock",
+  "description": "RateCeiling clock is always authority_server (§10.5)",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 1,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 5,
+              "epoch": "ep-1",
+              "clock": "wall"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/rate/clock"
+      }
+    }
+  }
+}

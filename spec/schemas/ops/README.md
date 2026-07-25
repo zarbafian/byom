@@ -77,7 +77,11 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   `compatibility_selector`, and `proposed_policy_body` are open objects
   pending the BPA-1 policy-algebra slice (ADR-0001); selector lists
   (`endeavor_selectors`, `mandate_selectors`, …) are identifier arrays
-  referencing selector definitions.
+  referencing selector definitions. The encoding has since landed —
+  `../bpa1-policy.schema.json`, ADR-0001 accepted — but published schemas
+  are immutable, so these bodies stay open objects until their next schema
+  version binds them to `bpa1-policy` at the registry freeze (ADR-0001
+  open item).
 - **G11 — continuity_root_update discriminator.** §14.8 drives the whole
   ContinuityRoot lifecycle through this one op; `target_status`
   (`active | sealed | retired`) plus optional `continuity_root_ref` (absent
@@ -218,7 +222,9 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   `resource_selectors`, `data_class_selectors`, `destination_selectors`, and
   `delegation.grantee_selectors` are identifier arrays referencing selector
   definitions; `manifestation_selector` is an opaque BPA-1 body pending
-  ADR-0001. The `delegation` object is verbatim §10.1
+  ADR-0001 — now concretely `../bpa1-policy.schema.json` (ADR-0001
+  accepted), bound at the next schema version per G10's landing note. The
+  `delegation` object is verbatim §10.1
   (`{allowed, max_depth, max_children, grantee_selectors}`).
 - **G32 — mandate issue/hold/revoke derivations.** `held_by_decision_ref`,
   `hold_reason_ref`, `revoked_by_decision_ref`, and `revocation_reason_ref`

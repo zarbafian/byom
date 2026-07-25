@@ -1,0 +1,24 @@
+{
+  "name": "policy/malformed-effect",
+  "description": "effect outside the closed allow|deny enum",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "audit",
+          "atoms": {}
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/effect"
+      }
+    }
+  }
+}

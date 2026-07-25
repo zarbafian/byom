@@ -1,0 +1,20 @@
+{
+  "name": "policy/malformed-child-arg-pointer",
+  "description": "two-input operations prefix rejection pointers with the argument name: a malformed child in is_subset points into /child",
+  "input": {
+    "policy_op": "is_subset",
+    "child": 42,
+    "parent": {
+      "rules": []
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/child"
+      }
+    }
+  }
+}

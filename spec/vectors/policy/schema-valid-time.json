@@ -1,0 +1,23 @@
+{
+  "name": "policy/schema-valid-time",
+  "description": "bpa1-policy accepts a well-formed time atom (DESIGN.md §10.5 time row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

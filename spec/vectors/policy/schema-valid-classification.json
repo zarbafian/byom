@@ -1,0 +1,30 @@
+{
+  "name": "policy/schema-valid-classification",
+  "description": "bpa1-policy accepts a well-formed classification atom (DESIGN.md §10.5 classification row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "classification": {
+              "lattice": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "allowed": [
+                "public",
+                "internal"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

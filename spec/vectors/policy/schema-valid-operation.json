@@ -1,0 +1,25 @@
+{
+  "name": "policy/schema-valid-operation",
+  "description": "bpa1-policy accepts a well-formed operation atom (DESIGN.md §10.5 operation row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "events_wait"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

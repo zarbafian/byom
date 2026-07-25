@@ -1,0 +1,54 @@
+{
+  "name": "policy/subset-purpose-narrower-true",
+  "description": "is_subset positive, purpose domain: purpose restricted to the parent purpose (§10.2): a sibling is outside the parent's subtree",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "purpose": {
+              "snapshot": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              },
+              "path": [
+                "p:root",
+                "p:research",
+                "p:codegen"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "purpose": {
+              "snapshot": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              },
+              "path": [
+                "p:root",
+                "p:research"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

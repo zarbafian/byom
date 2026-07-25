@@ -1,0 +1,30 @@
+{
+  "name": "policy/decide-empty-set-atom",
+  "description": "adversarial empty set: an empty positive id set matches nothing",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": []
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "operation": "events_read"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 0,
+      "matched_deny": 0
+    }
+  }
+}

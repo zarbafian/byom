@@ -1,0 +1,64 @@
+{
+  "name": "policy/intersect-quantity-min",
+  "description": "quantity ceilings meet at the minimum (comparable money atoms: same dimension, unit, scale, currency, pricing revision)",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 50,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "quantity": {
+                "dimension": "money",
+                "canonical_unit": "unit",
+                "scale": 2,
+                "max": 50,
+                "currency": "USD",
+                "pricing_revision": "pr-1"
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"quantity\":{\"canonical_unit\":\"unit\",\"currency\":\"USD\",\"dimension\":\"money\",\"max\":50,\"pricing_revision\":\"pr-1\",\"scale\":2}},\"effect\":\"allow\"}]}"
+    }
+  }
+}

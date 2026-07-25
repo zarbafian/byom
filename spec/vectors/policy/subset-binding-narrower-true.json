@@ -1,0 +1,42 @@
+{
+  "name": "policy/subset-binding-narrower-true",
+  "description": "is_subset positive, binding domain: source-qualified immutable binding ids; no new recipient (§10.2)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:eu-1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:eu-1",
+                "prov:eu-2"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

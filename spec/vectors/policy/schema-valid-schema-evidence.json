@@ -1,0 +1,41 @@
+{
+  "name": "policy/schema-valid-schema-evidence",
+  "description": "bpa1-policy accepts a well-formed schema_evidence atom (DESIGN.md §10.5 schema_evidence row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "schema_evidence": {
+              "schema": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              "verifier": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+              },
+              "attestor": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              "assurance_policy": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

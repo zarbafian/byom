@@ -1,0 +1,62 @@
+{
+  "name": "policy/subset-deny-preserved-true",
+  "description": "a child preserving the parent's applicable deny verbatim is a subset (§10.5: a child is allowed only when it preserves every applicable deny)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "events_wait"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

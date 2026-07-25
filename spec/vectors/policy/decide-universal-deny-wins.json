@@ -1,0 +1,28 @@
+{
+  "name": "policy/decide-universal-deny-wins",
+  "description": "adversarial contradictory universals: the universal deny beats the universal allow",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {}
+        },
+        {
+          "effect": "deny",
+          "atoms": {}
+        }
+      ]
+    },
+    "request": {}
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 1,
+      "matched_deny": 1
+    }
+  }
+}

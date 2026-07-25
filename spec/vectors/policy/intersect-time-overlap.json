@@ -1,0 +1,52 @@
+{
+  "name": "policy/intersect-time-overlap",
+  "description": "closed-interval meet on the time domain",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 50,
+              "not_after": 200
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "time": {
+                "not_before": 50,
+                "not_after": 100
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"time\":{\"not_after\":100,\"not_before\":50}},\"effect\":\"allow\"}]}"
+    }
+  }
+}

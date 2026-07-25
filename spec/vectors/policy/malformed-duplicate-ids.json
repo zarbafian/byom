@@ -1,0 +1,31 @@
+{
+  "name": "policy/malformed-duplicate-ids",
+  "description": "id sets reject duplicate members",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/operation/ids"
+      }
+    }
+  }
+}

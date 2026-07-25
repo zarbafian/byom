@@ -1,0 +1,24 @@
+{
+  "name": "policy/decide-universal-allow",
+  "description": "adversarial universal rule: an empty atoms object matches every request",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {}
+        }
+      ]
+    },
+    "request": {}
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "allow",
+      "matched_allow": 1,
+      "matched_deny": 0
+    }
+  }
+}

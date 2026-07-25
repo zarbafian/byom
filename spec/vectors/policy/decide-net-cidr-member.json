@@ -1,0 +1,58 @@
+{
+  "name": "policy/decide-net-cidr-member",
+  "description": "network membership: request IP inside the CIDR, port inside the range",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 1,
+                "last": 1024
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "network_destination": {
+        "scheme": "https",
+        "host": {
+          "ip4": [
+            10,
+            1,
+            2,
+            3
+          ]
+        },
+        "port": 443,
+        "protocol": "tcp"
+      }
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "allow",
+      "matched_allow": 1,
+      "matched_deny": 0
+    }
+  }
+}

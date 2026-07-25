@@ -1,0 +1,32 @@
+{
+  "name": "policy/malformed-path-non-nfc",
+  "description": "path segments are NFC-normalized (§10.5 Unicode-normalized logical path segments): the decomposed spelling e+COMBINING ACUTE rejects",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                "étude"
+              ],
+              "match": "exact"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/path/segments/0"
+      }
+    }
+  }
+}

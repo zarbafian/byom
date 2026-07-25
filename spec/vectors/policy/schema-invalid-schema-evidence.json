@@ -1,0 +1,47 @@
+{
+  "name": "policy/schema-invalid-schema-evidence",
+  "description": "bpa1-policy rejects: closed atom: exactly the four §10.5 digests",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "schema_evidence": {
+              "schema": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              "verifier": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+              },
+              "attestor": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              "assurance_policy": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "4444444444444444444444444444444444444444444444444444444444444444"
+              },
+              "extra": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "5555555555555555555555555555555555555555555555555555555555555555"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "closed atom: exactly the four §10.5 digests"
+  }
+}

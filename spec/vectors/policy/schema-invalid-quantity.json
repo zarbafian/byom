@@ -1,0 +1,26 @@
+{
+  "name": "policy/schema-invalid-quantity",
+  "description": "bpa1-policy rejects: money additionally names ISO currency and pricing revision (§10.5) — both required",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "money additionally names ISO currency and pricing revision (§10.5) — both required"
+  }
+}

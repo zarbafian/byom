@@ -1,0 +1,19 @@
+{
+  "name": "policy/schema-invalid-effect",
+  "description": "effect is the closed enum allow|deny (§10.5: positive atoms plus explicit deny atoms — nothing else)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "audit",
+          "atoms": {}
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "effect outside the closed allow|deny enum"
+  }
+}

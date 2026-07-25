@@ -1,0 +1,31 @@
+{
+  "name": "policy/malformed-float-quantity",
+  "description": "floating-point quantities reject (§10.5); quantities are fixed-scale integers",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "scale": 0,
+              "max": 1.5
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/quantity/max"
+      }
+    }
+  }
+}

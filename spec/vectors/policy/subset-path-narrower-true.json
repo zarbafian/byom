@@ -1,0 +1,46 @@
+{
+  "name": "policy/subset-path-narrower-true",
+  "description": "is_subset positive, path domain: a subtree above the parent's node escapes the parent region",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                "src",
+                "api"
+              ],
+              "match": "subtree"
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                "src"
+              ],
+              "match": "subtree"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

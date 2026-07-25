@@ -4,8 +4,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "== conformance (schemas + envelope/machine vectors)"
+echo "== conformance (schemas + envelope/machine/policy vectors)"
 python3 conformance/run.py
+
+echo "== BPA-1 policy evaluator (independent TypeScript-side vector agreement)"
+node policy/eval.mjs check spec/vectors/policy
+
+echo "== BPA-1 differential (both evaluators, seeded, deterministic)"
+python3 policy/differential.py --seed 45217 --cases 256
 
 echo "== descriptor-model parity (proof/specs <-> spec/descriptors)"
 python3 proof/check-descriptors.py

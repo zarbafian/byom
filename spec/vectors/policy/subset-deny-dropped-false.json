@@ -1,0 +1,52 @@
+{
+  "name": "policy/subset-deny-dropped-false",
+  "description": "dropping an applicable parent deny is never a subset, even though the child's positive atoms are narrower (§10.5 deny preservation)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "events_wait"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

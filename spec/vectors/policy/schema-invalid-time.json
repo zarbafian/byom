@@ -1,0 +1,24 @@
+{
+  "name": "policy/schema-invalid-time",
+  "description": "bpa1-policy rejects: floating-point values reject (§10.5); server time is an integer millisecond count",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 1.5,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "floating-point values reject (§10.5); server time is an integer millisecond count"
+  }
+}

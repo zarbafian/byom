@@ -38,10 +38,21 @@ Checks, in order:
    steps must be absent rows (the §14.8 closed-machine rule: an unlisted
    transition is invalid), replay steps must be state-idempotent, and a
    {"crash": true} marker restarts the daemon without moving the durable
-   descriptor-level state.
+   descriptor-level state;
+6. BPA-1 policy vectors (spec/vectors/policy/, `input.policy_op` — ADR-0001
+   accepted, DESIGN.md §10.5): every well_formed/canonical/intersect/
+   is_subset/decide case re-derives through the reference evaluator
+   policy/eval.py and must equal the golden `expected.result` exactly
+   (typed rejections included). When `node` is on PATH the same cases are
+   additionally replayed through the independent evaluator policy/eval.mjs
+   in one batch and every result must agree byte-for-byte (JCS) with the
+   Python result — the B0.1 "two independent policy evaluators" gate;
+   without node, run-checks.sh's dedicated eval.mjs and differential steps
+   still enforce it.
 
 Exit code 0 only when everything passes. Self-contained: Python stdlib only,
-with `jsonschema` used opportunistically when installed.
+with `jsonschema` used opportunistically when installed and `node` used
+opportunistically for the cross-evaluator policy check.
 """
 
 from __future__ import annotations
@@ -1095,7 +1106,7 @@ class Runner:
     def run_vectors(self) -> dict:
         vector_dir = self.spec_dir / "vectors"
         counts = {"schema-valid": 0, "schema-invalid": 0, "acceptance": 0,
-                  "digest": 0, "machine-walk": 0}
+                  "digest": 0, "machine-walk": 0, "policy": 0}
         paths = sorted(p for p in vector_dir.rglob("*.json"))
         if not paths:
             self.fail(f"no vectors found under {vector_dir}")
@@ -1115,6 +1126,8 @@ class Runner:
                 self._run_schema_vector(rel, inp, expected, counts)
             elif "raw" in inp or "raw_base64" in inp or "json_synth" in inp:
                 self._run_acceptance_vector(rel, inp, expected, counts)
+            elif "policy_op" in inp:
+                self._run_policy_vector(rel, inp, expected, counts)
             elif "domain" in inp:
                 self._run_digest_vector(rel, inp, expected, counts)
             elif "machine" in inp:
@@ -1189,6 +1202,87 @@ class Runner:
             ok = False
         if ok:
             counts["digest"] += 1
+
+    # -- BPA-1 policy vectors (ADR-0001) --
+
+    def _policy_eval(self):
+        """Load policy/eval.py (the BPA-1 reference evaluator) once."""
+        if not hasattr(self, "_policy_mod"):
+            import importlib.util
+            path = (Path(__file__).resolve().parent.parent
+                    / "policy" / "eval.py")
+            mod_spec = importlib.util.spec_from_file_location(
+                "bpa1_eval", path)
+            mod = importlib.util.module_from_spec(mod_spec)
+            mod_spec.loader.exec_module(mod)
+            self._policy_mod = mod
+            self._policy_cases: list = []  # (rel, input, python result)
+        return self._policy_mod
+
+    def _run_policy_vector(self, rel, inp, expected, counts):
+        """BPA-1 policy family (ADR-0001, §10.5): re-derive the case through
+        the reference evaluator; the result — including typed rejections —
+        must equal the golden expected.result byte-for-byte under JCS.
+        Cases are retained for the one-shot eval.mjs cross-check."""
+        mod = self._policy_eval()
+        result = mod.run_case(inp)
+        derived = mod.jcs(result)
+        golden = mod.jcs(expected.get("result"))
+        if derived != golden:
+            self.fail(f"{rel}: policy result mismatch\n"
+                      f"      derived:  {derived}\n"
+                      f"      expected: {golden}")
+            return
+        self._policy_cases.append((rel, inp, result))
+        counts["policy"] += 1
+
+    def cross_check_policy(self) -> str:
+        """Replay every policy vector through the independent evaluator
+        policy/eval.mjs in one batch; each result must agree (JCS) with the
+        Python result (which already matched the golden). Opportunistic like
+        the jsonschema backend: without node, run-checks.sh's dedicated
+        eval.mjs check and seeded differential still enforce the two-
+        evaluator gate."""
+        cases = getattr(self, "_policy_cases", [])
+        if not cases:
+            return "no policy vectors"
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if node is None:
+            return (f"python evaluator only ({len(cases)} vectors; node not "
+                    "found — run-checks.sh gates eval.mjs)")
+        mod = self._policy_mod
+        eval_mjs = (Path(__file__).resolve().parent.parent
+                    / "policy" / "eval.mjs")
+        proc = subprocess.run(
+            [node, str(eval_mjs), "batch"],
+            input=json.dumps([inp for _, inp, _ in cases]),
+            capture_output=True, text=True)
+        if proc.returncode != 0:
+            self.fail(f"policy cross-check: eval.mjs batch failed: "
+                      f"{proc.stderr.strip()[:400]}")
+            return "eval.mjs failed"
+        try:
+            results = json.loads(proc.stdout)
+        except ValueError as exc:
+            self.fail(f"policy cross-check: eval.mjs output unparsable: {exc}")
+            return "eval.mjs failed"
+        if not isinstance(results, list) or len(results) != len(cases):
+            self.fail("policy cross-check: eval.mjs returned "
+                      f"{len(results) if isinstance(results, list) else '?'} "
+                      f"results for {len(cases)} cases")
+            return "eval.mjs failed"
+        agree = 0
+        for (rel, _, py_result), mjs_result in zip(cases, results):
+            if mod.jcs(py_result) != mod.jcs(mjs_result):
+                self.fail(f"{rel}: evaluators disagree\n"
+                          f"      eval.py:  {mod.jcs(py_result)}\n"
+                          f"      eval.mjs: {mod.jcs(mjs_result)}")
+            else:
+                agree += 1
+        return (f"both evaluators agree on {agree}/{len(cases)} vectors "
+                "(eval.py reference + eval.mjs independent)")
 
     def _descriptor_rows(self, machine: str):
         """Load spec/descriptors/<machine>.json once and return its
@@ -1305,6 +1399,7 @@ class Runner:
         covered = self.check_bundle()
         desc = self.run_descriptors()
         counts = self.run_vectors()
+        policy_note = self.cross_check_policy()
         total = sum(counts.values())
         print()
         print(f"schemas:  {len(self.schemas)}/{n_schemas} compiled ({backend})")
@@ -1321,7 +1416,9 @@ class Runner:
               f"{counts['schema-invalid']} schema-invalid, "
               f"{counts['acceptance']} acceptance, "
               f"{counts['digest']} digest, "
-              f"{counts['machine-walk']} machine-walk")
+              f"{counts['machine-walk']} machine-walk, "
+              f"{counts['policy']} policy")
+        print(f"policy:   {policy_note}")
         if self.failures:
             print(f"result:   FAIL ({len(self.failures)} failure(s))")
             return 1

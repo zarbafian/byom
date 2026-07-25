@@ -1,0 +1,29 @@
+{
+  "name": "policy/malformed-time-inverted",
+  "description": "not_before > not_after is not a closed interval",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 5,
+              "not_after": 4
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/time/not_after"
+      }
+    }
+  }
+}

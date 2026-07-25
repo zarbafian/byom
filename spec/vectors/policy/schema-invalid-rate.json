@@ -1,0 +1,30 @@
+{
+  "name": "policy/schema-invalid-rate",
+  "description": "bpa1-policy rejects: RateCeiling clock is always authority_server (§10.5)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 10,
+              "refill_amount": 1,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 5,
+              "epoch": "ep-1",
+              "clock": "wall"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "RateCeiling clock is always authority_server (§10.5)"
+  }
+}

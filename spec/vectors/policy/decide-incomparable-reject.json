@@ -1,0 +1,45 @@
+{
+  "name": "policy/decide-incomparable-reject",
+  "description": "a request value pinned to a different lattice rejects rather than silently failing to match (§10.5 incomparable values reject; the caller must treat the rejection as deny)",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "classification": {
+              "lattice": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "allowed": [
+                "public"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "classification": {
+        "lattice": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "element": "public"
+      }
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "classification"
+      }
+    }
+  }
+}

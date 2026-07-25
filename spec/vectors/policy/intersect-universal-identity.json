@@ -1,0 +1,49 @@
+{
+  "name": "policy/intersect-universal-identity",
+  "description": "the universal policy is the identity of intersect on allow rules",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {}
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "operation": {
+                "ids": [
+                  "events_read"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"operation\":{\"ids\":[\"events_read\"]}},\"effect\":\"allow\"}]}"
+    }
+  }
+}

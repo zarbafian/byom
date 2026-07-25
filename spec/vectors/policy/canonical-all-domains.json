@@ -1,0 +1,155 @@
+{
+  "name": "policy/canonical-all-domains",
+  "description": "canonical bytes and bpa1-policy-v1 digest of a policy exercising every §10.5 domain: RFC 8785 JCS over the canonical form, SHA-256 over the $domain-tagged form (PROFILE.md §2, D-R0-1; ADR-0001 — the DigestRef class around this hash is chosen by the embedding record)",
+  "input": {
+    "policy_op": "canonical",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "events_wait"
+              ]
+            },
+            "object": {
+              "ids": [
+                "obj:doc-1",
+                "obj:doc-2"
+              ]
+            },
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                "src"
+              ],
+              "match": "subtree"
+            },
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 443,
+                "last": 443
+              },
+              "protocol": "tcp"
+            },
+            "binding": {
+              "ids": [
+                "prov:eu-1",
+                "prov:eu-2"
+              ]
+            },
+            "purpose": {
+              "snapshot": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              },
+              "path": [
+                "p:root",
+                "p:research"
+              ]
+            },
+            "classification": {
+              "lattice": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "allowed": [
+                "public",
+                "internal"
+              ]
+            },
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            },
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            },
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 100,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 20,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            },
+            "assurance": {
+              "order": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              },
+              "admitted": [
+                "audited",
+                "attested"
+              ]
+            },
+            "schema_evidence": {
+              "schema": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              "verifier": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+              },
+              "attestor": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              "assurance_policy": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "4444444444444444444444444444444444444444444444444444444444444444"
+              }
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "canonical": "{\"rules\":[{\"atoms\":{\"assurance\":{\"admitted\":[\"attested\",\"audited\"],\"order\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}},\"binding\":{\"ids\":[\"prov:eu-1\",\"prov:eu-2\"]},\"classification\":{\"allowed\":[\"internal\",\"public\"],\"lattice\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}},\"network_destination\":{\"host\":{\"ip4_cidr\":{\"octets\":[10,0,0,0],\"prefix_len\":8}},\"ports\":{\"first\":443,\"last\":443},\"protocol\":\"tcp\",\"scheme\":\"https\"},\"object\":{\"ids\":[\"obj:doc-1\",\"obj:doc-2\"]},\"operation\":{\"ids\":[\"events_read\",\"events_wait\"]},\"path\":{\"match\":\"subtree\",\"root\":\"ws:alloc-1\",\"segments\":[\"src\"]},\"purpose\":{\"path\":[\"p:root\",\"p:research\"],\"snapshot\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}},\"quantity\":{\"canonical_unit\":\"unit\",\"currency\":\"USD\",\"dimension\":\"money\",\"max\":100,\"pricing_revision\":\"pr-1\",\"scale\":2},\"rate\":{\"canonical_unit\":\"token\",\"capacity\":100,\"clock\":\"authority_server\",\"dimension\":\"compute\",\"epoch\":\"ep-1\",\"max_burst\":20,\"refill_amount\":10,\"refill_period_milliseconds\":1000},\"schema_evidence\":{\"assurance_policy\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"4444444444444444444444444444444444444444444444444444444444444444\"},\"attestor\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"3333333333333333333333333333333333333333333333333333333333333333\"},\"schema\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"1111111111111111111111111111111111111111111111111111111111111111\"},\"verifier\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"2222222222222222222222222222222222222222222222222222222222222222\"}},\"time\":{\"not_after\":100,\"not_before\":0}},\"effect\":\"allow\"},{\"atoms\":{\"binding\":{\"ids\":[\"prov:us-1\"]}},\"effect\":\"deny\"}]}",
+      "tagged_canonical": "{\"$domain\":\"bpa1-policy-v1\",\"rules\":[{\"atoms\":{\"assurance\":{\"admitted\":[\"attested\",\"audited\"],\"order\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}},\"binding\":{\"ids\":[\"prov:eu-1\",\"prov:eu-2\"]},\"classification\":{\"allowed\":[\"internal\",\"public\"],\"lattice\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}},\"network_destination\":{\"host\":{\"ip4_cidr\":{\"octets\":[10,0,0,0],\"prefix_len\":8}},\"ports\":{\"first\":443,\"last\":443},\"protocol\":\"tcp\",\"scheme\":\"https\"},\"object\":{\"ids\":[\"obj:doc-1\",\"obj:doc-2\"]},\"operation\":{\"ids\":[\"events_read\",\"events_wait\"]},\"path\":{\"match\":\"subtree\",\"root\":\"ws:alloc-1\",\"segments\":[\"src\"]},\"purpose\":{\"path\":[\"p:root\",\"p:research\"],\"snapshot\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}},\"quantity\":{\"canonical_unit\":\"unit\",\"currency\":\"USD\",\"dimension\":\"money\",\"max\":100,\"pricing_revision\":\"pr-1\",\"scale\":2},\"rate\":{\"canonical_unit\":\"token\",\"capacity\":100,\"clock\":\"authority_server\",\"dimension\":\"compute\",\"epoch\":\"ep-1\",\"max_burst\":20,\"refill_amount\":10,\"refill_period_milliseconds\":1000},\"schema_evidence\":{\"assurance_policy\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"4444444444444444444444444444444444444444444444444444444444444444\"},\"attestor\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"3333333333333333333333333333333333333333333333333333333333333333\"},\"schema\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"1111111111111111111111111111111111111111111111111111111111111111\"},\"verifier\":{\"algorithm\":\"sha-256\",\"class\":\"structural_public\",\"value_hex\":\"2222222222222222222222222222222222222222222222222222222222222222\"}},\"time\":{\"not_after\":100,\"not_before\":0}},\"effect\":\"allow\"},{\"atoms\":{\"binding\":{\"ids\":[\"prov:us-1\"]}},\"effect\":\"deny\"}]}",
+      "sha256_hex": "cd81f3855612a48fb97e0e6219e07fe191fb0895bc84133da17e2ba776218d4a"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "policy/well-formed-minimal-empty",
+  "description": "the empty policy (no rules) is well-formed and allows nothing",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": []
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "name": "policy/subset-network-destination-wider-false",
+  "description": "is_subset negative, network_destination domain — the widening shape proof/specs/MandateChain.tla models abstractly (AttemptWiden -> authority_widening, §14.9/G33): no new destination (§10.2): a wider CIDR or port range is not contained",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    1,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 16
+                }
+              },
+              "ports": {
+                "first": 1,
+                "last": 65535
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 443,
+                "last": 443
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

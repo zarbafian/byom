@@ -1,0 +1,29 @@
+{
+  "name": "policy/schema-valid-rate",
+  "description": "bpa1-policy accepts a well-formed rate atom (DESIGN.md §10.5 rate row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 100,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 20,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

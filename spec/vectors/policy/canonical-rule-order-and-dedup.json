@@ -1,0 +1,47 @@
+{
+  "name": "policy/canonical-rule-order-and-dedup",
+  "description": "canonical form sorts rules by their JCS bytes and removes exact duplicates (rule order is semantically irrelevant under deny-wins)",
+  "input": {
+    "policy_op": "canonical",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 10
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "diagnose"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 10
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "canonical": "{\"rules\":[{\"atoms\":{\"operation\":{\"ids\":[\"diagnose\"]}},\"effect\":\"deny\"},{\"atoms\":{\"time\":{\"not_after\":10,\"not_before\":0}},\"effect\":\"allow\"}]}",
+      "tagged_canonical": "{\"$domain\":\"bpa1-policy-v1\",\"rules\":[{\"atoms\":{\"operation\":{\"ids\":[\"diagnose\"]}},\"effect\":\"deny\"},{\"atoms\":{\"time\":{\"not_after\":10,\"not_before\":0}},\"effect\":\"allow\"}]}",
+      "sha256_hex": "69a8a66a16c1b8606c5cc23594bf8c8a863396b24a373678d20f1f9cbe865203"
+    }
+  }
+}

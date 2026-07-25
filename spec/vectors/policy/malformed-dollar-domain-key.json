@@ -1,0 +1,20 @@
+{
+  "name": "policy/malformed-dollar-domain-key",
+  "description": "$domain is reserved for type-tagged canonicalization (PROFILE.md §2): a policy carrying it anywhere fails closed",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [],
+      "$domain": "x"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/$domain"
+      }
+    }
+  }
+}

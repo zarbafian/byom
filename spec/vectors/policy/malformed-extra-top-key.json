@@ -1,0 +1,20 @@
+{
+  "name": "policy/malformed-extra-top-key",
+  "description": "the policy object is closed (an unknown member fails closed)",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [],
+      "note": "x"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/note"
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "name": "policy/intersect-multi-rule-product",
+  "description": "allow rules intersect pairwise (bounded product); pairs with an empty meet are dropped",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_wait"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "diagnose"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "allow",
+            "atoms": {
+              "operation": {
+                "ids": [
+                  "events_read"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"operation\":{\"ids\":[\"events_read\"]}},\"effect\":\"allow\"}]}"
+    }
+  }
+}

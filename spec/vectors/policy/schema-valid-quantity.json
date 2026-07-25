@@ -1,0 +1,27 @@
+{
+  "name": "policy/schema-valid-quantity",
+  "description": "bpa1-policy accepts a well-formed quantity atom (DESIGN.md §10.5 quantity row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "quantity": {
+              "dimension": "money",
+              "canonical_unit": "unit",
+              "scale": 2,
+              "max": 100,
+              "currency": "USD",
+              "pricing_revision": "pr-1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -33,6 +33,15 @@ equals `<family>/<file-stem>`. Three input kinds, dispatched by key:
   `expected.digest_ref` the typed `scope_erasure_safe` DigestRef whose
   `value_hex` is `HMAC-SHA-256(index key, canonical)`. The runner re-derives
   both.
+- **`input.policy_op`** — a BPA-1 algebra case (ADR-0001 accepted, DESIGN.md
+  §10.5): `well_formed`/`canonical` over `input.policy`, `intersect` over
+  `input.a`/`input.b`, `is_subset` over `input.child`/`input.parent`,
+  `decide` over `input.policy`/`input.request`. `expected.result` is the
+  exact total-function result — `{"ok": true, ...}` or the typed rejection
+  `{"ok": false, "error": {"kind", "where"}}` — and both independent
+  evaluators (`../../policy/eval.py`, `../../policy/eval.mjs`) must
+  re-derive it byte-for-byte under JCS (the B0.1 two-evaluator gate); the
+  runner replays every case through both.
 
 `envelope/` covers the §14.2 request/success/failure envelope, MutationMeta,
 and the `bpp-idempotency-domain-v1` digest domain. `ops/` covers the B0.1
@@ -47,4 +56,12 @@ parent pin), candidate operations without offer scope, a read carrying
 meta, a caller-shaped cursor naming its own audience, an events page over
 the 512 cap, and problem shapes: the continuation-head conflict, the
 mandate-derivation `authority_widening` rejection, and the spent one-shot
-execution decision.
+execution decision. `policy/` covers BPA-1 (`../schemas/bpa1-policy.
+schema.json`, ADR-0001): schema acceptance for every §10.5 atom domain,
+canonical bytes + `bpa1-policy-v1` digests, per-domain is_subset
+positive/negative pairs (the §10.2 never-widening shapes MandateChain
+models abstractly), deny preservation, intersect meets, deny-wins decide
+cases, incomparable-reject cases, and malformed/overflow fail-closed
+rejections with exact first-error pointers; the seeded differential
+harness (`../../policy/differential.py`, pinned in `../../run-checks.sh`)
+extends the same two-evaluator agreement over structured random cases.

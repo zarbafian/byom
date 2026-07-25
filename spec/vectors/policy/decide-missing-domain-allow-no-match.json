@@ -1,0 +1,32 @@
+{
+  "name": "policy/decide-missing-domain-allow-no-match",
+  "description": "an allow rule requires its constrained domain to be present in the request (fail closed): a missing value never satisfies a positive atom",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "binding": "prov:eu-1"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 0,
+      "matched_deny": 0
+    }
+  }
+}

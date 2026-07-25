@@ -1,0 +1,28 @@
+{
+  "name": "policy/malformed-unknown-domain",
+  "description": "an unknown atom domain fails closed (ADR-0001: not extensible data)",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "regex": {
+              "pattern": ".*"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/regex"
+      }
+    }
+  }
+}

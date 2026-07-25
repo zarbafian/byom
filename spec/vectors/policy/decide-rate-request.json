@@ -1,0 +1,46 @@
+{
+  "name": "policy/decide-rate-request",
+  "description": "rate membership is §10.5 containment of the requested RateCeiling within the atom",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "rate": {
+              "dimension": "compute",
+              "canonical_unit": "token",
+              "capacity": 100,
+              "refill_amount": 10,
+              "refill_period_milliseconds": 1000,
+              "max_burst": 20,
+              "epoch": "ep-1",
+              "clock": "authority_server"
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "rate": {
+        "dimension": "compute",
+        "canonical_unit": "token",
+        "capacity": 50,
+        "refill_amount": 5,
+        "refill_period_milliseconds": 1000,
+        "max_burst": 10,
+        "epoch": "ep-1",
+        "clock": "authority_server"
+      }
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "allow",
+      "matched_allow": 1,
+      "matched_deny": 0
+    }
+  }
+}

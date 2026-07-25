@@ -1,0 +1,54 @@
+{
+  "name": "policy/subset-assurance-cross-order-reject",
+  "description": "is_subset typed rejection (never an exception, never false): profiles of different pinned refinement orders are incomparable (§10.5: incomparable profiles reject)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "assurance": {
+              "order": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              },
+              "admitted": [
+                "audited"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "assurance": {
+              "order": {
+                "class": "structural_public",
+                "algorithm": "sha-256",
+                "value_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+              },
+              "admitted": [
+                "audited"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "incomparable",
+        "where": "assurance"
+      }
+    }
+  }
+}

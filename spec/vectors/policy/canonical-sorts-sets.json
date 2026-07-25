@@ -1,0 +1,36 @@
+{
+  "name": "policy/canonical-sorts-sets",
+  "description": "canonical form sorts set members by UTF-16 code units (wire order of sets is free; duplicates reject; digests are computed over the canonical form only)",
+  "input": {
+    "policy_op": "canonical",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_wait",
+                "events_read"
+              ]
+            },
+            "binding": {
+              "ids": [
+                "prov:b",
+                "prov:a"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "canonical": "{\"rules\":[{\"atoms\":{\"binding\":{\"ids\":[\"prov:a\",\"prov:b\"]},\"operation\":{\"ids\":[\"events_read\",\"events_wait\"]}},\"effect\":\"allow\"}]}",
+      "tagged_canonical": "{\"$domain\":\"bpa1-policy-v1\",\"rules\":[{\"atoms\":{\"binding\":{\"ids\":[\"prov:a\",\"prov:b\"]},\"operation\":{\"ids\":[\"events_read\",\"events_wait\"]}},\"effect\":\"allow\"}]}",
+      "sha256_hex": "59d1c6df08b5b8df4286b06ba7d9fe9cd8bc5a1e10e1e9113a7f765010c04559"
+    }
+  }
+}

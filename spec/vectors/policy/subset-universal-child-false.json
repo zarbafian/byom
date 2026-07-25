@@ -1,0 +1,35 @@
+{
+  "name": "policy/subset-universal-child-false",
+  "description": "adversarial universal atom: the universal child is wider than any constrained parent — an unconstrained domain is top, and absence never narrows (§10.2/G33)",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {}
+        }
+      ]
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": false
+    }
+  }
+}

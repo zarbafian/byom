@@ -1,0 +1,30 @@
+{
+  "name": "policy/subset-empty-child-rules-true",
+  "description": "a child with no rules allows nothing and is vacuously a subset of any parent",
+  "input": {
+    "policy_op": "is_subset",
+    "child": {
+      "rules": []
+    },
+    "parent": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "subset": true
+    }
+  }
+}

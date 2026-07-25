@@ -1,0 +1,42 @@
+{
+  "name": "policy/decide-contradictory-rules",
+  "description": "adversarial contradiction: the same region allowed and denied decides deny (§10.5 deny wins)",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "diagnose"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "diagnose"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "operation": "diagnose"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 1,
+      "matched_deny": 1
+    }
+  }
+}

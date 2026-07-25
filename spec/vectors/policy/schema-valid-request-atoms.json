@@ -1,0 +1,105 @@
+{
+  "name": "policy/schema-valid-request-atoms",
+  "description": "requestAtoms: one concrete kernel-compiled value per supplied domain (decide's right-hand side; compiled from the §10.6 dependency closure, never caller-shaped)",
+  "input": {
+    "schema": "bpa1-policy",
+    "ref": "#/$defs/requestAtoms",
+    "value": {
+      "operation": "events_read",
+      "object": "obj:doc-1",
+      "path": {
+        "root": "ws:alloc-1",
+        "segments": [
+          "src"
+        ]
+      },
+      "network_destination": {
+        "scheme": "https",
+        "host": {
+          "ip4": [
+            10,
+            1,
+            2,
+            3
+          ]
+        },
+        "port": 443,
+        "protocol": "tcp"
+      },
+      "binding": "prov:eu-1",
+      "purpose": {
+        "snapshot": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "path": [
+          "p:root",
+          "p:research"
+        ]
+      },
+      "classification": {
+        "lattice": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "element": "public"
+      },
+      "time": {
+        "at": 50
+      },
+      "quantity": {
+        "dimension": "money",
+        "canonical_unit": "unit",
+        "scale": 2,
+        "amount": 10,
+        "currency": "USD",
+        "pricing_revision": "pr-1"
+      },
+      "rate": {
+        "dimension": "compute",
+        "canonical_unit": "token",
+        "capacity": 10,
+        "refill_amount": 1,
+        "refill_period_milliseconds": 1000,
+        "max_burst": 5,
+        "epoch": "ep-1",
+        "clock": "authority_server"
+      },
+      "assurance": {
+        "order": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "profile": "audited"
+      },
+      "schema_evidence": {
+        "schema": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "verifier": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "attestor": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "assurance_policy": {
+          "class": "structural_public",
+          "algorithm": "sha-256",
+          "value_hex": "4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

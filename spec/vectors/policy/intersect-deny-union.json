@@ -1,0 +1,95 @@
+{
+  "name": "policy/intersect-deny-union",
+  "description": "denies are preserved under intersection (ADR-0001 algebra law): the result carries both sides' deny rules verbatim",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read",
+                "events_wait"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_wait",
+                "diagnose"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 10
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": [
+          {
+            "effect": "deny",
+            "atoms": {
+              "binding": {
+                "ids": [
+                  "prov:us-1"
+                ]
+              }
+            }
+          },
+          {
+            "effect": "allow",
+            "atoms": {
+              "operation": {
+                "ids": [
+                  "events_wait"
+                ]
+              }
+            }
+          },
+          {
+            "effect": "deny",
+            "atoms": {
+              "time": {
+                "not_before": 0,
+                "not_after": 10
+              }
+            }
+          }
+        ]
+      },
+      "canonical": "{\"rules\":[{\"atoms\":{\"binding\":{\"ids\":[\"prov:us-1\"]}},\"effect\":\"deny\"},{\"atoms\":{\"operation\":{\"ids\":[\"events_wait\"]}},\"effect\":\"allow\"},{\"atoms\":{\"time\":{\"not_after\":10,\"not_before\":0}},\"effect\":\"deny\"}]}"
+    }
+  }
+}

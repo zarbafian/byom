@@ -1,0 +1,44 @@
+{
+  "name": "policy/malformed-cidr-host-bits",
+  "description": "10.0.0.1/8 is not a normalized CIDR (§10.5: normalized IP/CIDR): host bits below the prefix must be zero",
+  "input": {
+    "policy_op": "well_formed",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    1
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 443,
+                "last": 443
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": false,
+      "error": {
+        "kind": "malformed",
+        "where": "/rules/0/atoms/network_destination/host/ip4_cidr"
+      }
+    }
+  }
+}

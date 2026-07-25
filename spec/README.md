@@ -30,9 +30,9 @@ checked by `../conformance/run.py`.
 
 | Directory | Contents | Status (B0.1 slices 1–3) |
 |---|---|---|
-| `adr/` | architecture decision records (format below) | B-ADR-1/2/4 proposed |
-| `schemas/` | JSON Schema 2020-12, one file per schema version | envelope + negotiation; `ops/` covers every B0.1 sheet family — society, charter, participants, candidates, endeavors, calls/pledges, mandates, acts, activities, events + recovery core (73 ops, request/result pairs) |
-| `vectors/` | golden and negative vectors, one JSON file per case | `envelope/`, `ops/` |
+| `adr/` | architecture decision records (format below) | B-ADR-1 accepted (BPA-1 encoding); B-ADR-2/4 proposed |
+| `schemas/` | JSON Schema 2020-12, one file per schema version | envelope + negotiation; `ops/` covers every B0.1 sheet family — society, charter, participants, candidates, endeavors, calls/pledges, mandates, acts, activities, events + recovery core (73 ops, request/result pairs); `bpa1-policy.schema.json` — the closed BPA-1 policy AST (ADR-0001 accepted, §10.5), dual-evaluated by `../policy/eval.py` + `../policy/eval.mjs` |
+| `vectors/` | golden and negative vectors, one JSON file per case | `envelope/`, `ops/`, `policy/` (BPA-1: schema, canonical/digest, is_subset, intersect, deny-wins decide, malformed/overflow — both policy evaluators must agree on every case) |
 | `registry/` | machine-readable operation registry: one row per `(operation, surface)` with family, mutating flag, closure categories — the freeze source for every bundle | planned (later B0.1 slice); interim §14.6 catalog + B0.1 sheet transcriptions live in `../conformance/run.py` |
 | `descriptors/` | machine-readable transition descriptors, one-to-one with every mutating operation in the bundle plus the named internal kernel transitions (§14.8) | society + participant/candidate + work-lifecycle + mandate/act-intent/charter machines (20 files); parity checked by the runner |
 | `models/` | TLA+ models with crash/replay vectors and per-model proof READMEs (ADR-0003) | planned (later B0.1 slice) |

@@ -1,0 +1,25 @@
+{
+  "name": "policy/schema-invalid-assurance",
+  "description": "bpa1-policy rejects: the refinement-order pin is required (§10.5: pinned finite refinement order)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "assurance": {
+              "admitted": [
+                "audited"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "the refinement-order pin is required (§10.5: pinned finite refinement order)"
+  }
+}

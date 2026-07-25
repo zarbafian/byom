@@ -1,0 +1,33 @@
+{
+  "name": "policy/decide-time-at-boundary",
+  "description": "the time interval is closed: at == not_after still matches (§10.5)",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 100
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "time": {
+        "at": 100
+      }
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "allow",
+      "matched_allow": 1,
+      "matched_deny": 0
+    }
+  }
+}

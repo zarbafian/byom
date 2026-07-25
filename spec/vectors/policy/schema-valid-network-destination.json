@@ -1,0 +1,38 @@
+{
+  "name": "policy/schema-valid-network-destination",
+  "description": "bpa1-policy accepts a well-formed network_destination atom (DESIGN.md §10.5 network_destination row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "network_destination": {
+              "scheme": "https",
+              "host": {
+                "ip4_cidr": {
+                  "octets": [
+                    10,
+                    0,
+                    0,
+                    0
+                  ],
+                  "prefix_len": 8
+                }
+              },
+              "ports": {
+                "first": 443,
+                "last": 443
+              },
+              "protocol": "tcp"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "policy/decide-default-deny",
+  "description": "absence of a matching allow is deny (§10.5 bounded union of positive atoms; deny-by-absence)",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "operation": "diagnose"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 0,
+      "matched_deny": 0
+    }
+  }
+}

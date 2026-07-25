@@ -1,0 +1,26 @@
+{
+  "name": "policy/schema-invalid-object",
+  "description": "bpa1-policy rejects: closed atom: an unknown member fails closed (additionalProperties false)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "object": {
+              "ids": [
+                "obj:doc-1"
+              ],
+              "note": "x"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "closed atom: an unknown member fails closed (additionalProperties false)"
+  }
+}

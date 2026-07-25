@@ -1,0 +1,25 @@
+{
+  "name": "policy/schema-valid-object",
+  "description": "bpa1-policy accepts a well-formed object atom (DESIGN.md §10.5 object row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "object": {
+              "ids": [
+                "obj:doc-1",
+                "obj:doc-2"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

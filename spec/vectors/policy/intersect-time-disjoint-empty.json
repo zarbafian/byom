@@ -1,0 +1,42 @@
+{
+  "name": "policy/intersect-time-disjoint-empty",
+  "description": "disjoint intervals: the rule pair's meet is empty, the pair is dropped, and the intersection allows nothing (deny-by-absence)",
+  "input": {
+    "policy_op": "intersect",
+    "a": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 0,
+              "not_after": 10
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "time": {
+              "not_before": 20,
+              "not_after": 30
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "value": {
+        "rules": []
+      },
+      "canonical": "{\"rules\":[]}"
+    }
+  }
+}

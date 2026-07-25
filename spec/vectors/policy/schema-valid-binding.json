@@ -1,0 +1,25 @@
+{
+  "name": "policy/schema-valid-binding",
+  "description": "bpa1-policy accepts a well-formed binding atom (DESIGN.md §10.5 binding row; ADR-0001)",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:eu-1",
+                "prov:eu-2"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

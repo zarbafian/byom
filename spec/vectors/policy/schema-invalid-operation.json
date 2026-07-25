@@ -1,0 +1,25 @@
+{
+  "name": "policy/schema-invalid-operation",
+  "description": "bpa1-policy rejects: operation ids are versioned BPP op ids (§14.6 pattern), never free text",
+  "input": {
+    "schema": "bpa1-policy",
+    "value": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "Not-Valid!"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false,
+    "reason": "operation ids are versioned BPP op ids (§14.6 pattern), never free text"
+  }
+}

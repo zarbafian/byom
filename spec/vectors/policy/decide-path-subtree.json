@@ -1,0 +1,40 @@
+{
+  "name": "policy/decide-path-subtree",
+  "description": "path membership: a request under the allowed subtree matches (§10.5: authorization still applies to the opened handle, never this string)",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "path": {
+              "root": "ws:alloc-1",
+              "segments": [
+                "src"
+              ],
+              "match": "subtree"
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "path": {
+        "root": "ws:alloc-1",
+        "segments": [
+          "src",
+          "main.rs"
+        ]
+      }
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "allow",
+      "matched_allow": 1,
+      "matched_deny": 0
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "policy/decide-missing-domain-deny-matches",
+  "description": "a deny rule conservatively matches a request that omits the constrained domain (fail closed in the deny direction)",
+  "input": {
+    "policy_op": "decide",
+    "policy": {
+      "rules": [
+        {
+          "effect": "allow",
+          "atoms": {
+            "operation": {
+              "ids": [
+                "events_read"
+              ]
+            }
+          }
+        },
+        {
+          "effect": "deny",
+          "atoms": {
+            "binding": {
+              "ids": [
+                "prov:us-1"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "request": {
+      "operation": "events_read"
+    }
+  },
+  "expected": {
+    "result": {
+      "ok": true,
+      "decision": "deny",
+      "matched_allow": 1,
+      "matched_deny": 1
+    }
+  }
+}
