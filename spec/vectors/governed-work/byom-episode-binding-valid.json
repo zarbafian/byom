@@ -1,0 +1,81 @@
+{
+  "name": "governed-work/byom-episode-binding-valid",
+  "description": "the §16.6 binding block verbatim plus the family-contract additions: dual fences, Δ5 context refs (both optional pairs present), budget/bridge/subordinate refs, allowed_local_commitments, idempotency key (L19–L22, L31–L37)",
+  "input": {
+    "schema": "byom-episode-binding",
+    "value": {
+      "byom_endpoint_ref": "byomd-local",
+      "endpoint_incarnation": "inc-0001",
+      "society_ref": "soc-1",
+      "recovery_epoch": 3,
+      "participant_ref": "part-artemis",
+      "participant_binding_epoch": 2,
+      "manifestation_ref": "manif-hosted-1",
+      "activity_stream_ref": "stream-14",
+      "episode_ref": "ep-88",
+      "generation": 5,
+      "byom_attempt_ref": "attempt-88-2",
+      "byom_fence_epoch": 7,
+      "kovee_invocation_ref": "kinv-4021",
+      "kovee_invocation_fence": 11,
+      "mandate_use_refs": [
+        "mu-3",
+        "mu-9"
+      ],
+      "context_source_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "byom_budget_reservation_ref": "brs-52",
+      "byom_budget_reservation_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "external_budget_bridge_ref": "ebb-52",
+      "kovee_subordinate_reservation_ref": "ksr-52",
+      "kovee_subordinate_reservation_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "dependency_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "stable_binding_key": "sbk-ep-88-2-kinv-4021",
+      "allowed_local_commitments": [
+        "draft_note",
+        "scratch_branch"
+      ],
+      "context_manifest_ref": "cm-301",
+      "context_manifest_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "kovee_context_assembly_ref": "kca-77",
+      "kovee_context_assembly_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "provider_context_manifest_ref": "pcm-501",
+      "provider_context_manifest_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

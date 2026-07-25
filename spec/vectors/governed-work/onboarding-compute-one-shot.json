@@ -1,0 +1,54 @@
+{
+  "name": "governed-work/onboarding-compute-one-shot",
+  "description": "the §7.4 one-shot path over the committed OnboardingActivationOffer machine: one compute consume activates the offer, the exact retry replays the stored receipt, a SECOND consume is not a transition (at most one compute use), completion stays evidence, and the candidate's refusal remains available",
+  "input": {
+    "machine": "onboarding-activation-offer",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "onboarding_offer",
+        "to": "offered",
+        "expect": "accepted"
+      },
+      {
+        "from": "offered",
+        "via": "onboarding_compute_permit_consume",
+        "to": "active",
+        "expect": "accepted"
+      },
+      {
+        "from": "active",
+        "via": "onboarding_compute_permit_consume",
+        "to": "active",
+        "expect": "replay"
+      },
+      {
+        "from": "active",
+        "via": "onboarding_compute_permit_consume",
+        "to": "active",
+        "expect": "rejected"
+      },
+      {
+        "from": "active",
+        "via": "onboarding_episode_complete",
+        "to": "completed",
+        "expect": "accepted"
+      },
+      {
+        "from": "completed",
+        "via": "membership_accept",
+        "to": "completed",
+        "expect": "rejected"
+      },
+      {
+        "from": "completed",
+        "via": "membership_refuse",
+        "to": "refused",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "refused"
+  }
+}

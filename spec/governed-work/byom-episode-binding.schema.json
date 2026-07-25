@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/byom-episode-binding.schema.json",
+  "title": "ByomEpisodeBinding (DESIGN.md §16.6 item 3; family contract L19–L22, L31, L34–L37; Δ5)",
+  "description": "The §16.6 ByomEpisodeBinding field list verbatim — episode/attempt refs, the DUAL fence epochs (byom_fence_epoch AND kovee_invocation_fence, L21), context source digest, and the budget-reservation/bridge/subordinate refs (L31–L32) — plus the four family-contract field groups the §16.6 block omits (recorded gaps, slice-2 gap notes): the L22 idempotency key, the L34–L37 allowed_local_commitments set, and the Δ5 ContextManifest/ContextAssembly/ProviderContextManifest context refs. Added by the Kovee revision implementing byom_governed_work_v1 rather than overloading SageTurnBinding (§16.6 item 3); Kovee owns the host schema, this is the byom-normative shape. Lifecycle: spec/descriptors/byom-episode-binding.json (the Episode/EpisodeLease machine itself is spec/descriptors/episode.json — referenced, never re-owned).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "byom_endpoint_ref",
+    "endpoint_incarnation",
+    "society_ref",
+    "recovery_epoch",
+    "participant_ref",
+    "participant_binding_epoch",
+    "manifestation_ref",
+    "activity_stream_ref",
+    "episode_ref",
+    "generation",
+    "byom_attempt_ref",
+    "byom_fence_epoch",
+    "kovee_invocation_ref",
+    "kovee_invocation_fence",
+    "mandate_use_refs",
+    "context_source_digest",
+    "byom_budget_reservation_ref",
+    "byom_budget_reservation_digest",
+    "external_budget_bridge_ref",
+    "kovee_subordinate_reservation_ref",
+    "kovee_subordinate_reservation_digest",
+    "dependency_digest",
+    "digest",
+    "stable_binding_key",
+    "allowed_local_commitments",
+    "context_manifest_ref",
+    "context_manifest_digest"
+  ],
+  "properties": {
+    "byom_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "endpoint_incarnation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "society_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "recovery_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "participant_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "participant_binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "manifestation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "activity_stream_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "episode_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "generation": {
+      "$ref": "#/$defs/safeNonNegativeInteger",
+      "description": "ActivityStream generation the Episode runs under; a stale generation is fenced (§11.2)."
+    },
+    "byom_attempt_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "The exact EpisodeAttempt (Episode/EpisodeLease machine, spec/descriptors/episode.json); the attempt lifecycle is owned there, never by this record."
+    },
+    "byom_fence_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger",
+      "description": "Byom-side fence: one of the DUAL fences every runtime mutation must present (family contract L21/R30)."
+    },
+    "kovee_invocation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "kovee_invocation_fence": {
+      "$ref": "#/$defs/safeNonNegativeInteger",
+      "description": "Kovee host-side fence: the other of the DUAL fences (L21/R30); a mutation carrying only one fence is invalid."
+    },
+    "mandate_use_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "description": "MandateUse rows consumed for this Episode's authority (§13.2 tagging: every causally originating Kovee invocation carries the exact MandateUse set)."
+    },
+    "context_source_digest": {
+      "$ref": "#/$defs/digestRef",
+      "description": "Digest over the exact byom source-field fragment supplied to Kovee's ProviderContextManifest (provider-context-manifest-byom-fields.schema.json; §12.1, Δ5)."
+    },
+    "byom_budget_reservation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "byom_budget_reservation_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "external_budget_bridge_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "The §11.4 ExternalBudgetBridge row (byom-owned; its field list is §11.4 verbatim and lands with the byom budget ops bundle)."
+    },
+    "kovee_subordinate_reservation_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "kovee_subordinate_reservation_digest": {
+      "$ref": "#/$defs/digestRef",
+      "description": "Exact subordinate Kovee reservation ref/revision/digest persisted per §11.4; the record shape is byom-subordinate-reservation.schema.json."
+    },
+    "dependency_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "stable_binding_key": {
+      "$ref": "#/$defs/identifier",
+      "description": "Idempotent-create key: Kovee commits the binding row at the exact episode_claim/episode_start CAS and an exact retry returns the identical row (family contract L22; UNIQUE(episode_ref, byom_attempt_ref, kovee_invocation_ref) enforced in code). NOT in the §16.6 block — recorded gap, slice-2 gap notes."
+    },
+    "allowed_local_commitments": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "description": "Closed set of Kovee local-commitment classes the hosted child may make intra-turn; anything else must go through call_open/pledge_propose/act_intent_* (family contract L34–L37; §16.6 item 8 names the concept but the §16.6 binding block omits the field — recorded gap)."
+    },
+    "context_manifest_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "The Episode's audience-specific immutable byom ContextManifest (§12.1), rechecked at materialization (Δ5). NOT in the §16.6 block — recorded gap."
+    },
+    "context_manifest_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "kovee_context_assembly_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "Kovee ContextAssembly this Episode's context derives from (Δ5; §12.1 'preferred collaboration source'). Optional as an all-or-none pair: a purely byom-sourced Episode has none."
+    },
+    "kovee_context_assembly_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "provider_context_manifest_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "Kovee's ProviderContextManifest for this invocation (Kovee-owned, sole owner of final provider bytes — §12.1). Optional all-or-none pair: Kovee finalizes it at materialization, possibly after this row is committed."
+    },
+    "provider_context_manifest_digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "$comment": "The optional Δ5 pairs are all-or-none (oneOf arms). Cross-record equalities (the attempt belongs to the episode, the subordinate reservation belongs to the bridge, context_source_digest re-derives from the committed fragment) are enforced in code.",
+  "oneOf": [
+    {
+      "required": [
+        "kovee_context_assembly_ref",
+        "kovee_context_assembly_digest",
+        "provider_context_manifest_ref",
+        "provider_context_manifest_digest"
+      ],
+      "$comment": "Both optional Δ5 context pairs present."
+    },
+    {
+      "required": [
+        "kovee_context_assembly_ref",
+        "kovee_context_assembly_digest"
+      ],
+      "properties": {
+        "provider_context_manifest_ref": false,
+        "provider_context_manifest_digest": false
+      },
+      "$comment": "Assembly pair only (provider manifest not yet finalized)."
+    },
+    {
+      "required": [
+        "provider_context_manifest_ref",
+        "provider_context_manifest_digest"
+      ],
+      "properties": {
+        "kovee_context_assembly_ref": false,
+        "kovee_context_assembly_digest": false
+      },
+      "$comment": "Provider pair only (byom-sourced context, no Kovee assembly)."
+    },
+    {
+      "properties": {
+        "kovee_context_assembly_ref": false,
+        "kovee_context_assembly_digest": false,
+        "provider_context_manifest_ref": false,
+        "provider_context_manifest_digest": false
+      },
+      "$comment": "Neither optional pair; ref/digest pairs are all-or-none."
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    }
+  }
+}

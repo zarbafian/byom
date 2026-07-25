@@ -60,17 +60,26 @@ Checks, in order:
    gated (the akson-mcp marking); and zero governance, runtime, or admin
    operations are bound. Tool-call vectors (spec/vectors/mcp/) replay
    call shapes against the committed document.
-8. the C2 governed-work family (spec/governed-work/, byom §16.3/§16.6,
-   family contract §2.A/2.B): the closed slice-1 record-schema inventory is
-   present and compiled; every §16 state/status enum equals its transcription
-   below verbatim (order included); the two Kovee-owned executor descriptors
-   (greenfield-enablement, endeavor-formation) exist, declare owner
-   "kovee (C2)", and the formation descriptor's states equal the §16.3
-   intent list verbatim. Kovee-owned descriptors never own a BPP operation,
-   so the exactly-once descriptor-parity rule below is not polluted; the
-   restore-lineage-proof schema additionally gets a cross-member check
-   (declared hop_count equals the ordered_hops length — the bpp-failure
-   type/kind pattern, since JSON Schema cannot compare the two).
+8. the C2 governed-work family (spec/governed-work/, byom §16.3/§16.6 plus
+   the slice-2 sources §7.4/§11.4/§12.1/§14.3/§17.2; family contract
+   §2.A-2.F/2.J, Δ4/Δ5): the closed record-schema inventory (slice 1 + the
+   slice-2 episode/effect/driver contracts) is present and compiled; every
+   design state/status enum equals its transcription below verbatim (order
+   included; array fields under items); the Kovee-owned executor
+   descriptors exist, declare owner "kovee (C2)", and the pinned state
+   lists (formation §16.3, subordinate bridge §11.4, dispatch head §17.2)
+   are verbatim. Kovee-owned descriptors never own a BPP operation, so the
+   exactly-once descriptor-parity rule below is not polluted. Cross-member
+   checks JSON Schema cannot express (the bpp-failure type/kind pattern):
+   restore-lineage-proof hop_count equals the ordered_hops length, and
+   byom-subordinate-reservation items never exceed or reshape their parent
+   dimension (§11.4 never-above-parent). The Δ4 act-class-subject taxonomy
+   is cross-validated against BPA-1 twice: statically (its oneOf arms
+   encode exactly the transcribed mandatory-domain table and its copied
+   $defs are byte-identical to bpa1-policy.schema.json) and dynamically
+   (every act-class-subject vector's atoms replay through the policy/eval.py
+   reference evaluator; a schema-valid subject the evaluator rejects is a
+   hard divergence failure).
 
 Exit code 0 only when everything passes. Self-contained: Python stdlib only,
 with `jsonschema` used opportunistically when installed and `node` used
@@ -271,10 +280,23 @@ GOVERNED_WORK_SCHEMAS = (
     "external-command-terminalize-arguments",
     "external-command-terminalize-result",
     "restore-lineage", "restore-lineage-proof",
+    # -- slice 2: episode/effect/driver contracts (byom §16.6 items 3-5,
+    # 8, 11-12; §7.4; §11.4; §12.1; §14.3; §17.2; family contract Δ4/Δ5,
+    # L19-L37, L61-L64) --
+    "byom-episode-binding", "byom-subordinate-reservation",
+    "provider-context-manifest-byom-fields", "onboarding-compute-intent",
+    "onboarding-compute-receipt", "byom-akson-dispatch-arguments",
+    "byom-akson-dispatch-outcome-receipt",
+    "byom-akson-dispatch-outcome-receipt-head",
+    "sender-constrained-worker-credential",
+    "sender-constrained-candidate-credential", "act-class-subject",
 )
 # §16 state/enum lists, transcribed verbatim (order included); the committed
 # schema enums must equal them exactly — the machine-checked "states
-# verbatim" gate of the C2 sheet.
+# verbatim" gate of the C2 sheet. Slice 2 adds the §7.4, §11.4, and §17.2
+# lists (an array-valued field's enum lives under items). Derived enums
+# (e.g. the DPC/worker sender-constraint methods) are deliberately NOT
+# pinned here — only design-verbatim lists are.
 GOVERNED_WORK_ENUMS = {
     ("endeavor-formation-intent", "state"): [
         "prepared", "submitting", "remote_unknown", "awaiting_principal",
@@ -301,14 +323,79 @@ GOVERNED_WORK_ENUMS = {
     ("restore-lineage", "idempotency_retention"): [
         "complete", "incomplete", "unavailable"],
     ("restore-lineage", "status"): ["current", "superseded"],
+    # -- slice 2 --
+    ("onboarding-compute-intent", "state"): [
+        "prepared", "authorized", "consumed", "completed", "failed",
+        "ambiguous"],
+    # §7.4 verbatim, `refuse` included as written — the catalog and
+    # OnboardingActivationOffer say `membership_refuse` (recorded gap,
+    # spec/governed-work/episode-budget-dispatch.md).
+    ("onboarding-compute-intent", "allowed_output_operations"): [
+        "refuse", "membership_accept", "candidate_self_policy_propose"],
+    # §11.4 ExternalBudgetBridge.state verbatim — the bridge-visible saga
+    # state carried on the subordinate record (§16.6 item 4).
+    ("byom-subordinate-reservation", "state"): [
+        "requested", "confirmed", "denied", "uncertain", "settled",
+        "released"],
+    ("byom-akson-dispatch-outcome-receipt", "disposition"): [
+        "pre_result_failed", "ambiguous", "verification_rejected",
+        "verified_result"],
+    ("byom-akson-dispatch-outcome-receipt", "classification_profile"): [
+        "society_mapped_round_trip", "akson_neutral_contract"],
+    ("byom-akson-dispatch-outcome-receipt", "outcome"): [
+        "succeeded", "failed", "ambiguous"],
+    ("byom-akson-dispatch-outcome-receipt", "failure_stage"): [
+        "before_dispatch", "stage_rejected", "consent_rejected",
+        "dispatch_definitively_rejected", "reconciled_no_result"],
+    ("byom-akson-dispatch-outcome-receipt", "ambiguity_stage"): [
+        "dispatch_unknown", "result_unknown", "verification_unknown"],
+    ("byom-akson-dispatch-outcome-receipt", "verification_rejection_class"): [
+        "signature_invalid", "identity_epoch_mismatch", "schema_invalid",
+        "digest_mismatch", "evidence_invalid", "contract_mismatch"],
+    ("byom-akson-dispatch-outcome-receipt-head", "state"): [
+        "ambiguous", "final"],
+    # §7.4 OnboardingActivationOffer.allowed_operations verbatim (= the R11
+    # candidate set; C3a binds the same three).
+    ("sender-constrained-candidate-credential", "allowed_operations"): [
+        "membership_refuse", "membership_accept",
+        "candidate_self_policy_propose"],
+    # Family contract §4 Δ4 verbatim: the closed act-class list.
+    ("act-class-subject", "act_class"): [
+        "model_egress", "share", "outbound", "apply", "budget"],
 }
-# The two C2 slice-1 descriptors: file stem -> machine name. Both are
-# Kovee-owned executor machines over byom-normative shapes.
+# C2 descriptors: file stem -> machine name. All are Kovee-owned executor
+# machines over byom-normative shapes.
 GOVERNED_WORK_DESCRIPTORS = {
     "greenfield-enablement": "GreenfieldEnablement",
     "endeavor-formation": "EndeavorFormationIntent/Slot",
+    "byom-episode-binding": "ByomEpisodeBinding",
+    "subordinate-reservation": "ByomSubordinateReservation",
+    "byom-akson-dispatch-outcome-head": "ByomAksonDispatchOutcomeReceiptHead",
+}
+# Descriptors whose state list must equal a pinned enum verbatim (the
+# formation intent list is §16.3; the subordinate list is the §11.4 bridge
+# state list; the dispatch head list is §17.2).
+GOVERNED_WORK_DESCRIPTOR_STATES = {
+    "endeavor-formation": ("endeavor-formation-intent", "state"),
+    "subordinate-reservation": ("byom-subordinate-reservation", "state"),
+    "byom-akson-dispatch-outcome-head":
+        ("byom-akson-dispatch-outcome-receipt-head", "state"),
 }
 KOVEE_DESCRIPTOR_OWNER = "kovee (C2)"
+# Δ4 act-class subject taxonomy (family contract §4, delivered in C2): the
+# mandatory BPA-1 request domains per act class, transcribed from the
+# committed act-class-subject arms — check_governed_work verifies the
+# schema encodes exactly this table, and the schema's copied BPA-1 $defs
+# are byte-identical (JCS) to spec/schemas/bpa1-policy.schema.json's.
+ACT_CLASS_MANDATORY = {
+    "model_egress": ["operation", "purpose", "binding", "classification",
+                     "quantity"],
+    "share": ["operation", "purpose", "object", "classification"],
+    "outbound": ["operation", "purpose", "network_destination",
+                 "classification"],
+    "apply": ["operation", "purpose", "object", "path", "schema_evidence"],
+    "budget": ["operation", "purpose", "quantity"],
+}
 
 # ------------------------------------------------------ C3a MCP bundle ------
 # The C3a MCP tool op lists, transcribed verbatim from plan/sheets/C3a.md
@@ -811,6 +898,34 @@ def _restore_lineage_proof_ok(value) -> bool:
     return True
 
 
+def _subordinate_reservation_ok(value) -> bool:
+    """Never-above-parent (DESIGN.md §11.4; family contract L32): every
+    byom_subordinate item's amount must be <= its parent item's
+    worst_case_amount, with the SAME dimension and unit — a subordinate
+    reservation may narrow or deny but never reshape or parallel-charge.
+    JSON Schema cannot compare two members, so the runner enforces it (the
+    restore-lineage-proof pattern). Applied only where the members carry
+    their schema-checked shapes."""
+    if not isinstance(value, dict) or not isinstance(value.get("items"),
+                                                     list):
+        return True
+    for item in value["items"]:
+        if not isinstance(item, dict):
+            continue
+        amount = item.get("amount")
+        cap = item.get("parent_worst_case_amount")
+        if isinstance(amount, int) and isinstance(cap, int) \
+                and not isinstance(amount, bool) \
+                and not isinstance(cap, bool) and amount > cap:
+            return False
+        for member, parent in (("dimension", "parent_dimension"),
+                               ("unit", "parent_unit")):
+            a, b = item.get(member), item.get(parent)
+            if isinstance(a, str) and isinstance(b, str) and a != b:
+                return False
+    return True
+
+
 def _failure_type_kind_ok(envelope) -> bool:
     """Problem type must equal exactly PROBLEM_TYPE_PREFIX + kind (PROFILE.md
     §3, profile-pinned decision 3). Applied only where both members are
@@ -1122,13 +1237,19 @@ class Runner:
     # -- C2 governed-work family --
 
     def check_governed_work(self) -> dict:
-        """C2 slice 1 (byom §16.3/§16.6; family contract §2.A/2.B): the
-        closed record-schema inventory is present; every §16 enum equals its
-        verbatim transcription (order included); the two Kovee-owned
-        executor descriptors exist, declare owner KOVEE_DESCRIPTOR_OWNER and
-        the expected machine name; and the formation descriptor's states
-        equal the §16.3 EndeavorFormationIntent list verbatim."""
-        info = {"schemas": 0, "enums": 0, "descriptors": 0}
+        """C2 (byom §16.3/§16.6 plus, for slice 2, §7.4/§11.4/§12.1/§14.3/
+        §17.2; family contract §2.A-2.F/2.J and Δ4/Δ5): the closed
+        record-schema inventory is present; every design enum equals its
+        verbatim transcription (order included; an array field's enum lives
+        under items); the Kovee-owned executor descriptors exist, declare
+        owner KOVEE_DESCRIPTOR_OWNER and the expected machine name, and the
+        pinned descriptors' state lists equal their design lists verbatim;
+        and the Δ4 taxonomy schema encodes exactly ACT_CLASS_MANDATORY with
+        its BPA-1 $defs byte-identical to bpa1-policy.schema.json (the
+        static half of the taxonomy<->BPA-1 cross-validation; the dynamic
+        half replays every act-class-subject vector through policy/eval.py
+        in _run_schema_vector)."""
+        info = {"schemas": 0, "enums": 0, "descriptors": 0, "taxonomy": 0}
         for name in GOVERNED_WORK_SCHEMAS:
             if name not in self.schemas:
                 self.fail(f"governed-work: record schema {name} is missing "
@@ -1139,11 +1260,12 @@ class Runner:
             schema = self.schemas.get(name)
             if schema is None:
                 continue  # already failed above
-            got = schema.get("properties", {}).get(field, {}).get("enum")
+            prop = schema.get("properties", {}).get(field, {})
+            got = prop.get("enum", prop.get("items", {}).get("enum"))
             if got != want:
                 self.fail(f"governed-work: {name}.{field} enum is not the "
-                          f"§16 list verbatim\n      schema: {got}\n"
-                          f"      §16:    {want}")
+                          f"design list verbatim\n      schema: {got}\n"
+                          f"      design: {want}")
                 continue
             info["enums"] += 1
         for stem, machine in GOVERNED_WORK_DESCRIPTORS.items():
@@ -1166,18 +1288,64 @@ class Runner:
                 self.fail(f"governed-work: {stem}.json machine is "
                           f"{body.get('machine')!r}, expected {machine!r}")
                 ok = False
-            if stem == "endeavor-formation":
-                want = GOVERNED_WORK_ENUMS[("endeavor-formation-intent",
-                                            "state")]
+            if stem in GOVERNED_WORK_DESCRIPTOR_STATES:
+                want = GOVERNED_WORK_ENUMS[
+                    GOVERNED_WORK_DESCRIPTOR_STATES[stem]]
                 if body.get("states") != want:
-                    self.fail("governed-work: endeavor-formation.json states "
-                              "are not the §16.3 intent list verbatim\n"
+                    self.fail(f"governed-work: {stem}.json states are not "
+                              "the design list verbatim\n"
                               f"      descriptor: {body.get('states')}\n"
-                              f"      §16.3:      {want}")
+                              f"      design:     {want}")
                     ok = False
             if ok:
                 info["descriptors"] += 1
+        info["taxonomy"] = self._check_taxonomy_schema()
         return info
+
+    def _check_taxonomy_schema(self) -> int:
+        """Static taxonomy<->BPA-1 agreement (Δ4): the act-class-subject
+        oneOf arms encode exactly ACT_CLASS_MANDATORY, and every $def the
+        schema copied from bpa1-policy is byte-identical (JCS) — so the
+        subject wire IS the BPA-1 request-atoms wire, not a fork of it.
+        Returns the number of verified class arms."""
+        schema = self.schemas.get("act-class-subject")
+        bpa1 = self.schemas.get("bpa1-policy")
+        if schema is None or bpa1 is None:
+            return 0  # missing schema already failed above
+        ok_arms = 0
+        arms = {}
+        for i, arm in enumerate(schema.get("oneOf", [])):
+            cls = (arm.get("properties", {}).get("act_class", {})
+                   .get("const"))
+            required = (arm.get("properties", {}).get("subject_atoms", {})
+                        .get("required"))
+            if cls is None or cls in arms:
+                self.fail(f"governed-work: act-class-subject oneOf[{i}] has "
+                          "no act_class const or repeats one")
+                continue
+            arms[cls] = required
+        if list(arms) != list(ACT_CLASS_MANDATORY):
+            self.fail("governed-work: act-class-subject arms are not the Δ4 "
+                      f"class list verbatim\n      schema: {list(arms)}\n"
+                      f"      Δ4:     {list(ACT_CLASS_MANDATORY)}")
+        for cls, want in ACT_CLASS_MANDATORY.items():
+            if arms.get(cls) != want:
+                self.fail(f"governed-work: act-class-subject {cls} mandatory "
+                          f"domains {arms.get(cls)} != transcription {want}")
+                continue
+            ok_arms += 1
+        jcs = lambda v: json.dumps(v, sort_keys=True, separators=(",", ":"))
+        for name, body in schema.get("$defs", {}).items():
+            source = bpa1.get("$defs", {}).get(name)
+            if source is None:
+                self.fail(f"governed-work: act-class-subject $defs/{name} "
+                          "does not exist in bpa1-policy (the subject wire "
+                          "must be the BPA-1 request-atoms wire)")
+            elif jcs(body) != jcs(source):
+                self.fail(f"governed-work: act-class-subject $defs/{name} "
+                          "diverges from bpa1-policy's (byte-identical copy "
+                          "required)")
+        return ok_arms
 
     # -- C3a MCP tool bundle --
 
@@ -1445,7 +1613,7 @@ class Runner:
         vector_dir = self.spec_dir / "vectors"
         counts = {"schema-valid": 0, "schema-invalid": 0, "acceptance": 0,
                   "digest": 0, "machine-walk": 0, "policy": 0,
-                  "tool-call": 0}
+                  "tool-call": 0, "taxonomy-bpa1": 0}
         paths = sorted(p for p in vector_dir.rglob("*.json"))
         if not paths:
             self.fail(f"no vectors found under {vector_dir}")
@@ -1492,10 +1660,44 @@ class Runner:
                 and inp.get("ref") is None:
             # §16.3: declared hop count MUST equal the array length.
             verdict = _restore_lineage_proof_ok(inp["value"])
+        if verdict and schema_name == "byom-subordinate-reservation" \
+                and inp.get("ref") is None:
+            # §11.4: never above (or reshaping) the parent dimension.
+            verdict = _subordinate_reservation_ok(inp["value"])
+        if schema_name == "act-class-subject" and inp.get("ref") is None:
+            # Dynamic taxonomy<->BPA-1 cross-validation (Δ4): the subject
+            # atoms must decide through the BPA-1 reference evaluator
+            # policy/eval.py (a universal allow policy — decide() first
+            # validates the request wire). A schema-valid subject the
+            # evaluator rejects is a divergence between the two encodings
+            # and fails hard, beyond this vector's verdict.
+            eval_ok = self._taxonomy_bpa1_ok(inp["value"])
+            counts["taxonomy-bpa1"] += 1
+            if verdict and not eval_ok:
+                self.fail(f"{rel}: taxonomy<->BPA-1 divergence — the "
+                          "subject validates against act-class-subject but "
+                          "policy/eval.py rejects its atoms")
+            verdict = verdict and eval_ok
         if verdict != expected["valid"]:
             self.fail(f"{rel}: expected valid={expected['valid']}, got {verdict}")
             return
         counts["schema-valid" if expected["valid"] else "schema-invalid"] += 1
+
+    def _taxonomy_bpa1_ok(self, value) -> bool:
+        """True when the subject's atoms are a well-formed BPA-1 request
+        the reference evaluator decides (allow under a universal allow
+        policy); False on any typed rejection or a non-object subject."""
+        atoms = value.get("subject_atoms") if isinstance(value, dict) \
+            else None
+        if not isinstance(atoms, dict):
+            return False
+        mod = self._policy_eval()
+        result = mod.run_case({
+            "policy_op": "decide",
+            "policy": {"rules": [{"effect": "allow", "atoms": {}}]},
+            "request": atoms,
+        })
+        return result.get("ok") is True and result.get("decision") == "allow"
 
     def _run_acceptance_vector(self, rel, inp, expected, counts):
         if "raw" in inp:
@@ -1784,7 +1986,9 @@ class Runner:
         desc = self.run_descriptors()
         counts = self.run_vectors()
         policy_note = self.cross_check_policy()
-        total = sum(counts.values())
+        # taxonomy-bpa1 re-checks vectors already counted as schema
+        # vectors, so it stays out of the total.
+        total = sum(v for k, v in counts.items() if k != "taxonomy-bpa1")
         print()
         print(f"schemas:  {len(self.schemas)}/{n_schemas} compiled ({backend})")
         print(f"bundle:   {covered}/{len(SLICE_OPS)} B0.1 sheet ops "
@@ -1798,9 +2002,12 @@ class Runner:
               "exactly once")
         print(f"governed-work: {gw['schemas']}/{len(GOVERNED_WORK_SCHEMAS)} "
               f"C2 record schemas, {gw['enums']}/"
-              f"{len(GOVERNED_WORK_ENUMS)} §16 enums verbatim, "
+              f"{len(GOVERNED_WORK_ENUMS)} design enums verbatim, "
               f"{gw['descriptors']}/{len(GOVERNED_WORK_DESCRIPTORS)} "
-              "kovee-owned descriptors")
+              f"kovee-owned descriptors, {gw['taxonomy']}/"
+              f"{len(ACT_CLASS_MANDATORY)} Δ4 class arms "
+              f"({counts['taxonomy-bpa1']} subjects cross-checked through "
+              "policy/eval.py)")
         pending = (f"; pending op schemas: {', '.join(mcp['pending'])}"
                    if mcp["pending"] else "; all ops schema-backed")
         print(f"mcp:      c3a — {mcp['candidate']} candidate + "

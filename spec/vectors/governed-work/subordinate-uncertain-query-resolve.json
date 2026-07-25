@@ -1,0 +1,51 @@
+{
+  "name": "governed-work/subordinate-uncertain-query-resolve",
+  "description": "an unknown result remains uncertain (§11.4): no timeout release, the stable query holds then resolves to the truth, and only then does release follow; a crash between steps moves nothing",
+  "input": {
+    "machine": "subordinate-reservation",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "subordinate_reserve_request",
+        "to": "requested",
+        "expect": "accepted"
+      },
+      {
+        "from": "requested",
+        "via": "subordinate_outcome_unknown",
+        "to": "uncertain",
+        "expect": "accepted"
+      },
+      {
+        "from": "uncertain",
+        "via": "subordinate_release",
+        "to": "released",
+        "expect": "rejected"
+      },
+      {
+        "from": "uncertain",
+        "via": "subordinate_query_unknown",
+        "to": "uncertain",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "uncertain",
+        "via": "subordinate_query_confirmed",
+        "to": "confirmed",
+        "expect": "accepted"
+      },
+      {
+        "from": "confirmed",
+        "via": "subordinate_release",
+        "to": "released",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "released"
+  }
+}

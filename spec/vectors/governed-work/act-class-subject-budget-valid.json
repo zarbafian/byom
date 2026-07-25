@@ -1,0 +1,36 @@
+{
+  "name": "governed-work/act-class-subject-budget-valid",
+  "description": "Δ4 budget subject: the exact quantity (dimension, unit, scale, amount) is mandatory",
+  "input": {
+    "schema": "act-class-subject",
+    "value": {
+      "act_class": "budget",
+      "subject_atoms": {
+        "operation": "budget_delegate",
+        "purpose": {
+          "snapshot": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "path": [
+            "root",
+            "support",
+            "triage"
+          ]
+        },
+        "quantity": {
+          "dimension": "money",
+          "canonical_unit": "usd_cent",
+          "scale": 2,
+          "amount": 50000,
+          "currency": "USD",
+          "pricing_revision": "pricing-2026-07"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

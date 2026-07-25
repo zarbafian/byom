@@ -1,0 +1,44 @@
+{
+  "name": "governed-work/act-class-subject-outbound-valid",
+  "description": "Δ4 outbound subject: the exact network destination and classification are mandatory (the Akson dispatch act class, L61)",
+  "input": {
+    "schema": "act-class-subject",
+    "value": {
+      "act_class": "outbound",
+      "subject_atoms": {
+        "operation": "akson_dispatch",
+        "purpose": {
+          "snapshot": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "path": [
+            "root",
+            "support",
+            "triage"
+          ]
+        },
+        "network_destination": {
+          "scheme": "https",
+          "host": {
+            "dns": "peer.example.org"
+          },
+          "port": 443,
+          "protocol": "https"
+        },
+        "classification": {
+          "lattice": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "element": "internal"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

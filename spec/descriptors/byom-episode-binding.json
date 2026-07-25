@@ -1,0 +1,39 @@
+{
+  "machine": "ByomEpisodeBinding",
+  "owner": "kovee (C2)",
+  "states": [
+    "bound",
+    "fenced",
+    "released"
+  ],
+  "transitions": [
+    {
+      "from": "absent",
+      "to": "bound",
+      "via": "episode_binding_commit",
+      "authority": "kovee (C2): Kovee host transaction committing the binding row atomically with the exact episode_claim/episode_start CAS it observes (R30, dual fences)",
+      "notes": "Kovee durably binds the exact Episode/attempt to its invocation (§16.6 item 3): both fence epochs, context refs, budget/bridge/subordinate refs, allowed_local_commitments. Idempotent over stable_binding_key — an exact retry returns the identical row (family contract L22). The Episode/EpisodeLease lifecycle itself is owned by spec/descriptors/episode.json; this machine owns only the Kovee-side binding record, never the claim."
+    },
+    {
+      "from": "bound",
+      "to": "bound",
+      "via": "episode_binding_commit",
+      "authority": "kovee (C2): same host transaction",
+      "notes": "Retry under the same stable_binding_key returns the identical binding; a different key for the same (episode, attempt, invocation) conflicts (UNIQUE in code)."
+    },
+    {
+      "from": "bound",
+      "to": "fenced",
+      "via": "episode_binding_fence_advance",
+      "authority": "kovee (C2): Kovee observes a Byom or host fence advance (new attempt claim, activity hold, recovery epoch or incarnation change) — verification of the fence fact, not new authority",
+      "notes": "Either of the DUAL fences advancing (L21) invalidates the binding for every further mutation; the row is retained for audit and orphan-result diagnostics (§11.3: a stale worker may keep bytes as local evidence but cannot advance any head). A successor attempt gets a NEW binding row under a new stable_binding_key — re-binding is not a transition of this row. Terminal."
+    },
+    {
+      "from": "bound",
+      "to": "released",
+      "via": "episode_binding_release",
+      "authority": "kovee (C2): Kovee finalizes the invocation when the bound Episode reaches a terminal state (episode_complete/episode_fail on the episode machine)",
+      "notes": "Orderly close: the budget reservation refs hand off to §11.4 settlement (usage_report is evidence only; settlement commits from a trusted meter or verified provider receipt). Terminal; the released row stays in the audit closure."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "name": "governed-work/subordinate-reserve-commit-settle",
+  "description": "the §16.6 item 4 saga happy path with parent conservation: idempotent reserve retry, Kovee commit, one settlement applied once on both sides, release of the remainder; a released bridge never revives",
+  "input": {
+    "machine": "subordinate-reservation",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "subordinate_reserve_request",
+        "to": "requested",
+        "expect": "accepted"
+      },
+      {
+        "from": "requested",
+        "via": "subordinate_reserve_request",
+        "to": "requested",
+        "expect": "accepted"
+      },
+      {
+        "from": "requested",
+        "via": "subordinate_reserved",
+        "to": "confirmed",
+        "expect": "accepted"
+      },
+      {
+        "from": "confirmed",
+        "via": "subordinate_settle",
+        "to": "settled",
+        "expect": "accepted"
+      },
+      {
+        "from": "settled",
+        "via": "subordinate_settle",
+        "to": "settled",
+        "expect": "replay"
+      },
+      {
+        "from": "settled",
+        "via": "subordinate_release",
+        "to": "released",
+        "expect": "accepted"
+      },
+      {
+        "from": "released",
+        "via": "subordinate_reserve_request",
+        "to": "requested",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "released"
+  }
+}

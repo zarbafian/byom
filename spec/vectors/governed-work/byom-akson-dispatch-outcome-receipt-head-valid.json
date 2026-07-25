@@ -1,0 +1,28 @@
+{
+  "name": "governed-work/byom-akson-dispatch-outcome-receipt-head-valid",
+  "description": "the one Kovee-owned CAS head per Kovee Effect (§17.2): a final head after the verified_result successor; terminal — no later receipt reopens it",
+  "input": {
+    "schema": "byom-akson-dispatch-outcome-receipt-head",
+    "value": {
+      "kovee_effect_ref": "keff-9",
+      "receipt_id": "bakodr-1",
+      "current_receipt_revision": 2,
+      "current_receipt_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "state": "final",
+      "revision": 2,
+      "updated_at": "2026-07-26T12:00:00Z",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

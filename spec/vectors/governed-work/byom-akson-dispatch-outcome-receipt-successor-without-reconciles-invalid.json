@@ -1,0 +1,96 @@
+{
+  "name": "governed-work/byom-akson-dispatch-outcome-receipt-successor-without-reconciles-invalid",
+  "description": "a revision-2 successor must name the current receipt digest as both previous_receipt_digest and reconciles_host_receipt_digest; a successor without the reconciles pair is invalid (§17.2 receipt revisioning)",
+  "input": {
+    "schema": "byom-akson-dispatch-outcome-receipt",
+    "value": {
+      "receipt_id": "bakodr-1",
+      "receipt_revision": 2,
+      "disposition": "verified_result",
+      "host_protocol": "kovee",
+      "driver_profile": "byom_akson_dispatch_v1",
+      "host_endpoint_ref": "kovee-host-1",
+      "kovee_effect_revision": 3,
+      "classification_profile": "akson_neutral_contract",
+      "source_endpoint_ref": "akson-ep-src",
+      "source_identity_epoch": 1,
+      "destination_endpoint_ref": "akson-ep-dst",
+      "destination_identity_epoch": 2,
+      "request_classification_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "kovee_effect_ref": "keff-9",
+      "kovee_effect_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "execution_consumption_receipt_ref": "ecr-4",
+      "execution_consumption_receipt_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "act_intent_ref": "ai-7",
+      "act_intent_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "mandate_use_ref": "mu-3",
+      "mandate_use_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "stable_execution_key": "sek-1",
+      "delivery_key": "dk-1",
+      "outcome": "succeeded",
+      "observed_at": "2026-07-26T12:00:00Z",
+      "kovee_service_signature_ref": "ksig-1",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "previous_receipt_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "result_classification_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "acceptance_classification_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "akson_contract_acceptance_ref": "acc-91",
+      "akson_contract_acceptance_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "akson_result_manifest_ref": "arm-91",
+      "akson_result_manifest_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "akson_verification_ref": "aver-91",
+      "akson_verification_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

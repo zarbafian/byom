@@ -1,0 +1,24 @@
+{
+  "name": "governed-work/dispatch-happy-path",
+  "description": "dispatch happy path (§17.2): a verified_result genesis marks the one Kovee head final immediately; a final head is terminal and no successor row exists from it",
+  "input": {
+    "machine": "byom-akson-dispatch-outcome-head",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "dispatch_receipt_genesis_final",
+        "to": "final",
+        "expect": "accepted"
+      },
+      {
+        "from": "final",
+        "via": "dispatch_receipt_successor_final",
+        "to": "final",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "final"
+  }
+}

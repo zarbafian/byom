@@ -1,0 +1,28 @@
+{
+  "name": "governed-work/act-class-subject-unknown-class-invalid",
+  "description": "the Δ4 class list is closed (model_egress | share | outbound | apply | budget); 'delegation' is not an act class",
+  "input": {
+    "schema": "act-class-subject",
+    "value": {
+      "act_class": "delegation",
+      "subject_atoms": {
+        "operation": "mandate_derive",
+        "purpose": {
+          "snapshot": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "path": [
+            "root",
+            "support",
+            "triage"
+          ]
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

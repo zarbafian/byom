@@ -1,0 +1,59 @@
+{
+  "name": "governed-work/provider-context-manifest-byom-fields-missing-omissions-invalid",
+  "description": "omissions are part of the §12.1 source relation: a fragment that cannot say what it explicitly omitted is invalid — a new manifest may omit under current policy, never silently",
+  "input": {
+    "schema": "provider-context-manifest-byom-fields",
+    "value": {
+      "byom_endpoint_ref": "byomd-local",
+      "society_ref": "soc-1",
+      "participant_ref": "part-artemis",
+      "participant_binding_epoch": 2,
+      "activity_stream_ref": "stream-14",
+      "episode_ref": "ep-88",
+      "byom_attempt_ref": "attempt-88-2",
+      "byom_fence_epoch": 7,
+      "context_manifest_ref": "cm-301",
+      "context_manifest_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "ordered_source_items": [
+        {
+          "ref": "engram-1204",
+          "digest": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        },
+        {
+          "ref": "continuation-88-1",
+          "digest": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          }
+        }
+      ],
+      "classification_overlay_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "purpose_ref": "purpose-triage",
+      "mandate_use_refs": [
+        "mu-3"
+      ],
+      "disclosure_ceiling_ref": "ceiling-internal",
+      "authorization_dependency_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

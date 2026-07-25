@@ -1,0 +1,45 @@
+{
+  "name": "governed-work/onboarding-compute-receipt-valid",
+  "description": "the §7.4 one-shot receipt verbatim, minted at onboarding_compute_permit_consume (R32); max_uses 1 by construction",
+  "input": {
+    "schema": "onboarding-compute-receipt",
+    "value": {
+      "receipt_id": "ocr-31",
+      "compute_intent_ref": "oci-31",
+      "compute_intent_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "kovee_invocation_ref": "kinv-5300",
+      "candidate_fence_epoch": 1,
+      "provider_context_manifest_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "disclosure_manifest_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "model_profile_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "budget_reservation_set_ref": "brs-onb-12",
+      "max_uses": 1,
+      "issued_at": "2026-07-26T12:00:00Z",
+      "expires_at": "2026-07-26T12:00:00Z",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

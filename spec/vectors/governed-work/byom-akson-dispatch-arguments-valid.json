@@ -1,0 +1,37 @@
+{
+  "name": "governed-work/byom-akson-dispatch-arguments-valid",
+  "description": "the Kovee-sole-caller driver inputs (§17.2, L61–L64): current delegation act, consumed byom permit, inert staged contract, exact Akson consent, current Kovee effect fence, stable execution/delivery keys",
+  "input": {
+    "schema": "byom-akson-dispatch-arguments",
+    "value": {
+      "driver_profile": "byom_akson_dispatch_v1",
+      "caller": "kovee",
+      "act_intent_ref": "ai-7",
+      "act_intent_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "execution_consumption_receipt_ref": "ecr-4",
+      "execution_consumption_receipt_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "staged_contract_ref": "staged-c4-91",
+      "staged_contract_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "akson_consent_ref": "consent-91",
+      "kovee_effect_ref": "keff-9",
+      "kovee_effect_fence": 11,
+      "stable_execution_key": "sek-1",
+      "delivery_key": "dk-1"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -23,12 +23,13 @@ authored-only.
 | `specs/BudgetConservation.tla` | 600 | 2,937 | 12 |
 | `specs/AuthorityJournal.tla` | 2,902 | 6,933 | 17 |
 
-C2 slice 1 adds one model beyond the B0.1 sheet, checked the same way
+C2 adds two models beyond the B0.1 sheet, checked the same way
 (TLC exhaustive, `-deadlock`, zero errors, 2026-07-26):
 
 | Model | Distinct states | States generated | Graph depth |
 |---|---:|---:|---:|
-| `specs/GreenfieldEnablement.tla` | 65 | 121 | 11 |
+| `specs/GreenfieldEnablement.tla` (slice 1) | 65 | 121 | 11 |
+| `specs/SubordinateReservation.tla` (slice 2) | 900 | 2,281 | 9 |
 
 **Liveness: none is claimed, anywhere.** Every checked property is safety
 (state invariants plus `[][...]_vars` action invariants, which are safety);
@@ -294,6 +295,42 @@ only (no C2 slice 1 model — its recovery table is exercised by the six
 dropping `EnableCreate`'s overlap guard violates
 `NoOverlappingEnablementSlots`. **Coverage**: 65 distinct states,
 exhaustive at `{s1, s2}`, one overlap pair, `MaxEpoch = 2`.
+
+### specs/SubordinateReservation.tla — the byom_subordinate budget bridge (C2 slice 2)
+
+Per stable external reservation key: the §11.4 idempotent bridge saga
+(§16.6 item 4's reserve, query, settle, uncertain, and release steps;
+family contract L31–L33), exactly as committed in
+`subordinate-reservation.json` with the record shape in
+`../spec/governed-work/byom-subordinate-reservation.schema.json` and the
+narrative in `../spec/governed-work/episode-budget-dispatch.md`.
+
+| Model invariant | Design | Descriptor rows |
+|---|---|---|
+| `NeverAboveParent`, `ChargeWithinReservation` | §11.4/L32: a subordinate reservation may narrow or deny but never parallel-charge; charge ≤ reservation ≤ parent worst case | `subordinate_reserved`, `subordinate_settle` guards |
+| `CreateOnce` | §11.4: the idempotent saga obtains an exact subordinate reservation — at most one Kovee row per stable key across direct commit, lost-reply commit, and retries | the `subordinate_reserve_request` self-row |
+| `SettleOnce` | §11.4: measured settlement is monotonic, stable-keyed, applied once on both sides | `subordinate_settle` (no self-row; retry is a guard no-op) |
+| `ResolutionIsReal` | greenfield-saga §5 pattern: the recovery query surfaces the durable truth; guessing is not a transition | `subordinate_query_confirmed`/`subordinate_query_denied` truth guards |
+| `HeldIffOpen` | §11.4: the byom parent reservation stays held while the bridge may still charge; denial releases only demonstrably unspent | `subordinate_release` rows from resolved phases only |
+| `UncertainReleaseNeedsGovernance` | L33/R38: an unknown result remains uncertain; the only release out of uncertain is the budget_reconcile governance seat with a fresh challenge | `uncertain → released via budget_reconcile` (the only uncertain-release row) |
+| `NoChargeWithoutCommit` | §11.4: nothing settles on a bridge Kovee never committed | `subordinate_settle` reachable only via a commit row |
+
+**Projection**: bridge phase, subordinate amount, settled charge, and the
+hidden Kovee durable truth per key; two keys, `WorstCase = 2`; record
+bytes, digests, account topology, and the byom-side reservation-set
+transaction abstracted (the runner's cross-member vector check pins the
+per-item never-above-parent rule on concrete bytes). **Refinement
+boundary**: `subordinate-reservation.json` (exact, machine-checked); the
+paired `byom-episode-binding.json` and
+`byom-akson-dispatch-outcome-head.json` machines are descriptor +
+executable-walk covered only (two and three rows respectively — the six
+slice-2 `../spec/vectors/governed-work/` walks exercise them).
+**Fairness**: none; safety only. **Non-vacuity probes** (run ad hoc, not
+yet in a harness): allowing `Release` from `uncertain` violates
+`UncertainReleaseNeedsGovernance`; letting `QueryConfirmed` fire with
+`truth = "not_created"` violates `ResolutionIsReal`; a second
+`KoveeCommit` violates `CreateOnce`. **Coverage**: 900 distinct states,
+exhaustive at `{k1, k2}`, `WorstCase = 2`.
 
 ### check-descriptors.py — descriptor ↔ model parity, as CI
 

@@ -1,0 +1,36 @@
+{
+  "name": "governed-work/act-class-subject-outbound-missing-destination-invalid",
+  "description": "wrong-domain negative: an outbound subject without its mandatory network_destination domain matches no class arm",
+  "input": {
+    "schema": "act-class-subject",
+    "value": {
+      "act_class": "outbound",
+      "subject_atoms": {
+        "operation": "akson_dispatch",
+        "purpose": {
+          "snapshot": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "path": [
+            "root",
+            "support",
+            "triage"
+          ]
+        },
+        "classification": {
+          "lattice": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "element": "internal"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "governed-work/dispatch-ambiguous-then-disposition",
+  "description": "ambiguous-then-disposition (§17.2/C2 inventory): an ambiguous genesis holds the head; an EffectGovernanceDisposition (effect_reconcile) never closes or advances this Kovee head — only Kovee's own final successor does, committed with the head CAS before byom admits it",
+  "input": {
+    "machine": "byom-akson-dispatch-outcome-head",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "dispatch_receipt_genesis_ambiguous",
+        "to": "ambiguous",
+        "expect": "accepted"
+      },
+      {
+        "crash": true
+      },
+      {
+        "from": "ambiguous",
+        "via": "effect_reconcile",
+        "to": "final",
+        "expect": "rejected"
+      },
+      {
+        "from": "ambiguous",
+        "via": "dispatch_receipt_successor_final",
+        "to": "final",
+        "expect": "accepted"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "final"
+  }
+}

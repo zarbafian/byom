@@ -1,0 +1,43 @@
+{
+  "name": "governed-work/act-class-subject-model-egress-valid",
+  "description": "Δ4 model_egress subject: exact provider binding, disclosed classification, and a token-quantity ceiling are mandatory; decides through BPA-1 policy/eval.py (runner taxonomy↔BPA-1 cross-check)",
+  "input": {
+    "schema": "act-class-subject",
+    "value": {
+      "act_class": "model_egress",
+      "subject_atoms": {
+        "operation": "model_call",
+        "purpose": {
+          "snapshot": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "path": [
+            "root",
+            "support",
+            "triage"
+          ]
+        },
+        "binding": "kovee:broker-claude",
+        "classification": {
+          "lattice": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "element": "internal"
+        },
+        "quantity": {
+          "dimension": "tokens",
+          "canonical_unit": "token",
+          "scale": 0,
+          "amount": 200000
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

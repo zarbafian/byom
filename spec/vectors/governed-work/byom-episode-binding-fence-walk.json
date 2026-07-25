@@ -1,0 +1,36 @@
+{
+  "name": "governed-work/byom-episode-binding-fence-walk",
+  "description": "binding lifecycle (L19–L22): idempotent commit at the claim CAS, retry returns the identical row, either fence advancing fences the binding terminally — a successor attempt is a NEW row under a new key, never a transition of this one",
+  "input": {
+    "machine": "byom-episode-binding",
+    "steps": [
+      {
+        "from": "absent",
+        "via": "episode_binding_commit",
+        "to": "bound",
+        "expect": "accepted"
+      },
+      {
+        "from": "bound",
+        "via": "episode_binding_commit",
+        "to": "bound",
+        "expect": "accepted"
+      },
+      {
+        "from": "bound",
+        "via": "episode_binding_fence_advance",
+        "to": "fenced",
+        "expect": "accepted"
+      },
+      {
+        "from": "fenced",
+        "via": "episode_binding_commit",
+        "to": "bound",
+        "expect": "rejected"
+      }
+    ]
+  },
+  "expected": {
+    "final_state": "fenced"
+  }
+}

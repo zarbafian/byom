@@ -1,0 +1,37 @@
+{
+  "name": "governed-work/act-class-subject-share-valid",
+  "description": "Δ4 share subject: the exact shared object and its classification are mandatory",
+  "input": {
+    "schema": "act-class-subject",
+    "value": {
+      "act_class": "share",
+      "subject_atoms": {
+        "operation": "share_disclose",
+        "purpose": {
+          "snapshot": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "path": [
+            "root",
+            "support",
+            "triage"
+          ]
+        },
+        "object": "byom:artifact-42",
+        "classification": {
+          "lattice": {
+            "class": "structural_public",
+            "algorithm": "sha-256",
+            "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+          },
+          "element": "internal"
+        }
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}
