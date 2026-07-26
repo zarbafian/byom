@@ -218,8 +218,10 @@ def driver_bin() -> str:
     the scenario can call. Built in its own workspace so it never enters
     byom's lockfile or lints."""
     path = _target_dir(DRIVER_DIR) / "debug" / "i1-kovee-driver"
-    if not path.exists():
-        subprocess.check_call(["cargo", "build", "-q"], cwd=DRIVER_DIR)
+    # ALWAYS rebuild: reusing an existing binary silently mixes kovee
+    # revisions, so a driver compiled against an older kovee could pass a
+    # gate the current one fails (cargo is incremental, so this is cheap).
+    subprocess.check_call(["cargo", "build", "-q"], cwd=DRIVER_DIR)
     need(path.exists(), f"driver missing after build: {path}")
     return str(path)
 
@@ -1448,10 +1450,30 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
     episode = res["episode_id"]
     allocation = res["resource_allocation_id"]
     allocation_digest = res["resource_allocation_digest"]
+    # R3-L02: the same reply PUBLISHES the frozen parent-budget fragment, so
+    # nothing downstream names `rset-…`/`bridge-…`/`sub-…` by convention or
+    # takes the parent account and worst case from a caller argument.
+    parent_budget = res["parent_budget"]
     need(res["state"] == "eligible",
          f"the Episode is eligible but NOT queued: {res}")
     need(allocation_digest["class"] == "portable_public",
          f"the published allocation pin is cross-boundary: {res}")
+    need(parent_budget["digest"]["class"] == "portable_public",
+         f"the parent-budget fragment is cross-boundary: {parent_budget}")
+    need(sorted(k for k in parent_budget if k != "digest") == sorted([
+             "byom_budget_reservation_set_ref",
+             "byom_budget_reservation_set_revision",
+             "byom_budget_reservation_set_digest",
+             "external_budget_bridge_ref",
+             "external_budget_bridge_revision",
+             "stable_external_reservation_key",
+             "items"]),
+         f"the fragment is byom's FROZEN member set: {parent_budget}")
+    need(parent_budget["external_budget_bridge_ref"]
+         == f"bridge-{allocation}"
+         and parent_budget["items"][0]["worst_case_amount"] == WORST_CASE
+         and parent_budget["items"][0]["account_ref"] == PARENT_ACCOUNT,
+         f"the fragment publishes byom's real parent facts: {parent_budget}")
     need(byom.row("SELECT state FROM activation_admissions"
                   " WHERE admission_id = ?", f"adm-{wake_id}-r1")
          == "admitted", "stage 2 committed admitted")
@@ -1484,20 +1506,47 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
         "manifestation_ref": onboarding["manifestation"],
         "activity_stream_ref": stream, "generation": 1,
         "wake_intent_ref": wake_id,
-        "parent_account_ref": PARENT_ACCOUNT,
-        "worst_case_amount": WORST_CASE,
         "kovee_invocation_ref": f"kovee-inv-{tag}",
         "context_manifest_ref": "kovee-ctxman-i1",
         "lease_ttl_seconds": 600,
+        # No `parent_account_ref` and no `worst_case_amount`: the parent
+        # travels ONLY as byom's frozen fragment, which kovee verifies
+        # (R3-L02, disposition D-R3-3).
         "requested": {"episode_ref": episode, "generation": 1,
                       "state": res["state"],
                       "resource_allocation_ref": allocation,
-                      "resource_allocation_digest": allocation_digest}})
+                      "resource_allocation_digest": allocation_digest,
+                      "parent_budget": parent_budget}})
     bound = activated["bound"]
     need(activated["admitted"]["episode_queued"] is True,
          f"the placement must queue the Episode: {activated}")
     need(activated["admitted"]["bridge_state"] == "confirmed",
          f"the subordinate reservation confirms the bridge: {activated}")
+    # R3-L02: kovee CONSUMED and VERIFIED byom's fragment — the digest it
+    # re-derived is the one byom published, and the parent facts it holds are
+    # byom's own.
+    verified = activated["admitted"]["verified_parent"]
+    need(verified["fragment_digest"]["value_hex"]
+         == parent_budget["digest"]["value_hex"],
+         f"kovee verified the exact fragment byom published: {verified}")
+    need(verified["external_budget_bridge_ref"]
+         == parent_budget["external_budget_bridge_ref"]
+         and verified["stable_external_reservation_key"]
+         == parent_budget["stable_external_reservation_key"]
+         and verified["parent_worst_case_amount"] == WORST_CASE,
+         f"and holds byom's parent facts, not reconstructed ones: {verified}")
+    # R3-U03: kovee's OWN capacity ledger, asserted on the ACCOUNT.
+    cap = activated["admitted"]["kovee_capacity_account"]
+    need(cap and cap["conserves"] and cap["reserved"] == WORST_CASE // 2,
+         f"kovee debited its own capacity account, narrowed to half the "
+         f"parent: {cap}")
+    kv_sub = kovee.query(
+        "SELECT state, charged, released_lifetime"
+        " FROM byom_subordinate_reservations"
+        " WHERE stable_external_reservation_key = ?",
+        (parent_budget["stable_external_reservation_key"],))
+    need(len(kv_sub) == 1 and kv_sub[0]["state"] == "confirmed",
+         f"kovee's subordinate reservation is confirmed: {kv_sub}")
     need(byom.row("SELECT state FROM episodes WHERE episode_id = ?",
                   episode) == "running",
          "the Episode runs once claimed and started")
@@ -1514,7 +1563,8 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
          and kv_binding[0]["kovee_invocation_fence"]
          == bound["kovee_invocation_fence"],
          "both daemons hold the same fence pair")
-    ctx.update(bound=bound, placement=activated["placement"])
+    ctx.update(bound=bound, placement=activated["placement"],
+               parent_budget=parent_budget)
     ev.step("kovee -> byom: PlacementBinding (the ONE activation record "
             "Kovee owns) -> placement_admit with the byom_subordinate "
             "reservation (narrowed, never above parent) -> episode_claim "
@@ -1887,7 +1937,11 @@ def prepare_act(byom: ByomDaemon, agent, ctx: dict, staged: dict, tag: str,
             ctx["mandate"]) or 1),
         "mandate_digest": ctx["mandate_subject"],
         "context_manifest_ref": "kovee-ctxman-i1",
-        "context_manifest_digest": digest(0xE1),
+        # A8 (byom's act_ops now pins the class): the ContextManifest is the
+        # HOST's object and byom holds only its digest, so the pair travels
+        # `portable_public`. Coordination note: this fixture value belongs to
+        # the R3-L01/A8 work, not to the budget fix.
+        "context_manifest_digest": portable(0xE1),
         "disclosure_manifest_ref": staged["disclosure_manifest_ref"],
         "disclosure_manifest_digest": staged["disclosure_manifest_digest"],
         "driver_audience": BROKER_AUDIENCE})
@@ -2136,6 +2190,41 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
          - act_committed[0] - charged,
          f"the charge left `reserved` for `committed`: {ledger} "
          f"(base {base_ledger})")
+
+    # R3-U02: and KOVEE's own subordinate is settled by the SAME saga, across
+    # the inter-daemon commit boundary. The defect was exactly this pair of
+    # numbers disagreeing: byom charged the metered total while kovee stayed
+    # `confirmed, charged = 0, released_lifetime = 0`.
+    stable_key = ctx["parent_budget"]["stable_external_reservation_key"]
+    kv_sub = kovee.query(
+        "SELECT subordinate_reservation_ref, state, charged, released_lifetime"
+        " FROM byom_subordinate_reservations"
+        " WHERE stable_external_reservation_key = ?", (stable_key,))
+    need(len(kv_sub) == 1 and kv_sub[0]["state"] == "settled",
+         f"kovee's subordinate reservation is SETTLED, not left confirmed: "
+         f"{kv_sub}")
+    need(kv_sub[0]["charged"] == charged,
+         f"kovee charged exactly what byom charged ({charged}): {kv_sub}")
+    saga = kovee.query(
+        "SELECT phase, charge, remote_charged FROM kovee_settlement_saga"
+        " WHERE subordinate_reservation_ref = ?",
+        (kv_sub[0]["subordinate_reservation_ref"],))
+    need(len(saga) == 1 and saga[0]["phase"] == "settled"
+         and saga[0]["charge"] == charged
+         and saga[0]["remote_charged"] == charged,
+         f"the two-sided saga record resolved to byom's own number: {saga}")
+    kv_cap = kovee.query(
+        "SELECT ceiling, remaining, reserved, committed, uncertain,"
+        " delegated_to_children FROM kovee_capacity_accounts"
+        " WHERE dimension = 'unit' AND account_ref = ?",
+        (f"kovee-capacity-{REALM}",))
+    need(len(kv_cap) == 1, f"kovee's capacity account exists: {kv_cap}")
+    a = kv_cap[0]
+    need(a["ceiling"] == a["remaining"] + a["reserved"] + a["committed"]
+         + a["uncertain"] + a["delegated_to_children"],
+         f"kovee's capacity ledger conserves: {a}")
+    need(a["committed"] == charged,
+         f"the charge left kovee's `reserved` for `committed`: {a}")
 
     # A SPENT one-shot permit refuses a second dispatch — kovee's own gate
     # answers before any byte can leave, and byom never sees a second

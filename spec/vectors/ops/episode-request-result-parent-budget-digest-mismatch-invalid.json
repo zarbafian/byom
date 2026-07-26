@@ -1,6 +1,6 @@
 {
-  "name": "ops/episode-request-result-valid",
-  "description": "seam finding S-1 and R3-L02: the episode_request result PUBLISHES the stage-3 ResourceAllocation it created together with the portable_public binding digest placement_admit compares byte-for-byte, AND the frozen portable_public parent_budget fragment the subordinate side consumes and verifies (exact set/bridge refs, revisions, set digest, kernel-derived stable key, exact parent items). Both fragment digests re-derive from exactly these bytes, so the pin is a machine check rather than a naming convention (\u00a711.1/\u00a711.2/\u00a711.4, gap note G48, R29, disposition D-R3-3)",
+  "name": "ops/episode-request-result-parent-budget-digest-mismatch-invalid",
+  "description": "R3-L02: the fragment digest is what makes the parent facts verifiable. This value raises the published parent worst case from 256 to 512 while keeping the digest of the original bytes, so the frozen bpp-parent-budget-fragment-v0 re-derivation disagrees \u2014 schema-shape-valid, and refused by the runner's cross-member check, exactly as the never-above-parent rule is (disposition D-R3-3)",
   "input": {
     "schema": "episode-request-result",
     "value": {
@@ -32,7 +32,7 @@
             "account_revision": 1,
             "dimension": "unit",
             "unit": "unit",
-            "worst_case_amount": 256
+            "worst_case_amount": 512
           }
         ],
         "digest": {
@@ -45,6 +45,6 @@
     }
   },
   "expected": {
-    "valid": true
+    "valid": false
   }
 }

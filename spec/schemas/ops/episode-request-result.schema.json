@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/bpp/v0/ops/episode-request-result.schema.json",
   "title": "BPP episode_request result (DESIGN.md §11.2, §14.8; registry R29 participant)",
-  "description": "Success.result for episode_request (§11.2 record projection; gap notes G4, G27, G48): the Episode in prepared, or eligible when deterministic eligibility already holds; no lease yet (§14.8). It also PUBLISHES the stage-3 ResourceAllocation this call created and its portable_public binding digest — the exact value `placement_admit` compares — so stage 4 needs no out-of-band read (seam finding S-1).",
+  "description": "Success.result for episode_request (§11.2 record projection; gap notes G4, G27, G48): the Episode in prepared, or eligible when deterministic eligibility already holds; no lease yet (§14.8). It also PUBLISHES the stage-3 ResourceAllocation this call created and its portable_public binding digest — the exact value `placement_admit` compares — so stage 4 needs no out-of-band read (seam finding S-1), plus the frozen portable_public `parent_budget` fragment the subordinate side consumes and verifies (R3-L02, disposition D-R3-3): exact set/bridge refs and revisions, the set's cross-boundary digest, the kernel-derived stable key, and the exact parent items. A counterparty needs no naming convention and no caller-supplied parent fact.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,6 +13,7 @@
     "state",
     "resource_allocation_id",
     "resource_allocation_digest",
+    "parent_budget",
     "created_at"
   ],
   "properties": {
@@ -42,11 +43,92 @@
       "$ref": "#/$defs/portablePublicDigest",
       "description": "The allocation's cross-boundary binding digest: SHA-256 over the `$domain`-tagged canonical `bpp-resource-allocation-binding-v0` fragment. `placement_admit` requires exactly these bytes."
     },
+    "parent_budget": {
+      "$ref": "#/$defs/parentBudgetFragment"
+    },
     "created_at": {
       "$ref": "#/$defs/timestamp"
     }
   },
   "$defs": {
+    "parentBudgetFragment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The FROZEN portable_public parent-budget fragment (R3-L02, D-R3-3). Every member is byom's own committed fact about the §11.4 parent, and `digest` is SHA-256 over the `$domain`-tagged canonical bytes of exactly the other seven members — so the subordinate side verifies the fragment it was handed instead of naming references by convention (`rset-…`, `bridge-…`, `sub-…`) and taking the parent amount and account from its own caller's arguments.",
+      "required": [
+        "byom_budget_reservation_set_ref",
+        "byom_budget_reservation_set_revision",
+        "byom_budget_reservation_set_digest",
+        "external_budget_bridge_ref",
+        "external_budget_bridge_revision",
+        "stable_external_reservation_key",
+        "items",
+        "digest"
+      ],
+      "properties": {
+        "byom_budget_reservation_set_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "byom_budget_reservation_set_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "byom_budget_reservation_set_digest": {
+          "$ref": "#/$defs/portablePublicDigest",
+          "description": "SHA-256 over the `$domain`-tagged canonical `bpp-budget-reservation-set-binding-v0` fragment `{reservation_set_id, revision, items}`. The row's own digest is byom's KEYED record commitment and is never a value a counterparty is asked to re-derive (amendment A8)."
+        },
+        "external_budget_bridge_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "external_budget_bridge_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "stable_external_reservation_key": {
+          "$ref": "#/$defs/identifier",
+          "description": "Kernel-derived and persisted with the bridge BEFORE queueing (§11.4): published here, so the counterparty echoes it instead of deriving it from a name."
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/parentReservationItem"
+          },
+          "description": "The EXACT parent §11.4 reservation items. A subordinate item pins one of these on all five coordinates and may narrow, never exceed (family contract L32)."
+        },
+        "digest": {
+          "$ref": "#/$defs/portablePublicDigest",
+          "description": "SHA-256 over the `$domain`-tagged canonical `bpp-parent-budget-fragment-v0` bytes of the seven members above."
+        }
+      }
+    },
+    "parentReservationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_ref",
+        "account_revision",
+        "dimension",
+        "unit",
+        "worst_case_amount"
+      ],
+      "properties": {
+        "account_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "account_revision": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "dimension": {
+          "$ref": "#/$defs/identifier"
+        },
+        "unit": {
+          "$ref": "#/$defs/identifier"
+        },
+        "worst_case_amount": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        }
+      }
+    },
     "protocolVersion": {
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",

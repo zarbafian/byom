@@ -562,6 +562,123 @@ pub fn allocation_binding_digest(
     Ok(DigestRef::portable_public(sha256_hex(&bytes)))
 }
 
+// ------------------------------------- the parent-budget fragment (L02) ----
+
+/// The canonicalization domain of the reservation SET's cross-boundary
+/// binding digest.
+pub const RESERVATION_SET_BINDING_TAG: &str = "bpp-budget-reservation-set-binding-v0";
+
+/// The canonicalization domain of the PARENT-BUDGET fragment (R3-L02,
+/// disposition D-R3-3).
+pub const PARENT_BUDGET_TAG: &str = "bpp-parent-budget-fragment-v0";
+
+/// The frozen member set of the parent-budget fragment, in order. These are
+/// byom's OWN facts about the §11.4 parent: the exact reservation-set and
+/// bridge references and revisions, the set's cross-boundary digest, the
+/// kernel-derived stable key, and the exact parent items. A counterparty
+/// that holds this fragment needs nothing else — and needs no naming
+/// convention, no caller argument, and no read of byom's database — to
+/// compute a subordinate reservation that byom will accept.
+pub const PARENT_BUDGET_FIELDS: [&str; 7] = [
+    "byom_budget_reservation_set_ref",
+    "byom_budget_reservation_set_revision",
+    "byom_budget_reservation_set_digest",
+    "external_budget_bridge_ref",
+    "external_budget_bridge_revision",
+    "stable_external_reservation_key",
+    "items",
+];
+
+/// The `portable_public` digest of the parent reservation SET. The row's own
+/// `byom_reservation_set_digest` is byom's keyed record commitment, so it can
+/// never be a value a counterparty is asked to re-derive (A8); this one is
+/// SHA-256 over the `$domain`-tagged canonical bytes both sides hold.
+pub fn reservation_set_binding_digest(
+    set_ref: &str,
+    revision: u64,
+    items: &Value,
+) -> Result<DigestRef, Problem> {
+    let bytes = tagged_canonical(
+        RESERVATION_SET_BINDING_TAG,
+        &json!({
+            "reservation_set_id": set_ref,
+            "revision": revision,
+            "items": items,
+        }),
+    )
+    .map_err(|e| state::internal(&e.to_string()))?;
+    Ok(DigestRef::portable_public(sha256_hex(&bytes)))
+}
+
+/// The frozen `portable_public` parent-budget fragment, digest included.
+///
+/// This is the ONE surface a subordinate counterparty reads the parent from
+/// (R3-L02): before it existed the counterparty fabricated `rset-…` /
+/// `bridge-…` / `sub-…` references by naming convention and took the parent
+/// amount and account from its own caller's arguments, so a wrong parent
+/// went undetected until it reached byom — if it ever did.
+pub fn parent_budget_fragment(
+    set_ref: &str,
+    set_revision: u64,
+    bridge_ref: &str,
+    bridge_revision: u64,
+    stable_key: &str,
+    items: &Value,
+) -> Result<Value, Problem> {
+    let fragment = json!({
+        "byom_budget_reservation_set_ref": set_ref,
+        "byom_budget_reservation_set_revision": set_revision,
+        "byom_budget_reservation_set_digest":
+            reservation_set_binding_digest(set_ref, set_revision, items)?,
+        "external_budget_bridge_ref": bridge_ref,
+        "external_budget_bridge_revision": bridge_revision,
+        "stable_external_reservation_key": stable_key,
+        "items": items,
+    });
+    // The fragment is EXACTLY the frozen member set: a silent addition would
+    // change a digest a counterparty already verified.
+    let mut emitted: Vec<&str> = fragment
+        .as_object()
+        .map(|o| o.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    let mut frozen = PARENT_BUDGET_FIELDS.to_vec();
+    emitted.sort_unstable();
+    frozen.sort_unstable();
+    if emitted != frozen {
+        return Err(state::internal(
+            "the composed parent-budget fragment is not the frozen member set",
+        ));
+    }
+    let bytes = tagged_canonical(PARENT_BUDGET_TAG, &fragment)
+        .map_err(|e| state::internal(&e.to_string()))?;
+    let mut published = fragment;
+    if let Some(map) = published.as_object_mut() {
+        map.insert(
+            "digest".into(),
+            digest_json(&DigestRef::portable_public(sha256_hex(&bytes))),
+        );
+    }
+    Ok(published)
+}
+
+/// The published parent-budget fragment of one committed allocation, read
+/// from byom's own rows — never from the request.
+fn parent_budget_of(conn: &Connection, allocation: &Map<String, Value>) -> Result<Value, Problem> {
+    let set_ref = rows::str_of(allocation, "byom_budget_reservation_set_ref").to_owned();
+    let bridge_id = rows::str_of(allocation, "external_budget_bridge_ref").to_owned();
+    let bridge = rows::get_row(conn, "external_budget_bridges", "bridge_id", &bridge_id)
+        .map_err(db_err)?
+        .ok_or_else(|| state::internal("the ExternalBudgetBridge is not committed"))?;
+    parent_budget_fragment(
+        &set_ref,
+        rows::u64_of(&bridge, "byom_reservation_set_revision"),
+        &bridge_id,
+        rows::u64_of(&bridge, "revision"),
+        rows::str_of(&bridge, "stable_external_reservation_key"),
+        &rows::json_of(allocation, "reservation_items"),
+    )
+}
+
 // ============================================ stage 2: activation_admit ==
 
 /// `activation_admit` (§11.1 named internal kernel transition, NOT a
@@ -1445,7 +1562,7 @@ pub fn episode_request(
         .next()
         {
             return Ok(Prepared {
-                result: episode_result(&existing, &committed),
+                result: episode_result(conn, &existing, &committed)?,
                 revision: Some(rows::u64_of(&existing, "revision")),
                 cursor: CursorMint::AfterEvents {
                     society_id: caller_c.society_id.clone(),
@@ -1527,7 +1644,7 @@ pub fn episode_request(
             ("created_at", json!(created_at)),
             ("terminal_at", Value::Null),
         ]);
-        let result = episode_result(&row, &committed);
+        let result = episode_result(conn, &row, &committed)?;
         let mut effects = vec![Effect::Upsert {
             table: "episodes".into(),
             row,
@@ -1578,11 +1695,17 @@ pub fn episode_request(
 
 /// The `episode_request` result. It PUBLISHES the stage-3 allocation this
 /// call created together with the `portable_public` digest `placement_admit`
-/// requires (seam finding S-1): the four-stage activation now runs over
-/// published surfaces alone — no counterparty inspects byom's database to
-/// obtain a value byom demands back.
-fn episode_result(row: &Map<String, Value>, allocation: &Map<String, Value>) -> Value {
-    json!({
+/// requires (seam finding S-1) AND the frozen `portable_public`
+/// parent-budget fragment the subordinate side needs (R3-L02, D-R3-3): the
+/// four-stage activation now runs over published surfaces alone — no
+/// counterparty inspects byom's database, guesses a reference from a naming
+/// convention, or takes a parent amount from its own caller's arguments.
+fn episode_result(
+    conn: &Connection,
+    row: &Map<String, Value>,
+    allocation: &Map<String, Value>,
+) -> Result<Value, Problem> {
+    Ok(json!({
         "episode_id": rows::str_of(row, "episode_id"),
         "activity_stream_id": rows::str_of(row, "activity_stream_ref"),
         "generation": rows::u64_of(row, "generation"),
@@ -1590,8 +1713,171 @@ fn episode_result(row: &Map<String, Value>, allocation: &Map<String, Value>) -> 
         "state": rows::str_of(row, "state"),
         "resource_allocation_id": rows::str_of(allocation, "allocation_id"),
         "resource_allocation_digest": rows::json_of(allocation, "binding_digest"),
+        "parent_budget": parent_budget_of(conn, allocation)?,
         "created_at": rows::str_of(row, "created_at"),
-    })
+    }))
+}
+
+// -------------------------- the subordinate/parent cross-member checks ----
+
+/// One parent §11.4 reservation item's IDENTITY: the four coordinates plus
+/// the worst case. Two parent items with the same identity are two distinct
+/// items, and each may be pinned by at most ONE subordinate item.
+type ParentIdentity = (String, u64, String, String, u64);
+
+fn parent_identity(item: &Value) -> ParentIdentity {
+    (
+        item.get("account_ref")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        item.get("account_revision")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+        item.get("dimension")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        item.get("unit")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        item.get("worst_case_amount")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+    )
+}
+
+fn pinned_identity(item: &ops::SubordinateItem) -> ParentIdentity {
+    (
+        item.parent_account_ref.clone(),
+        item.parent_account_revision,
+        item.parent_dimension.clone(),
+        item.parent_unit.clone(),
+        item.parent_worst_case_amount,
+    )
+}
+
+/// Never above parent, on the WHOLE reported set (R3-U04, D-R3-2).
+///
+/// Per item this is §11.4/L32: identical dimension and unit, and
+/// `amount <= parent_worst_case_amount`. Across items it is the rule the
+/// per-item loop cannot see, and whose absence let a duplicate pin amplify
+/// the parent:
+///
+/// 1. **unique exact parent-item identity** — each reported item CLAIMS one
+///    unclaimed parent item this allocation really reserved, matched on all
+///    five coordinates. Two children can no longer both name one parent
+///    item, which an `.any()` membership test happily allowed.
+/// 2. **aggregate cap per `(account, revision, dimension, unit)`** — the
+///    subordinate total never exceeds the total the ACTUAL parent items
+///    carry for that key, so even a set that claims distinct parent items
+///    cannot sum above the parent.
+fn check_against_parent_items(
+    items: &[ops::SubordinateItem],
+    parent_items: &Value,
+) -> Result<(), Problem> {
+    let parents: Vec<Value> = parent_items.as_array().cloned().unwrap_or_default();
+    let mut claimed = vec![false; parents.len()];
+    // (account, revision, dimension, unit) -> subordinate total.
+    let mut wanted: std::collections::BTreeMap<(String, u64, String, String), u64> =
+        std::collections::BTreeMap::new();
+    for item in items {
+        if item.dimension != item.parent_dimension || item.unit != item.parent_unit {
+            return Err(state::invalid(
+                "a subordinate reservation may narrow or deny but never reshape the \
+                 dimension (§11.4)",
+            ));
+        }
+        if item.amount > item.parent_worst_case_amount {
+            return Err(part_common::budget_exceeded(
+                &item.parent_account_ref,
+                &item.parent_dimension,
+                item.amount,
+                item.parent_worst_case_amount,
+            ));
+        }
+        let pinned = pinned_identity(item);
+        let hit = parents
+            .iter()
+            .enumerate()
+            .position(|(index, parent)| !claimed[index] && parent_identity(parent) == pinned);
+        let Some(index) = hit else {
+            return Err(state::stale_binding(
+                "the subordinate item does not pin an exact UNCLAIMED parent §11.4 \
+                 reservation item: every reported item claims one distinct parent item \
+                 (account, revision, dimension, unit, worst case), so a duplicate pin can \
+                 never amplify one parent",
+            ));
+        };
+        claimed[index] = true;
+        let key = (
+            item.parent_account_ref.clone(),
+            item.parent_account_revision,
+            item.parent_dimension.clone(),
+            item.parent_unit.clone(),
+        );
+        let total = wanted.entry(key).or_default();
+        *total = total.saturating_add(item.amount);
+    }
+    for ((account, revision, dimension, unit), want) in &wanted {
+        let have: u64 = parents
+            .iter()
+            .filter(|parent| {
+                let (a, r, d, u, _) = parent_identity(parent);
+                &a == account && &r == revision && &d == dimension && &u == unit
+            })
+            .map(|parent| {
+                parent
+                    .get("worst_case_amount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default()
+            })
+            .sum();
+        if *want > have {
+            return Err(part_common::budget_exceeded(
+                account, dimension, *want, have,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The reserved subordinate total of one dimension, read from the EXACT
+/// confirmed items byom committed. This is the ceiling byom caps a
+/// settlement against — its own arithmetic over its own row, never the
+/// number the counterparty sent (R3-U01, D-R3-2).
+/// The `unit`-dimension total of a stored `charged_quantities` list.
+fn charged_total(quantities: &Value) -> u64 {
+    quantities
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter(|q| {
+                    q.get("dimension").and_then(Value::as_str) == Some(part_common::UNIT_DIMENSION)
+                })
+                .map(|q| q.get("amount").and_then(Value::as_u64).unwrap_or_default())
+                .sum()
+        })
+        .unwrap_or_default()
+}
+
+fn subordinate_cap(reservation: &Map<String, Value>, dimension: &str) -> u64 {
+    rows::json_of(reservation, "record")
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.get("dimension").and_then(Value::as_str) == Some(dimension))
+                .map(|item| {
+                    item.get("amount")
+                        .and_then(Value::as_u64)
+                        .unwrap_or_default()
+                })
+                .sum()
+        })
+        .unwrap_or_default()
 }
 
 // ============================================= stage 4: placement_admit ==
@@ -1751,39 +2037,10 @@ pub fn placement_admit(
                 // `amount <= parent_worst_case_amount`, per item
                 // (§11.4, family contract L32;
                 // SubordinateReservation.tla NeverAboveParent).
-                let parent_items = rows::json_of(&allocation, "reservation_items");
-                for item in &sub.items {
-                    if item.dimension != item.parent_dimension || item.unit != item.parent_unit {
-                        return Err(state::invalid(
-                            "a subordinate reservation may narrow or deny but never reshape the \
-                             dimension (§11.4)",
-                        ));
-                    }
-                    if item.amount > item.parent_worst_case_amount {
-                        return Err(part_common::budget_exceeded(
-                            &item.parent_account_ref,
-                            &item.parent_dimension,
-                            item.amount,
-                            item.parent_worst_case_amount,
-                        ));
-                    }
-                    // The pinned parent item must be an item this
-                    // allocation actually reserved.
-                    let matched = parent_items.as_array().into_iter().flatten().any(|p| {
-                        p.get("account_ref").and_then(Value::as_str)
-                            == Some(item.parent_account_ref.as_str())
-                            && p.get("dimension").and_then(Value::as_str)
-                                == Some(item.parent_dimension.as_str())
-                            && p.get("worst_case_amount").and_then(Value::as_u64)
-                                == Some(item.parent_worst_case_amount)
-                    });
-                    if !matched {
-                        return Err(state::stale_binding(
-                            "the subordinate item does not pin an exact parent §11.4 \
-                             reservation item",
-                        ));
-                    }
-                }
+                check_against_parent_items(
+                    &sub.items,
+                    &rows::json_of(&allocation, "reservation_items"),
+                )?;
                 let sub_ref = sub.subordinate_reservation_ref.clone().unwrap_or_default();
                 let sub_revision = sub.revision.unwrap_or_default();
                 let sub_digest = sub.digest.clone();
@@ -3871,6 +4128,16 @@ pub fn usage_report(
                 "stable_settlement_key",
                 &stable,
             )? {
+                // The replay re-serves the STORED numbers, `charged`
+                // included: the two-sided saga's recovery query has to be
+                // able to surface exactly what byom committed, never a
+                // number it re-derives from the retried request (D-R3-2).
+                let settled_ref = rows::str_of(&head, "current_settlement_ref").to_owned();
+                let stored_charge =
+                    rows::get_row(conn, "usage_settlements", "settlement_id", &settled_ref)
+                        .map_err(db_err)?
+                        .map(|row| charged_total(&rows::json_of(&row, "charged_quantities")))
+                        .unwrap_or_default();
                 return Ok(Prepared {
                     result: json!({
                         "episode_id": req_c.episode_ref,
@@ -3878,8 +4145,9 @@ pub fn usage_report(
                         "settlement": {
                             "settled": true,
                             "replayed": true,
-                            "settlement_ref": rows::str_of(&head, "current_settlement_ref"),
+                            "settlement_ref": settled_ref,
                             "revision": rows::u64_of(&head, "current_settlement_revision"),
+                            "charged": stored_charge,
                         },
                     }),
                     revision: Some(rows::u64_of(&head, "revision")),
@@ -3910,9 +4178,39 @@ pub fn usage_report(
                         .sum()
                 })
                 .unwrap_or_default();
-            // ChargeWithinReservation: the settled charge never exceeds
-            // the reserved amount (and therefore never the parent worst
-            // case).
+            // ChargeWithinReservation, capped INDEPENDENTLY (R3-U01,
+            // D-R3-2). Capping against the parent alone was the whole
+            // defect: the parent held 256 while the confirmed subordinate
+            // was 128, so a charge of 200 committed here and was only then
+            // refused on the other side — one committed 200, the other
+            // stayed confirmed at 0. byom now caps against the EXACT
+            // confirmed subordinate items of this bridge, which are its own
+            // committed row, not the counterparty's arithmetic.
+            let subordinate_ref = rows::str_of(&bridge, "subordinate_reservation_ref").to_owned();
+            let subordinate = rows::get_row(
+                conn,
+                "subordinate_reservations",
+                "subordinate_reservation_ref",
+                &subordinate_ref,
+            )
+            .map_err(db_err)?
+            .ok_or_else(|| {
+                state::stale_binding(
+                    "the confirmed bridge names no committed subordinate reservation: nothing \
+                     settles without the exact confirmed items to cap against",
+                )
+            })?;
+            let subordinate_reserved = subordinate_cap(&subordinate, part_common::UNIT_DIMENSION);
+            if charged > subordinate_reserved {
+                return Err(part_common::budget_exceeded(
+                    &account,
+                    part_common::UNIT_DIMENSION,
+                    charged,
+                    subordinate_reserved,
+                ));
+            }
+            // And never above the parent either: the subordinate is already
+            // capped there, so this can only fire on a corrupt row.
             if charged > held {
                 return Err(part_common::budget_exceeded(
                     &account,
@@ -4023,6 +4321,7 @@ pub fn usage_report(
             settlement_note = json!({"settled": true, "status": "measured",
                                      "settlement_ref": settlement_id,
                                      "charged": charged,
+                                     "subordinate_reserved": subordinate_reserved,
                                      "reserved_remainder": held - charged});
             events.push(event(
                 &society_c,

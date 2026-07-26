@@ -42,7 +42,7 @@ use kovee_core::family::DigestRef;
 use kovee_core::problem::Problem;
 use kovee_effects::{HttpsTransport, RecordingTransport, Transport};
 use kovee_store::Store;
-use koveed::episode::{self, Notice, ParentItem, Runtime};
+use koveed::episode::{self, Notice, Runtime};
 use koveed::model_broker::{self, ActAuthorization, CompleteRequest, Fault};
 use serde_json::{json, Value};
 
@@ -219,6 +219,16 @@ fn store_fault(e: rusqlite::Error) -> Problem {
 
 /// The byom-owned notice: every reference is byom's, derived the way byom
 /// derives it, so Kovee can only match.
+/// The activation notice. Every byom-owned reference here is one byom
+/// DERIVES from a name the caller already supplied, so the driver can only
+/// match it — and the BUDGET facts are not here at all any more.
+///
+/// `episode_request` publishes them as a frozen `portable_public` fragment
+/// which `episode_activate` verifies below (R3-L02, disposition D-R3-3). The
+/// three references this function used to fabricate (`rset-…`, `bridge-…`,
+/// `sub-…`) and the two parent facts it took from its own caller's arguments
+/// (`parent_account_ref`, `worst_case_amount`) were the last out-of-band
+/// budget step: a wrong parent was undetectable on this side.
 fn notice_of(args: &Value) -> Notice {
     let wake = text(args, "wake_intent_ref");
     let allocation = format!("alloc-{wake}-r1");
@@ -235,26 +245,36 @@ fn notice_of(args: &Value) -> Notice {
         generation: args.get("generation").and_then(Value::as_u64).unwrap_or(1),
         activation_admission_ref: format!("adm-{wake}-r1"),
         wake_intent_ref: wake,
-        resource_allocation_ref: allocation.clone(),
+        resource_allocation_ref: allocation,
         // Replaced by byom's own published pin after `episode_request`.
         resource_allocation_digest: DigestRef::portable_public("0".repeat(64)),
         mandate_use_refs: vec![],
-        byom_budget_reservation_ref: format!("rset-{allocation}"),
-        byom_reservation_set_revision: 1,
-        external_budget_bridge_ref: format!("bridge-{allocation}"),
-        stable_external_reservation_key: format!("sub-{allocation}"),
-        parent_reservation_items: vec![ParentItem {
-            account_ref: text(args, "parent_account_ref"),
-            account_revision: 1,
-            dimension: "unit".to_owned(),
-            unit: "unit".to_owned(),
-            worst_case_amount: args
-                .get("worst_case_amount")
-                .and_then(Value::as_u64)
-                .unwrap_or(256),
-        }],
+        // Replaced by byom's own published FRAGMENT after `episode_request`.
+        parent_budget: Value::Null,
         context_manifest_ref: maybe_text(args, "context_manifest_ref")
             .unwrap_or_else(|| "kovee-ctxman-i1".to_owned()),
+    }
+}
+
+/// Kovee's capacity-ledger counters for one realm — the ACCOUNT, not row
+/// arithmetic (R3-U03).
+fn capacity_of(store: &Store, realm: &str) -> Value {
+    match koveed::budget::account(
+        store.conn(),
+        &koveed::budget::realm_account_ref(realm),
+        "unit",
+    ) {
+        Ok(Some(a)) => json!({
+            "account_ref": a.account_ref,
+            "ceiling": a.ceiling,
+            "remaining": a.remaining,
+            "reserved": a.reserved,
+            "committed": a.committed,
+            "uncertain": a.uncertain,
+            "delegated_to_children": a.delegated_to_children,
+            "conserves": a.conserves(),
+        }),
+        _ => Value::Null,
     }
 }
 
@@ -277,6 +297,9 @@ fn episode_activate(args: &Value) -> Result<Value, Problem> {
             state: maybe_text(pin, "state").unwrap_or_else(|| "eligible".to_owned()),
             resource_allocation_ref: maybe_text(pin, "resource_allocation_ref"),
             resource_allocation_digest: Some(digest(pin, "resource_allocation_digest")),
+            // The frozen parent-budget fragment, ECHOED from what byom's own
+            // reply published (R3-L02). There is no arm that composes it.
+            parent_budget: pin.get("parent_budget").filter(|v| !v.is_null()).cloned(),
         },
         None => {
             let channel = runtime.participant_channel(&notice.participant_ref)?;
@@ -291,6 +314,20 @@ fn episode_activate(args: &Value) -> Result<Value, Problem> {
         .resource_allocation_digest
         .clone()
         .unwrap_or_else(|| fail("episode_request published no allocation digest"));
+    notice.parent_budget = requested
+        .parent_budget
+        .clone()
+        .unwrap_or_else(|| fail("episode_request published no parent-budget fragment"));
+    // CONSUMED AND VERIFIED here, before a single parent fact is used: both
+    // portable digests must re-derive from exactly the published members.
+    let parent = koveed::budget::verify_parent_fragment(
+        &notice.parent_budget,
+        &notice.society_ref,
+        notice.recovery_epoch,
+    )?;
+    // The realm's capacity ceiling has to exist before a subordinate
+    // reservation can be debited against it (R3-U03).
+    koveed::budget::provision_realm_capacity(&mut store, &realm, 0)?;
 
     // Stage 4: Kovee's own PlacementBinding, then byom's narrow adapter.
     let placed = episode::place(
@@ -318,6 +355,7 @@ fn episode_activate(args: &Value) -> Result<Value, Problem> {
             "state": requested.state,
             "resource_allocation_ref": notice.resource_allocation_ref,
             "resource_allocation_digest": notice.resource_allocation_digest,
+            "parent_budget": notice.parent_budget,
         },
         "placement": {
             "placement_id": placed.placement_id,
@@ -328,6 +366,16 @@ fn episode_activate(args: &Value) -> Result<Value, Problem> {
             "bridge_state": admitted.bridge_state,
             "episode_queued": admitted.episode_queued,
             "subordinate_reservation_ref": admitted.subordinate_reservation_ref,
+            // Kovee's OWN ledger, which the scenario can now assert against
+            // byom's (R3-U03).
+            "kovee_capacity_account": capacity_of(&store, &realm),
+            "verified_parent": {
+                "byom_budget_reservation_set_ref": parent.byom_reservation_set_ref,
+                "external_budget_bridge_ref": parent.external_budget_bridge_ref,
+                "stable_external_reservation_key": parent.stable_external_reservation_key,
+                "parent_worst_case_amount": parent.ceiling("unit"),
+                "fragment_digest": parent.fragment_digest,
+            },
         },
         "bound": {
             "stable_binding_key": bound.stable_binding_key,

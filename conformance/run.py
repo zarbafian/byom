@@ -1233,6 +1233,52 @@ def _subordinate_reservation_ok(value) -> bool:
     return True
 
 
+PARENT_BUDGET_TAG = "bpp-parent-budget-fragment-v0"
+RESERVATION_SET_BINDING_TAG = "bpp-budget-reservation-set-binding-v0"
+PARENT_BUDGET_FIELDS = (
+    "byom_budget_reservation_set_ref",
+    "byom_budget_reservation_set_revision",
+    "byom_budget_reservation_set_digest",
+    "external_budget_bridge_ref",
+    "external_budget_bridge_revision",
+    "stable_external_reservation_key",
+    "items",
+)
+
+
+def _parent_budget_ok(value) -> bool:
+    """R3-L02 / D-R3-3: the published parent-budget fragment must be the
+    FROZEN member set, and both of its portable_public digests must be
+    independently re-derivable from exactly those bytes. A fragment whose
+    digest a counterparty cannot re-derive is an out-of-band budget step
+    wearing a digest, so the runner recomputes both here (JSON Schema cannot
+    hash a sibling object). Applied only where the members carry their
+    schema-checked shapes."""
+    fragment = value.get("parent_budget") if isinstance(value, dict) else None
+    if not isinstance(fragment, dict):
+        return True
+    members = {k: v for k, v in fragment.items() if k != "digest"}
+    if tuple(sorted(members)) != tuple(sorted(PARENT_BUDGET_FIELDS)):
+        return False
+    set_digest = members.get("byom_budget_reservation_set_digest")
+    if not isinstance(set_digest, dict):
+        return False
+    want_set = hashlib.sha256(tagged_jcs(RESERVATION_SET_BINDING_TAG, {
+        "reservation_set_id": members["byom_budget_reservation_set_ref"],
+        "revision": members["byom_budget_reservation_set_revision"],
+        "items": members["items"],
+    }).encode("utf-8")).hexdigest()
+    if set_digest.get("value_hex") != want_set:
+        return False
+    declared = fragment.get("digest")
+    if not isinstance(declared, dict):
+        return False
+    want = hashlib.sha256(
+        tagged_jcs(PARENT_BUDGET_TAG, members).encode("utf-8")
+    ).hexdigest()
+    return declared.get("value_hex") == want
+
+
 def _failure_type_kind_ok(envelope) -> bool:
     """Problem type must equal exactly PROBLEM_TYPE_PREFIX + kind (PROFILE.md
     §3, profile-pinned decision 3). Applied only where both members are
@@ -2617,6 +2663,11 @@ class Runner:
                 and inp.get("ref") is None:
             # §11.4: never above (or reshaping) the parent dimension.
             verdict = _subordinate_reservation_ok(inp["value"])
+        if verdict and schema_name == "episode-request-result" \
+                and inp.get("ref") is None:
+            # R3-L02: the published parent-budget fragment is the frozen
+            # member set and BOTH its portable digests re-derive.
+            verdict = _parent_budget_ok(inp["value"])
         if verdict and inp.get("ref") is None:
             # RT-17: semantic RFC 3339 — a timestamp-shaped string that is
             # not a real calendar instant fails, whatever the schema.

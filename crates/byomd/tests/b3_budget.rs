@@ -24,7 +24,7 @@
 
 mod common;
 
-use common::runtime::{merge, Fixture, Subordinate, PARENT_ACCOUNT, WORST_CASE};
+use common::runtime::{merge, subordinate_item, Fixture, Subordinate, PARENT_ACCOUNT, WORST_CASE};
 use common::{kind_of, test_digest};
 use serde_json::{json, Value};
 
@@ -522,4 +522,300 @@ fn the_stable_query_surfaces_koveees_durable_truth_from_uncertain() {
     assert!(after2.conserves(), "{after2:?}");
     assert_eq!(after2.uncertain, 0);
     assert_eq!(after2.remaining, base2.remaining);
+}
+
+// ============================== R3 probes: the two-sided settlement saga ==
+
+/// **R3-U01 (byom half), reproduced.** The probe that produced the finding:
+/// the parent worst case is 256, kovee narrows the subordinate to 128, and a
+/// charge of 200 arrives. Capping against the parent alone accepted it —
+/// byom committed 200 while the other side, checking its own 128, answered
+/// `budget_exceeded` and stayed `confirmed` with charge 0. The two ledgers
+/// split.
+///
+/// byom now caps INDEPENDENTLY against the EXACT confirmed subordinate items
+/// of this bridge (disposition D-R3-2). The boundary the finding asked for is
+/// `subordinate + 1`: still far below the parent, and still refused.
+#[test]
+fn a_settlement_is_capped_against_the_exact_confirmed_subordinate_items() {
+    let f = Fixture::start("b3-bud-independent-cap", 8);
+    let base = f.ledger();
+    let wake = f.wake("w1");
+    let ep = f.request_episode(&wake, "e1");
+    // Narrowed to half the parent, exactly as the probe had it.
+    const SUBORDINATE: u64 = WORST_CASE / 2;
+    f.admit_placement(&ep, "p1", Subordinate::Confirmed(SUBORDINATE));
+    let c = f.claim(&ep.episode_id, "worker-a", 600, 7, "c1");
+    let started = f.start_episode(&ep.episode_id, &c, "s1");
+    let lease_revision = started["result"]["lease_revision"].as_u64().unwrap();
+    let meter = f.meter_token(&ep.episode_id);
+    let held = f.ledger();
+
+    // `request_id` is separate from the stable settlement key on purpose: the
+    // exact retry is the §15.3 idempotency replay, while a FRESH request under
+    // the same settlement key is the saga's recovery query.
+    let charge = |amount: u64, key: &str, request: &str| -> Value {
+        let mut body = json!({
+            "version": "0.2", "op": "usage_report",
+            "meta": f.meta(&format!("meter-{request}"), None),
+            "source": "trusted_meter",
+            "stable_report_key": format!("urepkey-{request}"),
+            "quantities": [{"dimension": "unit", "unit": "unit", "amount": amount}],
+            "meter_ref": "meter-kovee-1",
+            "meter_attestation_ref": "attest-1",
+            "stable_settlement_key": format!("setkey-{key}"),
+            "charged_quantities": [{"dimension": "unit", "unit": "unit", "amount": amount}],
+        });
+        merge(&mut body, f.fences(&ep.episode_id, &c));
+        f.runtime(&meter, &body)
+    };
+
+    // THE PROBE: 200 units. Below the 256 parent, above the 128 confirmed
+    // subordinate.
+    let over = charge(200, "probe", "probe");
+    assert_eq!(
+        kind_of(&over),
+        "budget_exceeded",
+        "a charge above the exact confirmed subordinate items must be refused \
+         HERE, not committed and then contradicted by the other side: {over}"
+    );
+    assert!(
+        over["problem"]["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains(&format!("requested 200, remaining {SUBORDINATE}")),
+        "the refusal names the SUBORDINATE ceiling, not the parent's: {over}"
+    );
+    // `subordinate + 1 <= parent` — the exact boundary the finding named.
+    let boundary = charge(SUBORDINATE + 1, "boundary", "boundary");
+    assert_eq!(
+        kind_of(&boundary),
+        "budget_exceeded",
+        "subordinate + 1 is still <= parent and still refused: {boundary}"
+    );
+
+    // Nothing moved and nothing was recorded: the refusals precede every
+    // write, so a split ledger is not reachable through this path.
+    assert_eq!(f.ledger(), held, "a refused settlement moves no quantity");
+    assert!(f.ledger().conserves(), "{:?}", f.ledger());
+    assert_eq!(f.count("SELECT COUNT(*) FROM usage_settlements"), 0);
+    assert_eq!(
+        f.row(
+            "SELECT state FROM external_budget_bridges WHERE bridge_id = ?1",
+            &ep.bridge_ref
+        )
+        .as_deref(),
+        Some("confirmed"),
+        "a refused settlement never advances the bridge"
+    );
+
+    // Exactly at the subordinate ceiling settles, and the reply reports the
+    // ceiling it capped against so the counterparty's saga can agree.
+    let exact = charge(SUBORDINATE, "exact", "exact");
+    assert_eq!(exact["outcome"], "ok", "{exact}");
+    assert_eq!(exact["result"]["settlement"]["charged"], SUBORDINATE);
+    assert_eq!(
+        exact["result"]["settlement"]["subordinate_reserved"],
+        SUBORDINATE
+    );
+    let after = f.ledger();
+    assert!(after.conserves(), "{after:?}");
+    assert_eq!(after.committed, SUBORDINATE as i64);
+    assert_eq!(after.remaining, base.remaining - WORST_CASE as i64);
+
+    // The recovery query of the two-sided saga: a fresh request under the
+    // SAME stable settlement key surfaces the stored charge, so the other
+    // side can apply byom's truth after a crash instead of inventing one.
+    let replay = charge(SUBORDINATE, "exact", "exact-recovery");
+    assert_eq!(replay["result"]["settlement"]["replayed"], true, "{replay}");
+    assert_eq!(replay["result"]["settlement"]["charged"], SUBORDINATE);
+    assert_eq!(f.count("SELECT COUNT(*) FROM usage_settlements"), 1);
+    assert_eq!(f.ledger(), after, "the recovery query moves nothing");
+    let _ = lease_revision;
+}
+
+/// **R3-U04, reproduced.** The probe reported two children against ONE
+/// parent item and was accepted: the membership test was `.any()`, so every
+/// duplicate reused the same parent item and the recorded subordinate total
+/// came to twice the parent.
+///
+/// Identity is now one-to-one — each reported item claims one distinct
+/// parent item — and the aggregate per `(account, revision, dimension, unit)`
+/// is capped by the parent items that really exist.
+#[test]
+fn duplicate_parent_item_pins_cannot_amplify_the_parent() {
+    let f = Fixture::start("b3-bud-duplicate", 8);
+    let wake = f.wake("w1");
+    let ep = f.request_episode(&wake, "e1");
+    let parent = ep.parent_budget["items"][0].clone();
+    assert_eq!(
+        ep.parent_budget["items"].as_array().map(Vec::len),
+        Some(1),
+        "the published parent has exactly ONE item, which is the point"
+    );
+    let held = f.ledger();
+
+    // THE PROBE: two items, each individually below the parent worst case,
+    // both pinning that one parent item.
+    let doubled = f.admit_placement_raw(
+        &ep,
+        "dup",
+        Subordinate::ConfirmedItems(vec![
+            subordinate_item(&parent, 200),
+            subordinate_item(&parent, 200),
+        ]),
+    );
+    assert_eq!(
+        kind_of(&doubled),
+        "stale_binding",
+        "the second item pins a parent item the first already claimed: {doubled}"
+    );
+    assert!(
+        doubled["problem"]["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("UNCLAIMED"),
+        "{doubled}"
+    );
+
+    // And the aggregate rule holds independently: two items whose sum
+    // exceeds the parent are refused even before uniqueness would bite.
+    let summed = f.admit_placement_raw(
+        &ep,
+        "sum",
+        Subordinate::ConfirmedItems(vec![
+            subordinate_item(&parent, WORST_CASE),
+            subordinate_item(&parent, 1),
+        ]),
+    );
+    let summed_kind = kind_of(&summed);
+    assert!(
+        summed_kind == "stale_binding" || summed_kind == "budget_exceeded",
+        "a subordinate total above the actual parent is refused: {summed}"
+    );
+
+    // Nothing was recorded for either attempt: the bridge is still
+    // `requested` and no subordinate row exists.
+    assert_eq!(f.count("SELECT COUNT(*) FROM subordinate_reservations"), 0);
+    assert_eq!(
+        f.row(
+            "SELECT state FROM external_budget_bridges WHERE bridge_id = ?1",
+            &ep.bridge_ref
+        )
+        .as_deref(),
+        Some("requested")
+    );
+    assert_eq!(f.ledger(), held, "a refused admission moves no quantity");
+
+    // One item against one parent item is exactly what the rule permits.
+    let ok = f.admit_placement_raw(
+        &ep,
+        "one",
+        Subordinate::ConfirmedItems(vec![subordinate_item(&parent, 200)]),
+    );
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+    assert!(f.ledger().conserves());
+}
+
+/// **R3-L02, reproduced (byom half).** Before the fragment, byom published
+/// only the allocation id and digest; every other parent fact — the
+/// reservation-set reference, the bridge reference, the stable key, the
+/// account and the worst-case amount — was reconstructed by the counterparty
+/// from a naming convention and its own caller's arguments.
+///
+/// `episode_request` now publishes the FROZEN `portable_public` fragment, its
+/// digest re-derives from exactly those bytes, and a subordinate item whose
+/// parent facts were invented instead of taken from it is refused.
+#[test]
+fn episode_request_publishes_a_verifiable_parent_budget_fragment() {
+    use bpp_core::canonical::{sha256_hex, tagged_canonical};
+
+    let f = Fixture::start("b3-bud-fragment", 8);
+    let wake = f.wake("w1");
+    let ep = f.request_episode(&wake, "e1");
+    let fragment = ep.parent_budget.clone();
+
+    // The frozen member set, exactly — nothing more, nothing less.
+    let mut members: Vec<&str> = fragment
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .filter(|k| *k != "digest")
+        .collect();
+    members.sort_unstable();
+    assert_eq!(
+        members,
+        vec![
+            "byom_budget_reservation_set_ref",
+            "byom_budget_reservation_set_revision",
+            "byom_budget_reservation_set_digest",
+            "external_budget_bridge_ref",
+            "external_budget_bridge_revision",
+            "stable_external_reservation_key",
+            "items",
+        ]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>(),
+    );
+
+    // INDEPENDENT re-derivation, the way a consumer must do it: strip the
+    // digest, tag the remainder, hash. A fragment whose digest a consumer
+    // cannot re-derive is an out-of-band step wearing a digest.
+    let mut without = fragment.clone();
+    without.as_object_mut().unwrap().remove("digest");
+    let bytes = tagged_canonical("bpp-parent-budget-fragment-v0", &without).unwrap();
+    assert_eq!(
+        fragment["digest"]["value_hex"].as_str().unwrap(),
+        sha256_hex(&bytes),
+        "the published parent-budget digest must re-derive from exactly the \
+         published members: {fragment}"
+    );
+    // The nested set digest is portable too, for the same reason.
+    let set_bytes = tagged_canonical(
+        "bpp-budget-reservation-set-binding-v0",
+        &json!({
+            "reservation_set_id": fragment["byom_budget_reservation_set_ref"],
+            "revision": fragment["byom_budget_reservation_set_revision"],
+            "items": fragment["items"],
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        fragment["byom_budget_reservation_set_digest"]["value_hex"]
+            .as_str()
+            .unwrap(),
+        sha256_hex(&set_bytes)
+    );
+
+    // The published facts are byom's real ones: the bridge and the stable
+    // key the kernel derived, and the exact parent items.
+    assert_eq!(
+        f.row(
+            "SELECT stable_external_reservation_key FROM external_budget_bridges
+             WHERE bridge_id = ?1",
+            fragment["external_budget_bridge_ref"].as_str().unwrap()
+        )
+        .as_deref(),
+        fragment["stable_external_reservation_key"].as_str()
+    );
+    assert_eq!(fragment["items"][0]["worst_case_amount"], WORST_CASE);
+    assert_eq!(fragment["items"][0]["account_ref"], PARENT_ACCOUNT);
+
+    // A consumer that INVENTS a parent fact instead of taking it from the
+    // fragment is refused: the revision here is one the allocation never
+    // reserved.
+    let mut invented = subordinate_item(&fragment["items"][0], 100);
+    invented["parent_account_revision"] = json!(7);
+    let refused =
+        f.admit_placement_raw(&ep, "invented", Subordinate::ConfirmedItems(vec![invented]));
+    assert_eq!(
+        kind_of(&refused),
+        "stale_binding",
+        "a parent revision the allocation never reserved is not an exact parent \
+         item: {refused}"
+    );
+    assert_eq!(f.count("SELECT COUNT(*) FROM subordinate_reservations"), 0);
 }

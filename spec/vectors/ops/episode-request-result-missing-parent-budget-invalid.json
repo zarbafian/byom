@@ -1,0 +1,24 @@
+{
+  "name": "ops/episode-request-result-missing-parent-budget-invalid",
+  "description": "R3-L02: publishing the parent-budget fragment is STRUCTURAL. Without it the subordinate side has no published source for the exact set/bridge refs, revisions and parent items, and the last out-of-band budget step returns \u2014 references fabricated by naming convention and a parent amount taken from the caller's own arguments. The closed result shape refuses the omission (disposition D-R3-3)",
+  "input": {
+    "schema": "episode-request-result",
+    "value": {
+      "episode_id": "ep-0001",
+      "activity_stream_id": "stream-21",
+      "generation": 1,
+      "revision": 1,
+      "state": "eligible",
+      "resource_allocation_id": "alloc-wake-0001-r1",
+      "resource_allocation_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "created_at": "2026-07-26T09:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}
