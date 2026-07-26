@@ -51,6 +51,10 @@ echo "== i1 governed loop (scripted gate: byomd + koveed live, the greenfield"
 echo "   binding, notification-is-not-a-wake, the four-stage activation, the"
 echo "   formation saga, and the model_egress act chain through kovee's"
 echo "   disclosed metered broker with a STUB provider — no network, no model)"
-python3 conformance/i1-governed-loop/run.py --scripted
+# --all-checks, not --scripted: R3-I01 found the gate's own default was
+# narrower than its claim (the crash matrix, the per-source trails and the two
+# attached execution paths were reachable only if someone remembered the flag).
+# The real-harness cells stay env-gated inside --all-checks and report a SKIP.
+python3 conformance/i1-governed-loop/run.py --all-checks
 
 echo "run-checks: OK"
