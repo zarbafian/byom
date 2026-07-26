@@ -6,6 +6,8 @@
 
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+pub mod kovee;
+
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};

@@ -330,7 +330,7 @@ impl Store {
 
     /// A derived per-scope key under the store root (PROFILE §5/§7 scope
     /// keys: idempotency indexes, privacy chains).
-    pub(crate) fn scope_key(&self, label: &str) -> Result<[u8; 32], StoreError> {
+    pub fn scope_key(&self, label: &str) -> Result<[u8; 32], StoreError> {
         let root = self.index_root_key()?;
         Ok(hmac_sha256(&root, label.as_bytes()))
     }
@@ -927,6 +927,50 @@ impl Store {
         self.mint_events_cursor(society_id, seq)
     }
 
+    /// The SHORT authenticated events continuation: the same
+    /// audience/scope binding as `mint_events_cursor`, inside the
+    /// §14.9 128-byte identifier bound so it fits the C2
+    /// `KoveeEndeavorFormResult.source_cursor` field (which is typed
+    /// `identifier`, not an unbounded token). Both forms verify through
+    /// the same secret and are accepted wherever a continuation is.
+    pub fn mint_short_cursor(&self, society_id: &str, seq: u64) -> Result<String, StoreError> {
+        let bound = format!("bs1|projection|events:{society_id}|{seq}");
+        let tag = hmac_sha256(&self.cursor_secret()?, bound.as_bytes());
+        Ok(format!("bs1.{society_id}.{seq:x}.{}", hex(&tag[..16])))
+    }
+
+    fn parse_short_cursor(&self, raw: &str) -> Option<(String, u64)> {
+        let mut parts = raw.split('.');
+        let (Some("bs1"), Some(society), Some(seq_hex), Some(tag), None) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) else {
+            return None;
+        };
+        let seq = u64::from_str_radix(seq_hex, 16).ok()?;
+        let expected = self.mint_short_cursor(society, seq).ok()?;
+        // Constant-shape comparison against the freshly minted token.
+        if expected.split('.').nth(3)? != tag {
+            return None;
+        }
+        Some((society.to_owned(), seq))
+    }
+
+    /// The endpoint's detached signature envelope over one result
+    /// (§16.3 `server_signature`). HONEST PROFILE LABEL: the personal
+    /// developer profile has no asymmetric endpoint identity material
+    /// (§19), so this is a keyed MAC under a store-root scope key —
+    /// verifiable by this endpoint and by a same-UID holder of the
+    /// store, and NOT an offline third-party-verifiable signature.
+    pub fn endpoint_sign(&self, payload: &Value) -> Result<String, StoreError> {
+        let key = self.scope_key("endpoint-result-signature")?;
+        let preimage = jcs(payload)?;
+        Ok(format!("sig1.{}", hex(&hmac_sha256(&key, &preimage))))
+    }
+
     /// Mints the opaque authenticated events continuation (§14.4):
     /// audience- and scope-bound, never a raw sequence on the wire.
     pub fn mint_events_cursor(&self, society_id: &str, seq: u64) -> Result<String, StoreError> {
@@ -950,6 +994,9 @@ impl Store {
                 .with_status(400)
                 .with_detail("not a continuation this endpoint minted for this source")
         };
+        if raw.starts_with("bs1.") {
+            return self.parse_short_cursor(raw).ok_or_else(fail);
+        }
         let mut parts = raw.split('.');
         let (Some("bc1"), Some(body), Some(tag), None) =
             (parts.next(), parts.next(), parts.next(), parts.next())
@@ -981,6 +1028,12 @@ impl Store {
                 .with_status(400)
                 .with_detail("not a continuation this endpoint minted for this source")
         };
+        if raw.starts_with("bs1.") {
+            return match self.parse_short_cursor(raw) {
+                Some((bound, seq)) if bound == society_id => Ok(seq),
+                _ => Err(fail()),
+            };
+        }
         let mut parts = raw.split('.');
         let (Some("bc1"), Some(body), Some(tag), None) =
             (parts.next(), parts.next(), parts.next(), parts.next())

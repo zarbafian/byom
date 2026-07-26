@@ -1,8 +1,8 @@
 {
   "registry": "byom-bpp-operations",
   "version": "0.1.0",
-  "bundle": "B0.1",
-  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md §14.6 catalog + §14.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md §2.0; dual-surface split per gap note G35 (RT-12)",
+  "bundle": "B0.1 + B0.3 (host integration)",
+  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md §14.6 catalog + §14.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md §2.0; dual-surface split per gap note G35 (RT-12); B0.3 host-integration rows R39/R40/R42 per DESIGN.md §16.3 and design/2026-07-25-family-contract.md §2.0 (their result_schema names the FROZEN spec/governed-work/ record, so the wire is the C2 contract itself, never a fork)",
   "description": "Machine-readable (operation,surface) registry for the complete B0.1 bundle: exactly one row per (operation,surface) pair. The four G35 dual-surface operations (mandate_position, act_intent_position, act_intent_finalize, act_intent_cancel) carry exactly two rows each (participant + governance); every other operation exactly one. class read: never mutates, no MutationMeta; class create: mutation with the closed create meta (no expected_revision member); class update: current-head CAS mutation whose closed update meta REQUIRES meta.expected_revision (RT-01). request_schema/result_schema name the committed schema files this registry freezes to - the -v2 names are the immutable G10/G31 successor publications (RT-06). conformance/run.py derives its bundle, meta-class, surface, and MCP checks from these rows and fails on any extra/missing surface binding.",
   "operations": [
     {
@@ -724,6 +724,36 @@
       "class": "read",
       "request_schema": "recovery-checkpoint-show-request",
       "result_schema": "recovery-checkpoint-show-result"
+    },
+    {
+      "operation": "kovee_endeavor_form",
+      "surface": "governance",
+      "binding": "R39",
+      "family": "host_integration",
+      "class": "create",
+      "bundle": "B0.3",
+      "request_schema": "kovee-endeavor-form-request",
+      "result_schema": "kovee-endeavor-form-result"
+    },
+    {
+      "operation": "external_command_result_query",
+      "surface": "projection",
+      "binding": "R42",
+      "family": "recovery",
+      "class": "read",
+      "bundle": "B0.3",
+      "request_schema": "external-command-result-query-request",
+      "result_schema": "external-command-result-query-result"
+    },
+    {
+      "operation": "external_command_terminalize",
+      "surface": "governance",
+      "binding": "R40",
+      "family": "recovery",
+      "class": "create",
+      "bundle": "B0.3",
+      "request_schema": "external-command-terminalize-request",
+      "result_schema": "external-command-terminalize-result"
     }
   ]
 }

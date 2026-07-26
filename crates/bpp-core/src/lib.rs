@@ -19,6 +19,7 @@ pub mod bpa1;
 pub mod canonical;
 pub mod digest;
 pub mod envelope;
+pub mod hostint;
 pub mod idempotency;
 pub mod ijson;
 pub mod limits;

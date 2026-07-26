@@ -54,6 +54,10 @@ fn run() -> Result<(), String> {
         );
     }
     byomd::gov_ops::ensure_channel_files(&store);
+    // If a Kovee host binding is installed (endpoint configuration —
+    // amendment A2, never Society authorship), publish its narrow R42
+    // recovery-workload token file alongside the channel tokens.
+    byomd::host_config::publish_recovery_token(&store);
     let daemon = Arc::new(Daemon::new(store, AbortSpec::from_env()));
     let mut bound = Vec::new();
     let mut listeners = Vec::new();

@@ -96,12 +96,24 @@ pub const SLICE2_RECOVERY_OPS: [&str; 4] = [
     "recovery_checkpoint_show",
 ];
 
+/// The B3 slice-1 host-integration operations (C2
+/// `byom_governed_work_v1`; registry R39/R40/R42). Advertised as their
+/// own feature bundle because §16.6 makes compatibility one explicit,
+/// all-or-nothing bundle — a client either speaks the whole seam or none
+/// of it.
+pub const HOST_INTEGRATION_OPS: [&str; 3] = [
+    "kovee_endeavor_form",
+    "external_command_result_query",
+    "external_command_terminalize",
+];
+
 /// Is the operation implemented by THIS daemon (the honest feature_info
 /// set and the conformance live-replay contract)?
 pub fn implemented(op: &str) -> bool {
     SLICE1_OPS.contains(&op)
         || SLICE2_OPS.contains(&op)
         || SLICE2_RECOVERY_OPS.contains(&op)
+        || HOST_INTEGRATION_OPS.contains(&op)
         || op == "events_read"
 }
 
@@ -156,6 +168,10 @@ pub fn feature_info(store: &Store) -> Result<Vec<u8>, Problem> {
         json!({
             "feature": "b0.1-slice2",
             "operations": SLICE2_OPS.to_vec(),
+        }),
+        json!({
+            "feature": "byom_governed_work_v1",
+            "operations": HOST_INTEGRATION_OPS,
         }),
         json!({
             "feature": "b0.1-events-recovery-core",

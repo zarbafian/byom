@@ -98,6 +98,18 @@ impl DigestRef {
         }
     }
 
+    /// A `portable_public` ref (unkeyed SHA-256 over content that
+    /// crosses an authority boundary — the C2 host-integration digests
+    /// both sides recompute; PROFILE §6.1).
+    pub fn portable_public(value_hex: String) -> DigestRef {
+        DigestRef {
+            class: "portable_public".to_owned(),
+            algorithm: "sha-256".to_owned(),
+            key_ref: None,
+            value_hex,
+        }
+    }
+
     /// A `local_erasure_safe` ref (random per-object secret; PROFILE §6.1).
     pub fn local_erasure_safe(key_ref: &str, value_hex: String) -> DigestRef {
         DigestRef {

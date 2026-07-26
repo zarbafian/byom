@@ -528,7 +528,98 @@ CREATE TABLE privacy_access_records (
 ) STRICT;
 "#;
 
-const MIGRATIONS: [&str; 2] = [V1, V2];
+/// Version 3: the B3 slice-1 host-integration tables (C2
+/// `byom_governed_work_v1`, DESIGN.md §16.3; family contract R39/R40/R42).
+///
+/// Recorded shape notes:
+/// - `delegated_credential_consumptions` is the atomic (issuer, nonce)
+///   consume of family contract L5–L6: the PRIMARY KEY is the fence, and
+///   the row records which internal idempotency domain the consumed
+///   attempt executed, so a replayed nonce re-serves the stored result
+///   instead of executing a second time.
+/// - `external_command_domains` is the ONE terminal row per external
+///   IdempotencyDomain and the whole recovery projection: `state` is
+///   `committed` (retained signed KoveeEndeavorFormResult) or
+///   `tombstoned` (durable non-reexecuting claim). A domain never leaves
+///   its terminal state, so `committed` and `tombstoned` cannot both
+///   exist — the §16.3 "both cannot win" invariant is a table constraint,
+///   not a code path.
+/// - `internal_domain_digest` binds the external Kovee-supplied domain
+///   digest 1:1 to byom's own server-recomputed IdempotencyDomain
+///   (§14.2); a second external digest over the same internal domain (or
+///   the reverse) is `domain_conflict`, never a silent rebind.
+/// - `governance_decisions` are immutable: formation writes one row and
+///   nothing updates it.
+/// - `authority_journal_receipts` are the synchronous receipts the
+///   `terminalized` result must carry (§16.3).
+const V3: &str = r#"
+CREATE TABLE delegated_credential_consumptions (
+    issuer_ref               TEXT NOT NULL,
+    nonce                    TEXT NOT NULL,
+    credential_id            TEXT NOT NULL,
+    society_id               TEXT NOT NULL,
+    operation                TEXT NOT NULL,
+    source_principal_ref     TEXT NOT NULL,
+    external_domain_digest   TEXT NOT NULL,
+    canonical_command_digest TEXT NOT NULL,
+    internal_domain_digest   TEXT NOT NULL,
+    outcome                  TEXT NOT NULL,
+    consumed_at              TEXT NOT NULL,
+    PRIMARY KEY (issuer_ref, nonce)
+) STRICT;
+
+CREATE TABLE external_command_domains (
+    external_domain_digest       TEXT PRIMARY KEY,
+    society_id                   TEXT NOT NULL,
+    operation                    TEXT NOT NULL,
+    endpoint_incarnation         TEXT NOT NULL,
+    society_recovery_epoch       INTEGER NOT NULL,
+    byom_command_idempotency_key TEXT NOT NULL,
+    canonical_command_digest     TEXT NOT NULL,
+    kovee_formation_intent_ref   TEXT NOT NULL,
+    source_principal_ref         TEXT NOT NULL,
+    source_actor_binding_digest  TEXT NOT NULL,
+    internal_domain_digest       TEXT NOT NULL,
+    state                        TEXT NOT NULL,
+    result_envelope              TEXT,
+    result_digest                TEXT,
+    result_signature             TEXT,
+    tombstone_ref                TEXT,
+    tombstone_digest             TEXT,
+    tombstone_reason             TEXT,
+    tombstone_reason_kind        TEXT,
+    created_at                   TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE governance_decisions (
+    decision_id    TEXT PRIMARY KEY,
+    society_id     TEXT NOT NULL,
+    kind           TEXT NOT NULL,
+    subject_kind   TEXT NOT NULL,
+    subject_ref    TEXT NOT NULL,
+    subject_digest TEXT NOT NULL,
+    rule_set_ref   TEXT NOT NULL,
+    seat_snapshot  TEXT NOT NULL,
+    position_refs  TEXT NOT NULL,
+    source         TEXT NOT NULL,
+    digest         TEXT NOT NULL,
+    created_at     TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE authority_journal_receipts (
+    receipt_id             TEXT PRIMARY KEY,
+    society_id             TEXT NOT NULL,
+    operation              TEXT NOT NULL,
+    external_domain_digest TEXT NOT NULL,
+    prior_generation       INTEGER NOT NULL,
+    proposed_generation    INTEGER NOT NULL,
+    subject_ref            TEXT NOT NULL,
+    digest                 TEXT NOT NULL,
+    created_at             TEXT NOT NULL
+) STRICT;
+"#;
+
+const MIGRATIONS: [&str; 3] = [V1, V2, V3];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

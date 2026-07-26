@@ -150,8 +150,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_registry_freezes_eighty_rows() {
-        assert_eq!(all_rows().len(), 80);
+    fn the_registry_freezes_the_two_bundles() {
+        // 80 B0.1 rows + the 3 B0.3 host-integration rows (R39/R40/R42).
+        assert_eq!(all_rows().len(), 83);
+        for (op, surface, class) in [
+            ("kovee_endeavor_form", Surface::Governance, OpClass::Create),
+            (
+                "external_command_terminalize",
+                Surface::Governance,
+                OpClass::Create,
+            ),
+            (
+                "external_command_result_query",
+                Surface::Projection,
+                OpClass::Read,
+            ),
+        ] {
+            let row = lookup(op, surface).unwrap_or_else(|| panic!("{op}"));
+            assert_eq!(row.class, class, "{op}");
+        }
+        // The delegated-principal rows exist on governance ONLY; the
+        // read-only recovery query never reaches a mutation surface.
+        assert!(lookup("kovee_endeavor_form", Surface::Participant).is_none());
+        assert!(lookup("external_command_result_query", Surface::Governance).is_none());
     }
 
     #[test]

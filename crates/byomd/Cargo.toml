@@ -19,6 +19,13 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[dev-dependencies]
+# Fault injection for the §16.3 `prepared_or_in_flight` blocking state:
+# the tests re-open the same SQLite file to park an authority transition
+# in `prepared`, which is exactly the condition that must block
+# terminalization.
+rusqlite = { workspace = true }
+
 [dependencies]
 bpp-core = { workspace = true }
 byom-store = { workspace = true }

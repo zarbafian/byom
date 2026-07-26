@@ -288,6 +288,29 @@ SLICE_READS = frozenset({
 })
 SLICE_MUTATING = tuple(op for op in SLICE_OPS if op not in SLICE_READS)
 
+# ------------------------------------------ B0.3 host-integration bundle ----
+# The C2 byom-side rows (= B0.3 "governed-work + host integration", plan §7):
+# three §14.6 catalog operations whose registry rows live in the SAME
+# spec/registry.json but belong to a LATER bundle than B0.1. Their
+# result_schema deliberately names the FROZEN spec/governed-work/ record, so
+# the wire IS the C2 contract and cannot fork; only the request envelope is
+# published under spec/schemas/ops/ (envelope + verbatim argument members).
+B03_HOST_INTEGRATION = ("kovee_endeavor_form", "external_command_result_query",
+                        "external_command_terminalize")
+B03_READS = frozenset({"external_command_result_query"})
+# op -> (request schema, result schema): the registry rows must name exactly
+# these, and the result must be the frozen C2 record.
+B03_SCHEMAS = {
+    "kovee_endeavor_form": ("kovee-endeavor-form-request",
+                            "kovee-endeavor-form-result"),
+    "external_command_result_query": (
+        "external-command-result-query-request",
+        "external-command-result-query-result"),
+    "external_command_terminalize": (
+        "external-command-terminalize-request",
+        "external-command-terminalize-result"),
+}
+
 # Named non-callable kernel/server transitions that may appear as a
 # descriptor `via` (§14.8, spec/README.md). `standing_replacement` is the
 # gap-note G12 name for the Standing row's operation-less 'replacement';
@@ -1472,13 +1495,13 @@ class Runner:
                 self.fail(f"{where}: {op} rows disagree on request_schema")
             info["rows"] += 1
         reg_ops = set(self.op_class)
-        sheet_ops = set(SLICE_OPS)
+        sheet_ops = set(SLICE_OPS) | set(B03_HOST_INTEGRATION)
         for op in sorted(sheet_ops - reg_ops):
             self.fail(f"registry: sheet op {op} has no registry row "
                       "(missing surface binding)")
         for op in sorted(reg_ops - sheet_ops):
-            self.fail(f"registry: row for {op} is not a B0.1 sheet op "
-                      "(extra surface binding)")
+            self.fail(f"registry: row for {op} is not a B0.1 sheet or B0.3 "
+                      "host-integration op (extra surface binding)")
         for op in sorted(reg_ops & sheet_ops):
             surfaces = self.op_surfaces[op]
             if op in G35_DUAL:
@@ -1491,7 +1514,7 @@ class Runner:
             elif len(surfaces) != 1:
                 self.fail(f"registry: op {op} must carry exactly one "
                           f"surface row, got {sorted(surfaces)}")
-            want_read = op in SLICE_READS
+            want_read = op in SLICE_READS or op in B03_READS
             if (self.op_class[op] == "read") != want_read:
                 self.fail(f"registry: {op} class {self.op_class[op]!r} "
                           "disagrees with the read set")
@@ -1577,6 +1600,79 @@ class Runner:
                 ok = self._meta_class_ok(op, cls, request, name) and ok
             if ok:
                 covered += 1
+        return covered
+
+    def check_host_integration_bundle(self) -> int:
+        """B0.3 (C2 byom side): the three host-integration rows carry a
+        published request envelope AND name the FROZEN governed-work
+        record as their result — the seam cannot fork its own wire. The
+        request schema must restate the envelope (op const, RT-01 meta
+        class) and its argument members must be exactly the frozen C2
+        argument members, member for member."""
+        frozen_args = {
+            "kovee_endeavor_form": "kovee-endeavor-form-arguments",
+            "external_command_result_query": "external-command-result-query",
+            "external_command_terminalize":
+                "external-command-terminalize-arguments",
+        }
+        envelope = {"version", "op", "meta"}
+        covered = 0
+        for op in B03_HOST_INTEGRATION:
+            if op not in ALL_CATALOG_OPS:
+                self.fail(f"b0.3: {op} is not a §14.6 catalog operation")
+                continue
+            want_req, want_result = B03_SCHEMAS[op]
+            reg_req = self.op_req_schema.get(op)
+            if reg_req != want_req:
+                self.fail(f"b0.3: registry request_schema for {op} is "
+                          f"{reg_req!r}, expected {want_req!r}")
+            result = self.schemas.get(want_result)
+            if result is None:
+                self.fail(f"b0.3: {op} result schema {want_result} is not "
+                          "the frozen governed-work record (missing)")
+                continue
+            request = self.schemas.get(want_req)
+            if request is None:
+                self.fail(f"b0.3: op {op} has no {want_req} schema")
+                continue
+            cls = self.op_class.get(op, "create")
+            op_const = (request.get("properties", {})
+                        .get("op", {}).get("const"))
+            if op_const != op:
+                self.fail(f"b0.3: {want_req} op const is {op_const!r}, "
+                          f"expected {op!r}")
+                continue
+            if not self._meta_class_ok(op, cls, request, want_req):
+                continue
+            args = self.schemas.get(frozen_args[op])
+            if args is None:
+                self.fail(f"b0.3: frozen argument schema {frozen_args[op]} "
+                          "is missing")
+                continue
+            want_members = set(args.get("properties", {}))
+            have_members = set(request.get("properties", {})) - envelope
+            if want_members != have_members:
+                self.fail(
+                    f"b0.3: {want_req} argument members diverge from the "
+                    f"frozen {frozen_args[op]} "
+                    f"(extra {sorted(have_members - want_members)}, "
+                    f"missing {sorted(want_members - have_members)})")
+                continue
+            want_req_members = set(args.get("required", []))
+            have_req_members = set(request.get("required", [])) - envelope
+            if want_req_members != have_req_members:
+                self.fail(f"b0.3: {want_req} required members diverge from "
+                          f"the frozen {frozen_args[op]}")
+                continue
+            drift = [m for m in sorted(want_members)
+                     if json.dumps(args["properties"][m], sort_keys=True)
+                     != json.dumps(request["properties"][m],
+                                   sort_keys=True)]
+            if drift:
+                self.fail(f"b0.3: {want_req} member schema(s) {drift} are "
+                          f"not byte-identical to {frozen_args[op]}")
+                continue
+            covered += 1
         return covered
 
     # -- RT-06 successor schemas --
@@ -2763,6 +2859,7 @@ class Runner:
         n_schemas = self.load_schemas()
         registry = self.check_registry()
         covered = self.check_bundle()
+        host = self.check_host_integration_bundle()
         successors = self.check_successor_schemas()
         gw = self.check_governed_work()
         mcp = self.check_mcp_tools()
@@ -2783,6 +2880,9 @@ class Runner:
               f"{len(SLICE_READS)} reads; complete sheet, "
               f"{len(B01_SHEET)} families; {successors} RT-06 successor "
               "schemas byte-checked against bpa1-policy)")
+        print(f"b0.3:     {host}/{len(B03_HOST_INTEGRATION)} host-integration "
+              "rows (C2 byom side): envelope + frozen governed-work "
+              "arguments member-for-member, frozen record as result")
         print(f"descriptors: {desc['files']} machines "
               f"({desc['kovee']} kovee-owned), {desc['states']} "
               f"states, {desc['transitions']} transitions — "

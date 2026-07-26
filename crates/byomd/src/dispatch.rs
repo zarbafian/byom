@@ -26,7 +26,7 @@ use serde_json::Value;
 use crate::part_common::{self, Caller};
 use crate::socket::SocketSurface;
 use crate::state;
-use crate::{cand_ops, gov_authority, gov_ops, part_ops, reads, work_ops};
+use crate::{cand_ops, gov_authority, gov_ops, host_ops, host_recovery, part_ops, reads, work_ops};
 
 /// A crash-honesty instruction from the environment
 /// (`BYOMD_ABORT=<phase>:<op>`): abort the process, or inject a witness
@@ -121,7 +121,14 @@ impl Daemon {
                 trim_newline(&mut token_line);
                 Some(token_line)
             }
-            SocketSurface::Participant => {
+            // The governance and projection sockets take the SAME
+            // optional preamble: on governance it is the Kovee
+            // DelegatedPrincipalCredential (`dpc1.<hex JSON>`, §16.3 R39/R40
+            // channel material — the closed request schemas carry no
+            // credential member); on projection it is the narrow R42
+            // recovery-workload token. A preamble-free connection is the
+            // same-UID sovereign / ordinary projection reader.
+            SocketSurface::Participant | SocketSurface::Governance | SocketSurface::Projection => {
                 let mut first = String::new();
                 let mut limited = (&mut reader).take(limits::REQUEST_MAX_BYTES as u64 + 1);
                 limited.read_line(&mut first)?;
@@ -133,7 +140,6 @@ impl Daemon {
                     Some(first)
                 }
             }
-            _ => None,
         };
         if line.is_empty() {
             // Read at most one byte past the cap so an oversized request
@@ -283,7 +289,7 @@ impl Daemon {
                     let req = ops::IdempotencyResultRequest::parse(body)
                         .map_err(|e| state::invalid(&e))?;
                     let store = self.lock_store()?;
-                    let actor = self.originating_actor(&store, surface, token)?;
+                    let actor = self.originating_actor(&store, surface, token, now)?;
                     reads::idempotency_result(&store, &actor, &req)
                 }
                 "cursor_recover" => {
@@ -297,14 +303,33 @@ impl Daemon {
         }
 
         match surface {
-            SocketSurface::Governance => self.dispatch_governance(&raw, now, hooks),
+            SocketSurface::Governance => {
+                self.dispatch_governance(&raw, token.unwrap_or_default(), now, hooks)
+            }
             SocketSurface::Candidate => {
                 self.dispatch_candidate(&raw, token.unwrap_or_default(), now, hooks)
             }
             SocketSurface::Participant => {
                 self.dispatch_participant(&raw, token.unwrap_or_default(), now, hooks)
             }
-            SocketSurface::Projection => self.dispatch_projection(&raw, now),
+            SocketSurface::Projection => {
+                self.dispatch_projection(&raw, token.unwrap_or_default(), now)
+            }
+        }
+    }
+
+    /// The delegated-principal credential of a governance connection, if
+    /// the preamble carried one. A malformed or unverifiable credential
+    /// is `forbidden` — never silently the sovereign channel.
+    fn delegated_principal(
+        token: &str,
+    ) -> Result<Option<bpp_core::hostint::DelegatedPrincipalCredential>, Problem> {
+        match bpp_core::hostint::decode_credential(token) {
+            None => Ok(None),
+            Some(Ok(credential)) => Ok(Some(credential)),
+            Some(Err(e)) => Err(state::forbidden_detail(&format!(
+                "delegated-principal credential rejected: {e}"
+            ))),
         }
     }
 
@@ -313,9 +338,22 @@ impl Daemon {
         store: &Store,
         surface: SocketSurface,
         token: Option<&str>,
+        now: i64,
     ) -> Result<String, Problem> {
         match surface {
-            SocketSurface::Governance => Ok(gov_ops::ACTOR_GOVERNANCE.to_owned()),
+            // A governance connection presenting a delegated-principal
+            // credential recovers ITS OWN retained results (R41: same
+            // actor/channel class), never the sovereign's. The credential
+            // is verified against the installed binding first, so a
+            // preamble cannot name a principal outside the seam.
+            SocketSurface::Governance => {
+                match Daemon::delegated_principal(token.unwrap_or_default())? {
+                    Some(credential) => {
+                        Ok(host_ops::verify_channel(store, &credential, now)?.actor)
+                    }
+                    None => Ok(gov_ops::ACTOR_GOVERNANCE.to_owned()),
+                }
+            }
             SocketSurface::Candidate => {
                 let channel = cand_ops::resolve_channel(store, token.unwrap_or_default())?;
                 if channel.state != "open" {
@@ -336,11 +374,44 @@ impl Daemon {
     fn dispatch_governance(
         &self,
         raw: &RawRequest,
+        token: &str,
         now: i64,
         hooks: CrashHooks,
     ) -> Result<Vec<u8>, Problem> {
         let body = &raw.body;
+        let credential = Daemon::delegated_principal(token)?;
+        // The two delegated-principal rows exist ONLY on that channel:
+        // the same-UID sovereign cannot stand in for a Kovee principal,
+        // and a principal cannot reach the sovereign's operations.
+        let delegated = matches!(
+            raw.op.as_str(),
+            "kovee_endeavor_form" | "external_command_terminalize"
+        );
+        if delegated != credential.is_some() {
+            return Err(state::forbidden_detail(if delegated {
+                "R39/R40 answer only on the Kovee delegated-principal channel"
+            } else {
+                "the delegated-principal channel carries only R39/R40"
+            }));
+        }
         let mut store = self.lock_store()?;
+        if let Some(credential) = &credential {
+            return match raw.op.as_str() {
+                "kovee_endeavor_form" => {
+                    let req = ops::KoveeEndeavorFormRequest::parse(body)
+                        .map_err(|e| state::invalid(&e))?;
+                    host_ops::kovee_endeavor_form(&mut store, credential, &req, body, now, hooks)
+                }
+                "external_command_terminalize" => {
+                    let req = ops::ExternalCommandTerminalizeRequest::parse(body)
+                        .map_err(|e| state::invalid(&e))?;
+                    host_recovery::external_command_terminalize(
+                        &mut store, credential, &req, body, now, hooks,
+                    )
+                }
+                _ => Err(feature_unavailable()),
+            };
+        }
         match raw.op.as_str() {
             "society_prepare" => {
                 let req =
@@ -676,9 +747,20 @@ impl Daemon {
         }
     }
 
-    fn dispatch_projection(&self, raw: &RawRequest, now: i64) -> Result<Vec<u8>, Problem> {
+    fn dispatch_projection(
+        &self,
+        raw: &RawRequest,
+        token: &str,
+        now: i64,
+    ) -> Result<Vec<u8>, Problem> {
         let body = &raw.body;
         let store = self.lock_store()?;
+        if raw.op == "external_command_result_query" {
+            let req = ops::ExternalCommandResultQueryRequest::parse(body)
+                .map_err(|e| state::invalid(&e))?;
+            let workload = if token.is_empty() { None } else { Some(token) };
+            return host_recovery::external_command_result_query(&store, workload, &req, now);
+        }
         match raw.op.as_str() {
             "society_show" => {
                 let req = ops::SocietyShowRequest::parse(body).map_err(|e| state::invalid(&e))?;
