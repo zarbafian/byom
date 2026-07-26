@@ -5,6 +5,7 @@ members = [
     "crates/byom-store",
     "crates/byomd",
     "crates/byom-cli",
+    "crates/byom-mcp",
 ]
 
 [workspace.package]

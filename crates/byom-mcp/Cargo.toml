@@ -1,0 +1,21 @@
+[package]
+name = "byom-mcp"
+publish = false
+description = "An MCP stdio server exposing the C3a candidate and participant tool profiles over the byomd per-surface sockets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "byom-mcp"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+bpp-core = { workspace = true }
+byomd = { workspace = true }
+serde_json = { workspace = true }
