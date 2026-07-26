@@ -101,3 +101,40 @@ peer exchange used.
 Folded into DESIGN.md at the next design revision (v0.3); until then this
 record rides alongside the pinned v0.2 text. The C0 three-lens review covers
 it; the blocker-only confirmation pass verifies A4–A7.
+
+## A8 — The cross-boundary digest-class rule, and the achievable activation order
+
+Both items come from the live kovee↔byomd integration
+(`reviews/2026-07-26-seam-findings.md`, S-1..S-3) — defects a frozen contract
+could not surface and two independent implementations meeting at it did.
+
+**The cross-boundary class rule** (now normative in `family-vectors/PROFILE.md`
+§6.2 and profile-pinned decision 14; **both repos mirror that section**):
+
+- A digest one protocol **demands from the other** MUST be `portable_public`,
+  taken over a **frozen cross-boundary fragment** whose members both sides
+  hold. Crossing the boundary *is* the durable-identifier disclosure that
+  class requires; because the fragment is never the owner's whole erasable
+  record, `public_hash_over_erasable_content_forbidden` is untouched.
+- Converse, equally normative: a digest the owner **recomputes from its own
+  state** keeps `local_erasure_safe` and is **never a request member** — the
+  owner computes it rather than asking the peer to echo an opaque blob.
+
+Applied: `resource_allocation_digest` → `portable_public` **and published** in
+the `episode_request` result (byom now derives a second, fragment-scoped
+binding digest); `context_manifest_digest` and `checkpoint_digest` →
+`portable_public` (byom holds no bytes to re-derive them);
+`claim_subject_digest` → removed from the request entirely (byom's own
+authority subject, recomputed internally). That last one had forced Kovee to
+add per-object erasure secrets for nothing — a storage change driven purely by
+a class choice, now reverted.
+
+**The achievable activation order** (L25, corrected above): `episode_request`
+comes **before** placement, because `placement_admit` needs the
+`ResourceAllocation` that `episode_request` creates. The prior transcription
+(`PlacementBinding → placement_admit → episode_request`) is not executable.
+
+Two follow-ons recorded, not silently changed: `kovee_context_assembly_digest`
+and `provider_context_manifest_digest` name Kovee objects byom cannot
+recompute, so the rule would move them to `portable_public` as well — outside
+the ratified four, so left for an owner decision.

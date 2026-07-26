@@ -162,7 +162,7 @@ field-complete so no implementer invents it:
 | L22 | idempotent turn↔invocation | `Episode/EpisodeAttempt` + `episode_claim` CAS (fence increments; stale worker fenced) | [op R30] |
 | L23 | provider manifests | Kovee-owned (C3b); byom sees `ManifestationRevision` + enforcement evidence | [kovee C3b] |
 | L24 | typed yield; next turn | `episode_yield/complete/fail`; **Δ3**: next wake participant-authored, kernel-admitted | [op R30] |
-| L25 | attention never wakes | notify-only → `wake_intent_submit` (R29) → `activation_admit`/`resource_allocate` [kernel] → `PlacementBinding` [kovee] → `placement_admit` (R33) → `episode_request` (R29) → claim/start (R30) | [op R29, R33, R30] + [kernel] |
+| L25 | attention never wakes | notify-only → `wake_intent_submit` (R29) → `episode_request` (R29, which triggers `activation_admit`/`resource_allocate` [kernel] and returns the allocation pin) → `PlacementBinding` [kovee] → `placement_admit` (R33) → claim/start (R30). **Amendment A8:** this is the achievable order — `placement_admit` needs the allocation `episode_request` creates | [op R29, R33, R30] + [kernel] |
 | L26 | cancellation honesty | `activity_hold/close` (R29), `episode_fail` (R30); fence advance revokes permits; unknown → ambiguous (L45) | [op R29, R30] |
 | L27 | result-first fenced submit | immutable local result commit → `delivery_submit` (R29, exact episode fence); fenced result stays orphan diagnostic | [op R29] |
 | L28 | intersections | restrictive effective-profile intersection (byom §16.4); budgets L31–33 | [kovee C2/C3b] |
@@ -269,7 +269,8 @@ here, binding once C0 ratifies:
   → kovee amendment A4; L66–L69.
 - **Δ3 — wake ownership inverts.** Participants (or adopted ActivationPolicies,
   as provenance ordinals) author `WakeIntent`; the kernel admits and
-  allocates; Kovee places (`PlacementBinding` → `placement_admit`); episode
+  allocates (both reached through `episode_request`); Kovee places
+  (`PlacementBinding` → `placement_admit`); episode
   request/claim/start keep their separate authorities. Kovee attention only
   notifies. → plan §0.1.
 - **Δ4 — gate kinds become act classes.** `model_egress/share/outbound/apply/
