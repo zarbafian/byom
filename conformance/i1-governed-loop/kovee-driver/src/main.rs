@@ -9,11 +9,16 @@
 //! Commands, in the order the loop uses them:
 //!
 //! ```text
+//! pinned            the kovee commit this binary was COMPILED against (build.rs
+//!                   re-derives it from the linked path dependency and refuses
+//!                   to compile against another one) — R3-I02
 //! host-binding      the inert host-binding document byomd is configured with,
 //!                   derived by KOVEE's own hostint from the binding+mapping
 //!                   the greenfield saga committed (amendment A2)
 //! seed-bindings     re-seed the shipped provider bindings from THIS process's
 //!                   environment (so a placeholder key marks them active)
+//! attention-notice  byom's attention_notice_record, SENT BY KOVEE's own client
+//!                   for an event read out of koveed's OWN ledger
 //! episode-activate  the four-stage activation: episode_request (byom stages
 //!                   1-3) -> place (Kovee's PlacementBinding) -> placement_admit
 //!                   -> episode_claim + episode_start
@@ -21,28 +26,44 @@
 //!                   model_egress act can be prepared over its exact digest
 //! complete          the whole broker chain: prepare -> execution_permit_consume
 //!                   -> dispatch -> usage_report, over a chosen transport
+//! effect-admit      byom's effect_outcome_admit on kovee's WORKER channel, with
+//!                   the host effect/receipt digests derived by kovee's own
+//!                   hostint over kovee's own rows (R35, source facts only)
+//! episode-yield     episode::yield_episode — the Continuation hand-off a
+//!                   successor attempt resumes from
 //! episode-settle    episode::settle (usage_report on the meter channel)
 //! episode-complete  episode::complete (terminalize, release the reservation)
 //! effect-show       the effect/attempt/consumption/usage rows, for assertions
+//! onboarding-consume / onboarding-claim / onboarding-complete
+//!                   the §7.4 one-shot OnboardingCompute path, driven as the
+//!                   HOSTED candidate's runtime
 //! ```
 //!
 //! Nothing here invents authority: every record is written by kovee's own
 //! code, every byom call rides a workload token byomd itself published, and
 //! `--transport recording` stamps `recording-test-double` on the effect so a
 //! stub run can never be mistaken for a provider call.
+//!
+//! Three byom runtime channel classes have no `Workload` arm in kovee
+//! (`attention`, `broker`, `onboarding`), because kovee ships no subsystem
+//! that owns them. For those, the driver reads the token byomd published and
+//! sends through kovee's own `Endpoint::call_with_preamble`: the wire, the
+//! framing and the reply handling are kovee's, and the evidence says plainly
+//! that the DECISION to send is the scenario's.
 
 use std::path::{Path, PathBuf};
 
-use kovee_byom::bpp::Endpoint;
+use kovee_byom::bpp::{self, Endpoint, Surface};
 use kovee_byom::credential::GATEWAY_ISSUER_REF;
 use kovee_byom::episode::Fences;
 use kovee_byom::hostint;
 use kovee_byom::records::{KoveeRealmByomBinding, KoveeSocietyMapping};
+use kovee_byom::runtime::{self as byom_runtime, Workload};
 use kovee_core::family::DigestRef;
-use kovee_core::problem::Problem;
+use kovee_core::problem::{Problem, ProblemKind};
 use kovee_effects::{Egress, HttpsTransport, RecordingTransport};
 use kovee_store::Store;
-use koveed::episode::{self, Notice, Runtime};
+use koveed::episode::{self, Notice, Runtime, Seam};
 use koveed::model_broker::{self, ActAuthorization, CompleteRequest, Fault};
 use serde_json::{json, Value};
 
@@ -63,14 +84,21 @@ fn main() {
         }
     };
     let outcome = match command.as_str() {
+        "pinned" => pinned(&args),
         "host-binding" => host_binding(&args),
         "seed-bindings" => seed_bindings(&args),
+        "attention-notice" => attention_notice(&args),
         "episode-activate" => episode_activate(&args),
         "stage" => stage(&args),
         "complete" => complete(&args),
+        "effect-admit" => effect_admit(&args),
+        "episode-yield" => episode_yield(&args),
         "episode-settle" => episode_settle(&args),
         "episode-complete" => episode_complete(&args),
         "effect-show" => effect_show(&args),
+        "onboarding-consume" => onboarding_consume(&args),
+        "onboarding-claim" => onboarding_claim(&args),
+        "onboarding-complete" => onboarding_complete(&args),
         other => fail(&format!("unknown command {other:?}")),
     };
     match outcome {
@@ -140,6 +168,126 @@ fn runtime_of(args: &Value) -> Runtime {
 
 fn realm_of(args: &Value) -> String {
     maybe_text(args, "realm").unwrap_or_else(|| REALM.to_owned())
+}
+
+/// The revision this binary CONTAINS (R3-I02). `build.rs` derives all three
+/// from the linked path dependency's own git tree and fails the build when
+/// the harness names a different commit, so this is a report of a
+/// machine-checked fact, not a claim.
+fn pinned(_args: &Value) -> Result<Value, Problem> {
+    Ok(json!({
+        "kovee_commit": env!("I1_KOVEE_COMMIT"),
+        "kovee_path": env!("I1_KOVEE_PATH"),
+        "kovee_worktree_dirty": env!("I1_KOVEE_DIRTY") == "true",
+    }))
+}
+
+/// The byom runtime surface for a channel class kovee has no `Workload` arm
+/// for. The token is byomd's own published file — read verbatim, never
+/// derived — and the call is kovee's own `Endpoint::call_with_preamble`.
+fn runtime_call_with_token(
+    args: &Value,
+    token_file: &str,
+    request: &Value,
+) -> Result<Value, Problem> {
+    let channels = PathBuf::from(text(args, "byom_channels_dir"));
+    let path = channels.join(token_file);
+    let line = std::fs::read_to_string(&path)
+        .map(|t| t.trim().to_owned())
+        .ok()
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| {
+            Problem::new(
+                ProblemKind::Forbidden,
+                "byomd published no workload token for this subject",
+            )
+            .with_detail(path.display().to_string())
+        })?;
+    let endpoint = Endpoint::at(
+        &maybe_text(args, "byom_endpoint_ref").unwrap_or("local".into()),
+        &PathBuf::from(text(args, "byom_run_dir")),
+    );
+    let reply = endpoint
+        .call_with_preamble(Surface::Runtime, Some(&line), request)
+        .map_err(|e| bpp::passthrough(&e))?;
+    Ok(reply.result)
+}
+
+/// The active seam's wire facts (byomd's endpoint incarnation and the
+/// Society's recovery epoch) — kovee's own, read from kovee's own binding.
+fn seam_of(args: &Value) -> Result<Seam, Problem> {
+    let store = store_of(args);
+    episode::seam_of_binding(store.conn(), &realm_of(args))
+}
+
+fn create_meta(seam: &Seam, what: &str, key: &str) -> Value {
+    json!({
+        "request_id": format!("kovee-{what}-{key}"),
+        "idempotency_key": format!("kovee-{what}-{key}"),
+        "expected_endpoint_incarnation": seam.endpoint_incarnation,
+        "expected_recovery_epoch": seam.recovery_epoch,
+    })
+}
+
+fn update_meta(seam: &Seam, what: &str, key: &str, expected_revision: u64) -> Value {
+    let mut meta = create_meta(seam, what, key);
+    if let Some(map) = meta.as_object_mut() {
+        map.insert("expected_revision".to_owned(), json!(expected_revision));
+    }
+    meta
+}
+
+// -------------------------------------------------- the attention notice ----
+
+/// byom's `attention_notice_record` for an event KOVEE committed.
+///
+/// Honest scope (R3-I01 f): kovee's `kovee-attention` crate is a two-line
+/// stub, so no AttentionContract subsystem exists to DECIDE to notify, and
+/// kovee has no `Workload::Attention` channel class either. What this
+/// command does own is everything else: it verifies the event exists in
+/// koveed's OWN ledger, derives the cross-boundary `source_event_digest`
+/// with kovee's own hashing, and sends the notice over kovee's own byom
+/// client. The trigger is still the scenario's, and the evidence says so.
+fn attention_notice(args: &Value) -> Result<Value, Problem> {
+    let store = store_of(args);
+    let event_ref = text(args, "source_event_ref");
+    let found: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE event_id = ?1",
+            [event_ref.as_str()],
+            |r| r.get(0),
+        )
+        .map_err(store_fault)?;
+    if found != 1 {
+        return Err(Problem::new(
+            ProblemKind::Forbidden,
+            "kovee notifies byom only of an event it has itself committed",
+        )
+        .with_detail(format!("{event_ref} is not in koveed's ledger")));
+    }
+    let stream = text(args, "activity_stream_ref");
+    let generation = args.get("generation").and_then(Value::as_u64).unwrap_or(1);
+    let seam = seam_of(args)?;
+    let key = text(args, "stable_notice_key");
+    let request = json!({
+        "version": "0.2",
+        "op": "attention_notice_record",
+        "meta": create_meta(&seam, "att", &key),
+        "source_protocol": "kovee",
+        "source_endpoint_ref": maybe_text(args, "source_endpoint_ref")
+            .unwrap_or_else(|| "kovee-endpoint-local".to_owned()),
+        "source_event_ref": event_ref,
+        "source_event_digest": DigestRef::portable_public(
+            kovee_core::family::sha256_hex(event_ref.as_bytes()),
+        ),
+        "activity_stream_ref": stream,
+        "generation": generation,
+        "stable_notice_key": key,
+    });
+    let result =
+        runtime_call_with_token(args, &format!("runtime-attention-{stream}.token"), &request)?;
+    Ok(json!({"notice": result, "sender": "kovee-byom client (kovee-attention is a stub)"}))
 }
 
 // -------------------------------------------------------- host binding ----
@@ -526,6 +674,20 @@ fn complete(args: &Value) -> Result<Value, Problem> {
         fault,
     );
     let sends = recording.as_ref().map(|r| r.send_count());
+    // R3-I03: the send count is written to a DURABLE file before the outcome
+    // is propagated, so a REFUSAL path cannot quietly drop the one number
+    // that makes "not one byte left the process" checkable. The refusal
+    // cells used to return a problem and lose it.
+    if let Some(path) = maybe_text(args, "send_counter") {
+        let record = json!({
+            "sends": sends,
+            "transport": kind,
+            "refused": outcome.is_err(),
+            "state": outcome.as_ref().ok().map(|c| c.state.as_str()),
+        });
+        std::fs::write(&path, format!("{record}\n"))
+            .unwrap_or_else(|e| fail(&format!("write send counter {path}: {e}")));
+    }
     let completion = outcome?;
     Ok(json!({
         "effect_id": completion.effect_id,
@@ -550,7 +712,298 @@ fn complete(args: &Value) -> Result<Value, Problem> {
     }))
 }
 
+// ------------------------------------------- the effect-outcome admission ----
+
+/// The `$domain` tags this driver derives kovee-owned cross-boundary digests
+/// under. They are the driver's own (kovee ships no EffectOutcomeAdmission
+/// sender), and the derivation is kovee's `hostint::portable_digest`, so both
+/// values are unkeyed `portable_public` — the class byom's R35 shape requires
+/// for a host-owned object (amendment A8).
+const TAG_HOST_EFFECT: &str = "kovee-model-effect-source-v0";
+const TAG_HOST_RECEIPT: &str = "kovee-effect-consumption-receipt-v0";
+
+/// byom's `effect_outcome_admit` (R35) for one model effect, on KOVEE's own
+/// worker channel: SOURCE FACTS ONLY — there is no decision member in this
+/// shape at all, and byom's reconciliation seat is a separate governance op.
+fn effect_admit(args: &Value) -> Result<Value, Problem> {
+    let store = store_of(args);
+    let key = text(args, "execution_key");
+    let binding_key = text(args, "stable_binding_key");
+    let bound = match episode::read_binding(store.conn(), &binding_key)? {
+        Some(bound) => bound,
+        None => fail(&format!("no episode binding for {binding_key}")),
+    };
+    let Some(effect) = model_broker::effect_by_execution_key(store.conn(), &key)? else {
+        return Err(Problem::new(
+            ProblemKind::NotFound,
+            "kovee has no model effect for this execution key",
+        ));
+    };
+    // The attempt kovee actually recorded, and the outcome it actually
+    // reached: `ambiguous` is admitted as `ambiguous`, never as failed.
+    let (attempt_ordinal, attempt_state, retry_frozen, transport_profile, observation) = store
+        .conn()
+        .query_row(
+            "SELECT attempt_ordinal, state, retry_frozen, transport_profile,
+                    COALESCE(observation, '')
+             FROM model_effect_attempts WHERE effect_id = ?1
+             ORDER BY attempt_ordinal DESC LIMIT 1",
+            [effect.effect_id.as_str()],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)? != 0,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .map_err(store_fault)?;
+    let outcome = match attempt_state.as_str() {
+        "completed" => "succeeded",
+        "ambiguous" => "ambiguous",
+        _ => "failed",
+    };
+    // kovee's own consumption record of byom's permit: the receipt side of
+    // the admission. `owner_receipt_ref` is byom's own receipt id, echoed.
+    let (consumption_id, owner_receipt_ref, consumption_state) = store
+        .conn()
+        .query_row(
+            "SELECT consumption_id, COALESCE(owner_receipt_ref, ''), state
+             FROM external_authorization_consumptions WHERE execution_key = ?1",
+            [key.as_str()],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .map_err(store_fault)?;
+    // The event kovee committed for this outcome — the cursor byom's
+    // admission cites as the source position it verified.
+    let cursor: String = store
+        .conn()
+        .query_row(
+            "SELECT event_id FROM events
+             WHERE type LIKE 'dev.kovee.model-effect%' AND resource_ref = ?1
+             ORDER BY stream_sequence DESC LIMIT 1",
+            [effect.effect_id.as_str()],
+            |r| r.get(0),
+        )
+        .map_err(store_fault)?;
+    let host_effect_digest = hostint::portable_digest(
+        TAG_HOST_EFFECT,
+        &json!({
+            "effect_id": effect.effect_id,
+            "execution_key": key,
+            "act_intent_ref": effect.act_intent_ref,
+            "episode_ref": effect.episode_ref,
+            "disclosure_manifest_ref": effect.disclosure_manifest_ref,
+            "state": effect.state,
+            "attempt_ordinal": attempt_ordinal,
+            "attempt_state": attempt_state,
+            "retry_frozen": retry_frozen,
+            "transport_profile": transport_profile,
+            "observation": observation,
+        }),
+    )
+    .map_err(|e| {
+        Problem::new(ProblemKind::Internal, "host effect digest").with_detail(e.to_string())
+    })?;
+    let host_receipt_digest = hostint::portable_digest(
+        TAG_HOST_RECEIPT,
+        &json!({
+            "consumption_id": consumption_id,
+            "execution_key": key,
+            "owner_protocol": "byom",
+            "owner_receipt_ref": owner_receipt_ref,
+            "state": consumption_state,
+        }),
+    )
+    .map_err(|e| {
+        Problem::new(ProblemKind::Internal, "host receipt digest").with_detail(e.to_string())
+    })?;
+    let seam = seam_of(args)?;
+    let token = byom_runtime::token(
+        &PathBuf::from(text(args, "byom_channels_dir")),
+        Workload::Worker,
+        &bound.episode_ref,
+    )
+    .map_err(|e| {
+        Problem::new(ProblemKind::Forbidden, "byom worker channel").with_detail(e.to_string())
+    })?;
+    let endpoint = Endpoint::at(
+        &maybe_text(args, "byom_endpoint_ref").unwrap_or("local".into()),
+        &PathBuf::from(text(args, "byom_run_dir")),
+    );
+    let request = json!({
+        "version": "0.2",
+        "op": "effect_outcome_admit",
+        "meta": create_meta(&seam, "eoa", &key),
+        "episode_ref": bound.episode_ref,
+        "generation": bound.record.generation,
+        "byom_attempt_ref": bound.byom_attempt_ref,
+        "byom_fence_epoch": bound.fences.byom,
+        "kovee_invocation_fence": bound.fences.kovee,
+        // byom's OWN keyed values, echoed exactly as byom published them.
+        "intent_ref": text(args, "act_intent_ref"),
+        "intent_digest": digest(args, "act_intent_digest"),
+        "stable_execution_key": key,
+        "host_protocol": "kovee",
+        "host_endpoint_ref": maybe_text(args, "host_endpoint_ref")
+            .unwrap_or_else(|| "kovee-endpoint-local".to_owned()),
+        "host_effect_ref": effect.effect_id,
+        "host_effect_digest": host_effect_digest,
+        "host_receipt_ref": consumption_id,
+        "host_receipt_digest": host_receipt_digest,
+        "host_cursor_or_signature_ref": cursor,
+        "verification_status": "verified",
+        "outcome": outcome,
+    });
+    let reply =
+        byom_runtime::call(&endpoint, &token, &request).map_err(|e| bpp::passthrough(&e))?;
+    Ok(json!({
+        "admission": reply.result,
+        "source": {
+            "effect_id": effect.effect_id,
+            "attempt_state": attempt_state,
+            "retry_frozen": retry_frozen,
+            "outcome": outcome,
+            "host_effect_digest": host_effect_digest,
+            "host_receipt_ref": consumption_id,
+            "host_receipt_digest": host_receipt_digest,
+            "host_cursor_or_signature_ref": cursor,
+        },
+    }))
+}
+
 // --------------------------------------------------- episode teardown ----
+
+/// `episode_yield` with the Continuation hand-off: byom's Episode leaves
+/// `running`, and kovee records WHICH continuation a successor must resume
+/// from. The successor needs a new binding — kovee says so in the reply.
+fn episode_yield(args: &Value) -> Result<Value, Problem> {
+    let mut store = store_of(args);
+    let runtime = runtime_of(args);
+    let key = text(args, "stable_binding_key");
+    let fences = bound_fences(&store, &key)?;
+    let result = episode::yield_episode(
+        &mut store,
+        &runtime,
+        &key,
+        fences,
+        &text(args, "continuation_ref"),
+        0,
+    )?;
+    Ok(json!({"yielded": result}))
+}
+
+// ------------------------------------ the §7.4 one-shot onboarding path ----
+
+/// byom's `onboarding_compute_permit_consume` (R32) on byom's BROKER runtime
+/// channel — the hosted candidate's ONE compute use, ever.
+///
+/// Honest scope: kovee has no onboarding code at all (`grep -r onboarding
+/// kovee/crates` is empty), so no kovee subsystem owns this call; and byom's
+/// shape demands `local_erasure_safe` (byom-keyed) digests for three
+/// KOVEE-owned objects (provider context manifest, disclosure manifest,
+/// model profile), which no kovee derivation can produce — the same A8
+/// direction R3-L01 fixed for `execution_permit_consume`, still open here.
+/// Those three digests therefore arrive from the scenario and the evidence
+/// records it; every value the RECEIPT is checked against is byom's own.
+fn onboarding_consume(args: &Value) -> Result<Value, Problem> {
+    let seam = seam_of(args)?;
+    let intent = text(args, "compute_intent_ref");
+    let key = text(args, "stable_compute_key");
+    // The REQUEST identity is separate from the one-shot subject key: with
+    // one idempotency key, byom's generic "changed request" guard answers
+    // first and the §7.4 one-shot rule is never reached. A distinct
+    // `meta_key` per attempt is what makes the one-shot refusal observable.
+    let meta_key = maybe_text(args, "meta_key").unwrap_or_else(|| key.clone());
+    let request = json!({
+        "version": "0.2",
+        "op": "onboarding_compute_permit_consume",
+        "meta": update_meta(&seam, "occ", &meta_key, number(args, "expected_revision")),
+        "compute_intent_ref": intent,
+        "compute_intent_digest": digest(args, "compute_intent_digest"),
+        "stable_compute_key": key,
+        "onboarding_fence_epoch": number(args, "onboarding_fence_epoch"),
+        "kovee_invocation_ref": text(args, "kovee_invocation_ref"),
+        "provider_context_manifest_ref": text(args, "provider_context_manifest_ref"),
+        "provider_context_manifest_digest": digest(args, "provider_context_manifest_digest"),
+        "disclosure_manifest_ref": text(args, "disclosure_manifest_ref"),
+        "disclosure_manifest_digest": digest(args, "disclosure_manifest_digest"),
+        "model_profile_ref": text(args, "model_profile_ref"),
+        "model_profile_digest": digest(args, "model_profile_digest"),
+    });
+    let result =
+        runtime_call_with_token(args, &format!("runtime-broker-{intent}.token"), &request)?;
+    Ok(json!({"receipt": result}))
+}
+
+/// byom's `onboarding_episode_claim` (R31) as the HOSTED candidate workload:
+/// the holder runtime binding is kovee's own deployment, and the claim cites
+/// the OnboardingComputeReceipt.
+fn onboarding_claim(args: &Value) -> Result<Value, Problem> {
+    let seam = seam_of(args)?;
+    let onboarding = text(args, "onboarding_ref");
+    let mut request = json!({
+        "version": "0.2",
+        "op": "onboarding_episode_claim",
+        "meta": create_meta(&seam, "onbclm", &text(args, "stable_claim_key")),
+        "onboarding_ref": onboarding,
+        "candidate_participant_ref": text(args, "candidate_participant_ref"),
+        "proposed_manifestation_ref": text(args, "proposed_manifestation_ref"),
+        "proposed_manifestation_digest": digest(args, "proposed_manifestation_digest"),
+        "onboarding_fence_epoch": number(args, "onboarding_fence_epoch"),
+        "holder_runtime_binding": text(args, "holder_runtime_binding"),
+        "stable_claim_key": text(args, "stable_claim_key"),
+    });
+    if let (Some(receipt), Some(map)) = (
+        maybe_text(args, "compute_receipt_ref"),
+        request.as_object_mut(),
+    ) {
+        map.insert("compute_receipt_ref".to_owned(), json!(receipt));
+        map.insert(
+            "compute_receipt_digest".to_owned(),
+            serde_json::to_value(digest(args, "compute_receipt_digest")).unwrap_or(Value::Null),
+        );
+    }
+    let result = runtime_call_with_token(
+        args,
+        &format!("runtime-onboarding-{onboarding}.token"),
+        &request,
+    )?;
+    Ok(json!({"claim": result}))
+}
+
+/// byom's `onboarding_episode_complete`: EVIDENCE ONLY — the reply itself
+/// says what did not happen (no acceptance, no Standing, no authority).
+fn onboarding_complete(args: &Value) -> Result<Value, Problem> {
+    let seam = seam_of(args)?;
+    let onboarding = text(args, "onboarding_ref");
+    let episode = text(args, "onboarding_episode_ref");
+    let request = json!({
+        "version": "0.2",
+        "op": "onboarding_episode_complete",
+        "meta": update_meta(&seam, "onbcmp", &episode, number(args, "expected_revision")),
+        "onboarding_episode_ref": episode,
+        "onboarding_ref": onboarding,
+        "onboarding_fence_epoch": number(args, "onboarding_fence_epoch"),
+        "outcome": maybe_text(args, "outcome").unwrap_or_else(|| "completed".to_owned()),
+        "output_refs": args.get("output_refs").cloned().unwrap_or(json!([])),
+        "evidence_refs": args.get("evidence_refs").cloned().unwrap_or(json!([])),
+    });
+    let result = runtime_call_with_token(
+        args,
+        &format!("runtime-onboarding-{onboarding}.token"),
+        &request,
+    )?;
+    Ok(json!({"completion": result}))
+}
 
 fn bound_fences(store: &Store, key: &str) -> Result<Fences, Problem> {
     let bound = episode::read_binding(store.conn(), key)?

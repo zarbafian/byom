@@ -5,32 +5,62 @@ Both stacks live side by side and the loop crosses BOTH of them: byomd
 (this repo) owns every authority record, koveed (../kovee) owns
 deliberation, placement and the disclosed metered model broker.
 
-    python3 run.py --scripted        # i1-flow-scripted (gates CI; NO model call)
-    python3 run.py --crash-matrix    # i1-crash (both daemons + the broker chain)
-    python3 run.py --real-model      # i1-real-model (I1_REAL_MODEL=1; REAL providers)
-    python3 run.py --harness claude  # i1-flow-claude (I1_REAL_HARNESS=1)
-    python3 run.py --harness codex   # i1-flow-codex  (I1_REAL_HARNESS=1)
-    python3 run.py --all-checks      # scripted + crash-matrix (the CI pair)
+    python3 run.py --scripted            # i1-flow-scripted (gates CI; NO model call)
+    python3 run.py --crash-matrix        # i1-crash (both daemons + the broker chain)
+    python3 run.py --verify-trails       # i1-trails (per-source attribution)
+    python3 run.py --attached-path claude  # i1-attached-claude (gates CI)
+    python3 run.py --attached-path codex   # i1-attached-codex  (gates CI)
+    python3 run.py --real-model          # i1-real-model (I1_REAL_MODEL=1; REAL providers)
+    python3 run.py --harness claude      # i1-flow-claude (I1_REAL_HARNESS=1)
+    python3 run.py --harness codex       # i1-flow-codex  (I1_REAL_HARNESS=1)
+    python3 run.py --all-checks          # everything deterministic, plus the
+                                         # env-gated real harness runs, each
+                                         # reported (never silently excluded)
 
 What the scripted gate drives, in order (every step names its owner):
 
+    pinned revisions          the kovee commit the driver was COMPILED
+                              against (its build.rs refuses another), every
+                              binary rebuilt and checked against cargo's own
+                              dependency record
     kovee governance enable   the D10 GREENFIELD saga, live: two inert
-                              bindings, then the owner CAS none -> byom
+                              bindings, then the owner CAS none -> byom, with
+                              an OVERLAPPING scope selector attempted and
+                              refused
     space + question          kovee's own deliberation records
-    attention notice          byom's narrow attention channel: NOTIFICATION
-                              IS NOT A WAKE — no admission, no allocation,
-                              no episode from the notice alone
+    attention notice          SENT BY KOVEE's own byom client on byom's
+                              narrow attention channel: NOTIFICATION IS NOT
+                              A WAKE — no admission, no allocation, no
+                              episode from the notice alone
     wake_intent_submit        the PARTICIPANT's own wake, over byom-mcp
     episode_request           byom's kernel stages 2 and 3 (admission +
                               allocation) — BEFORE any placement (L25/A8)
     place / placement_admit   Kovee's PlacementBinding, byom's adapter
     episode_claim/start       the lease, under DUAL fences
-    kovee_endeavor_form       the formation saga: exactly one Endeavor
+    kovee_endeavor_form       the formation saga: exactly one Endeavor, with
+                              three refusals attempted first
     call + pledge             the full seat sequence
     act_intent_* + broker     the model_egress act chain to a ONE-SHOT
                               permit, then Kovee's broker: prepared before
                               any dispatch, usage metered back to byom, and
-                              BYOM (not kovee) settles
+                              BYOM (not kovee) settles; the refusals are
+                              driven through koveed's OWN worker-socket
+                              `model_complete` as well as the driver
+    continuation resume       an Episode yields and a DIFFERENT, HOSTED
+                              Manifestation resumes from the portable
+                              Continuation through the head CAS
+    ambiguous effect          a forced uncertain send walked through
+                              effect_outcome_admit (source facts) ->
+                              effect_reconcile (governance seat), with the
+                              EOA-head-before-disposition-head lock order
+                              and the conservative settlement observable
+    onboarding compute        the §7.4 one-shot path: the funded intent, the
+                              receipt with max_uses 1, and completion as
+                              EVIDENCE ONLY
+
+Plan §8's I1 item list is the normative one, and `evidence/<test-id>/
+plan-8-i1-coverage.json` names the cell that exercises each item. The gate
+FAILS if an item has no cell.
 
 Assurance profile: **developer, confined-unclaimed** — honestly labeled.
 The gate claims only that the calls it exercises go through the disclosed,
@@ -53,40 +83,73 @@ Who speaks on which channel:
     short-lived child of this script (`--_agent-call`);
   - human participant ops (call_open, beneficiary seat, review): the
     direct human channel (participant socket, no channel credential);
-  - runtime adapters (attention notice, placement_admit, claim/start,
-    usage_report, execution_permit_consume): byomd's runtime socket under
-    the subject-scoped workload tokens byomd itself published;
+  - runtime adapters (the attention notice, placement_admit, claim/start,
+    yield, usage_report, execution_permit_consume, effect_outcome_admit,
+    the onboarding compute permit and Episode): byomd's runtime socket
+    under the subject-scoped workload tokens byomd itself published, all
+    sent from the kovee side;
   - kovee: the kovee CLI and socket (init, space, question,
-    governance_enable, formation saga, invocation, reads) and — for the
-    episode pipeline and the broker, which kovee exposes as library API
-    only — `kovee-driver/`, a binary that links kovee's own crates and
-    calls exactly the functions kovee's K2 suites call.
+    governance_enable, formation saga, invocation, reads), koveed's own
+    WORKER socket (`model_complete`, driven at its pre-egress refusals),
+    and — for the episode pipeline, the broker and the byom runtime
+    channels kovee has no `Workload` arm for — `kovee-driver/`, a binary
+    that links kovee's own crates and calls exactly the functions kovee's
+    K2 suites call.
 
 Evidence lands in evidence/<test-id>/. Every assertion is made from the
 OWNING daemon's own records: byom facts from byomd's events/store, kovee
 facts from koveed's events/store — per source, never merged.
 
-Honest residuals of THIS gate (each one is also stated in the evidence):
+Honest residuals of THIS gate. Each one is a LIMIT OF THE STACK, not a
+missing cell, and each is also stated in the evidence of the step it
+belongs to:
 
-  - kovee's `kovee-attention` crate is still a stub, so no kovee-side
-    AttentionContract sender exists. The notice is delivered on byom's
-    narrow attention runtime channel, carrying kovee's OWN committed event
-    id — the record, the surface and every refusal are byom's, but the
-    caller is this scenario, not a kovee subsystem.
+  - **the completing model dispatch still runs in the kovee-linked driver.**
+    koveed serves `model_complete` on its worker socket and this gate drives
+    that real op — for the refusals, which are decided before any egress —
+    but `koveed::Daemon` constructs `HttpsTransport` unconditionally and
+    kovee's recording double exists only under kovee-effects' `testing`
+    feature, so the daemon has no no-network wire to offer and a COMPLETING
+    call through the op would have to reach a real provider. Closing this
+    needs one kovee-side change (a `testing`-gated daemon egress); until
+    then the completing dispatch goes through `model_broker::complete` in
+    the driver, over kovee's sealed `Egress::recording`.
+  - **kovee's `kovee-attention` crate is a two-line stub**, so no
+    AttentionContract subsystem DECIDES to notify, and kovee has no
+    `Workload::Attention` channel class. The notice is sent by kovee's own
+    byom client (which verifies the event is in koveed's ledger and derives
+    the source digest), reading byomd's attention token; the trigger is
+    this scenario's.
+  - **kovee ships no onboarding code at all**, so the §7.4 one-shot path is
+    driven by kovee's client as the hosted candidate's runtime rather than
+    by a kovee subsystem; and byom's
+    `onboarding_compute_permit_consume` still demands byom-keyed
+    (`local_erasure_safe`) digests for three KOVEE-owned objects, the same
+    A8 direction R3-L01 closed for `execution_permit_consume`, so those
+    three values come from this scenario.
+  - **byom mints ManifestationRevisions only inside `membership_offer`**,
+    which fixes `kind: attached_harness`; no byom operation admits a
+    `host_kind: kovee_deployment` revision, and `placement_admit` does not
+    resolve `selected_manifestation_ref` against that table. The hosted
+    Manifestation is therefore the one kovee SELECTS at placement from its
+    own active deployment record and byom COMMITS on the Episode and the
+    PlacementAdmission — asserted in both stores — not a byom `host_kind`
+    row.
+  - byom-mcp derives `expected_revision: 1` for `membership_accept`, the
+    offer's minted revision, so an onboarding-FUNDED offer (revision 2)
+    cannot be accepted through the tool binding; the candidate's own
+    channel accepts it directly in that cell.
   - the eligible arm of a notice (an ADOPTED ActivationPolicy) is covered
     by byomd's `b3_attention` suite; this gate asserts the no-effect arm
     and the participant's own four-stage activation.
-  - the Manifestation the offer proposes is `attached_harness` (byom's
-    offer shape proposes exactly that today); the hosted Episode runs
-    under it. A distinct hosted-Manifestation kind is not exercised.
   - `--real-model` uses kovee's real TLS transport, but the exercised call
     is the only thing claimed: nothing here prevents a bypass of the
     broker. That is K4.
-  - `Continuation` resume across Manifestations and the deliberately
-    ambiguous effect walked through EOA -> disposition (plan §8 I1) are
-    NOT part of this gate; byomd's `b3_effects`/`b3_recovery` and kovee's
-    `k2_*` suites hold them, and I1 will absorb them when the runner grows
-    a yield/resume cell.
+  - the two ATTACHED execution paths are gated deterministically
+    (`--attached-path claude|codex`: the real byom-mcp surface, the
+    harness's own allowlist and launch argv, the identical tool surface for
+    both); the REAL CLI sessions are `--harness claude|codex` under
+    I1_REAL_HARNESS=1, which `--all-checks` runs and reports.
 
 Exit codes: 0 green, 1 failure, 2 honest skip (ungated mode).
 """
@@ -97,6 +160,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket as socketlib
 import sqlite3
 import subprocess
@@ -149,6 +213,11 @@ STUB_REPLY = json.dumps({
 # a mid-flow failure never got to return.
 LIVE: list = []
 
+# The signal an armed abort raises. Both daemons abort with `std::process::
+# abort()` and the broker's `Fault` hooks do the same, so a crash cell may
+# require THIS and not merely "a non-zero exit" (R3-I03).
+SIGABRT = int(signal.SIGABRT)
+
 
 def cleanup_live():
     while LIVE:
@@ -167,6 +236,7 @@ def need(cond, detail):
 # ------------------------------------------------------------ binaries ----
 
 _target_cache: dict[str, str] = {}
+_built: set = set()
 
 
 def _target_dir(repo: Path) -> Path:
@@ -179,13 +249,54 @@ def _target_dir(repo: Path) -> Path:
     return Path(_target_cache[key])
 
 
+def git_out(repo: Path, *args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(repo), *args],
+                                   text=True).strip()
+
+
+def head_of(repo: Path) -> dict:
+    return {"commit": git_out(repo, "rev-parse", "HEAD"),
+            "dirty": bool(git_out(repo, "status", "--porcelain"))}
+
+
+def assert_fresh(binary: Path):
+    """The staleness oracle, from cargo's OWN dependency record.
+
+    `<target>/debug/<name>.d` lists every source file the artifact was
+    compiled from, so this is exact: no guessing which crates a binary
+    links, and no false alarm from a test file that cannot change it. A
+    binary older than one of its own inputs means the gate would be
+    running a revision that no longer exists in the tree (R3-I02)."""
+    dep_file = binary.with_suffix(".d")
+    need(dep_file.exists(),
+         f"cargo wrote no dependency record for {binary.name}: freshness "
+         f"cannot be checked")
+    stamp = binary.stat().st_mtime
+    for line in dep_file.read_text(encoding="utf-8").splitlines():
+        if ": " not in line:
+            continue
+        for token in line.split(": ", 1)[1].split():
+            source = Path(token)
+            if not source.is_file():
+                continue
+            need(source.stat().st_mtime <= stamp,
+                 f"{binary.name} is older than its own input {source}: the "
+                 f"gate would be testing a stale revision")
+
+
 def _binary(repo: Path, package: str, name: str) -> str:
+    """One daemon/CLI binary, ALWAYS rebuilt once per run (R3-I02:
+    "reuse of an existing binary can mix revisions"), then checked against
+    its own repo's newest source file — so a build that silently failed to
+    pick a change up cannot pass the gate."""
     path = _target_dir(repo) / "debug" / name
-    if not path.exists():
+    if package not in _built:
         subprocess.check_call(
             ["cargo", "build", "-q", "-p", package,
              "--manifest-path", str(repo / "Cargo.toml")])
+        _built.add(package)
     need(path.exists(), f"binary missing after build: {path}")
+    assert_fresh(path)
     return str(path)
 
 
@@ -216,21 +327,71 @@ def kovee_mcp_bin():
 def driver_bin() -> str:
     """The kovee-side driver: kovee's own crates, linked into one binary
     the scenario can call. Built in its own workspace so it never enters
-    byom's lockfile or lints."""
+    byom's lockfile or lints.
+
+    R3-I02, three ways: the driver is ALWAYS rebuilt (a reused binary
+    silently mixes kovee revisions); the build is handed the commit this
+    run means to gate and the driver's `build.rs` REFUSES TO COMPILE if
+    the tree it links is at another one; and the built binary is checked
+    against kovee's newest source file, so a stale artifact cannot pass."""
     path = _target_dir(DRIVER_DIR) / "debug" / "i1-kovee-driver"
-    # ALWAYS rebuild: reusing an existing binary silently mixes kovee
-    # revisions, so a driver compiled against an older kovee could pass a
-    # gate the current one fails (cargo is incremental, so this is cheap).
-    subprocess.check_call(["cargo", "build", "-q"], cwd=DRIVER_DIR)
+    kovee = head_of(KOVEE_ROOT)
+    subprocess.check_call(["cargo", "build", "-q"], cwd=DRIVER_DIR,
+                          env={**os.environ,
+                               "I1_KOVEE_COMMIT": kovee["commit"]})
     need(path.exists(), f"driver missing after build: {path}")
+    assert_fresh(path)
     return str(path)
+
+
+def assert_pinned(ev: Evidence) -> dict:
+    """The revisions this run gates, asserted rather than assumed.
+
+    The driver reports the commit its `build.rs` read out of the kovee tree
+    it LINKS (fixed path dependencies, so that tree is decided at compile
+    time); this compares it with the tree the harness resolved, and refuses
+    a mismatch or a driver built against a path that is not `$KOVEE_ROOT`.
+    `$I1_KOVEE_COMMIT`/`$I1_BYOM_COMMIT` pin the pair explicitly when CI
+    wants to."""
+    byom, kovee = head_of(REPO), head_of(KOVEE_ROOT)
+    reported = json.loads(subprocess.check_output(
+        [driver_bin(), "pinned"], input="{}", text=True))
+    need(reported.get("ok"), f"driver `pinned` failed: {reported}")
+    built = reported["result"]
+    need(built["kovee_commit"] == kovee["commit"],
+         f"the driver was built against kovee {built['kovee_commit']}, but "
+         f"{KOVEE_ROOT} is at {kovee['commit']}")
+    need(Path(built["kovee_path"]).resolve() == KOVEE_ROOT.resolve(),
+         f"the driver links {built['kovee_path']}, not $KOVEE_ROOT "
+         f"({KOVEE_ROOT})")
+    for name, expected, actual in (
+            ("I1_KOVEE_COMMIT", os.environ.get("I1_KOVEE_COMMIT"),
+             kovee["commit"]),
+            ("I1_BYOM_COMMIT", os.environ.get("I1_BYOM_COMMIT"),
+             byom["commit"])):
+        if expected:
+            need(actual.startswith(expected.strip()),
+                 f"${name} pins {expected}, the tree is at {actual}")
+    pinned = {"byom": byom, "kovee": kovee,
+              "driver_built_against": built,
+              "explicit_pins": {k: os.environ.get(k) for k in
+                                ("I1_KOVEE_COMMIT", "I1_BYOM_COMMIT")}}
+    ev.blob("pinned-revisions.json", json.dumps(pinned, indent=1))
+    return pinned
 
 
 # ------------------------------------------------------------ evidence ----
 
 class Evidence:
     """Per-test-id evidence: numbered step lines on stdout, a steps.jsonl
-    transcript, and named blobs, under evidence/<test-id>/."""
+    transcript, and named blobs, under evidence/<test-id>/.
+
+    Blobs are NAMESPACED per cell and a duplicate path is a FAILURE
+    (R3-I04). The crash matrix used to run seven cells through one
+    Evidence with a per-cell driver counter that restarted at 01, so cell
+    five's `driver-01-complete.json` silently overwrote cell one's — the
+    raw evidence for the earlier kill was simply gone. Now every cell
+    calls `namespace()` and a second write to one path raises."""
 
     def __init__(self, test_id: str):
         self.dir = EVIDENCE / test_id
@@ -238,17 +399,47 @@ class Evidence:
         self.dir.mkdir(parents=True)
         self.test_id = test_id
         self.n = 0
+        self.ns: str | None = None
+        self._written: dict[str, int] = {}
         self._steps = (self.dir / "steps.jsonl").open("w", encoding="utf-8")
+
+    def namespace(self, slug: str | None):
+        """Everything written from here on lands under <slug>/ — one
+        directory per cell, so no two cells can collide."""
+        self.ns = slug
+        if slug is not None:
+            (self.dir / slug).mkdir(parents=True, exist_ok=True)
 
     def step(self, title: str, **detail):
         self.n += 1
         row = {"step": self.n, "title": title, **detail}
+        if self.ns:
+            row["cell"] = self.ns
         self._steps.write(json.dumps(row) + "\n")
         self._steps.flush()
         print(f"  ok {self.n:02d}  {title}")
 
+    def path(self, name: str) -> Path:
+        return (self.dir / self.ns / name) if self.ns else (self.dir / name)
+
     def blob(self, name: str, text: str):
-        (self.dir / name).write_text(text, encoding="utf-8")
+        path = self.path(name)
+        key = str(path.relative_to(self.dir))
+        need(key not in self._written,
+             f"duplicate evidence path {key!r} (first written at step "
+             f"{self._written.get(key)}): raw evidence must never be "
+             f"overwritten")
+        self._written[key] = self.n
+        path.write_text(text, encoding="utf-8")
+
+    def reserve(self, name: str) -> Path:
+        """A path the DRIVER (not this process) will write — reserved so a
+        second cell cannot claim it either."""
+        path = self.path(name)
+        key = str(path.relative_to(self.dir))
+        need(key not in self._written, f"duplicate evidence path {key!r}")
+        self._written[key] = self.n
+        return path
 
     def close(self):
         self._steps.close()
@@ -348,7 +539,70 @@ def _unix_call(path: Path, line: str, preamble: str | None) -> str | None:
     return buf.decode().rstrip("\n")
 
 
-class ByomDaemon:
+class Killable:
+    """The crash-oracle half of a daemon handle (R3-I03).
+
+    A cell that kills a daemon must show the kill: the process it armed is
+    GONE, it died of the signal the fault raises, and a REPLACEMENT process
+    with a different pid answers afterwards. "Some non-zero exit happened"
+    is not that — an unrelated startup failure, or a refusal that never
+    aborted at all, produced the same green line before."""
+
+    proc: subprocess.Popen | None
+
+    def pid(self) -> int | None:
+        return None if self.proc is None else self.proc.pid
+
+    def kill(self):
+        if self.proc is not None:
+            self.proc.kill()
+            self.proc.wait()
+            self.proc = None
+
+    def wait_exit(self, timeout: float | None = None) -> int:
+        code = 0
+        if self.proc is not None:
+            code = self.proc.wait(timeout=timeout)
+            self.proc = None
+        return code
+
+    def died_and_was_replaced(self, old_pid: int | None,
+                              expect_signal: int | None,
+                              env: dict | None = None) -> dict:
+        """Waits for the armed process, requires the expected death, and
+        brings a REPLACEMENT up. Returns what happened, for the evidence.
+
+        The wait is BOUNDED: a fault that never fires leaves the daemon
+        happily serving, and this cell must then fail rather than hang."""
+        need(old_pid is not None, "no armed process to wait for")
+        try:
+            status = self.wait_exit(timeout=60)
+        except subprocess.TimeoutExpired:
+            raise Fail(f"pid {old_pid} is still serving after 60s: the "
+                       f"armed fault never fired") from None
+        need(not _alive(old_pid),
+             f"pid {old_pid} is still alive: the armed fault never fired")
+        if expect_signal is not None:
+            need(status == -expect_signal,
+                 f"the armed process exited {status}, not by signal "
+                 f"{expect_signal}: a non-zero exit is not the abort the "
+                 f"cell claims to have caused")
+        self.start(env)          # type: ignore[attr-defined]
+        new_pid = self.pid()
+        need(new_pid is not None and new_pid != old_pid,
+             f"no replacement process came up (old {old_pid}, new {new_pid})")
+        return {"armed_pid": old_pid, "exit_status": status,
+                "expected_signal": expect_signal, "replacement_pid": new_pid}
+
+
+def _alive(pid: int) -> bool:
+    """Whether a pid we spawned is still running. It is our own child, so
+    the kernel keeps it visible until it is reaped, and `wait_exit()` has
+    already reaped it — the /proc check is the honest one."""
+    return Path(f"/proc/{pid}").exists()
+
+
+class ByomDaemon(Killable):
     SURFACES = ("governance", "candidate", "participant", "runtime",
                 "projection")
 
@@ -480,17 +734,6 @@ class ByomDaemon:
             + led["delegated_to_children"])
         return led
 
-    def kill(self):
-        if self.proc is not None:
-            self.proc.kill()
-            self.proc.wait()
-            self.proc = None
-
-    def wait_exit(self):
-        if self.proc is not None:
-            self.proc.wait()
-            self.proc = None
-
     def restart(self, env: dict | None = None):
         self.kill()
         self.start(env)
@@ -501,7 +744,7 @@ class ByomDaemon:
         shutil.rmtree(self.run_dir, ignore_errors=True)
 
 
-class Koveed:
+class Koveed(Killable):
     """koveed on its two sockets: the external client surface and the
     disjoint worker surface (§23.3)."""
 
@@ -580,17 +823,6 @@ class Koveed:
     def count(self, sql: str, params: tuple = ()) -> int:
         return int(self.query(sql, params)[0]["n"])
 
-    def kill(self):
-        if self.proc is not None:
-            self.proc.kill()
-            self.proc.wait()
-            self.proc = None
-
-    def wait_exit(self):
-        if self.proc is not None:
-            self.proc.wait()
-            self.proc = None
-
     def restart(self, env: dict | None = None):
         self.kill()
         self.start(env)
@@ -622,11 +854,6 @@ def portable(seed: int) -> dict:
     """A cross-boundary `portable_public` digest — both sides recompute."""
     return {"class": "portable_public", "algorithm": "sha-256",
             "value_hex": f"{seed:02x}" * 32}
-
-
-def portable_of(text: str) -> dict:
-    return {"class": "portable_public", "algorithm": "sha-256",
-            "value_hex": hashlib.sha256(text.encode()).hexdigest()}
 
 
 def keyed_of(text: str) -> dict:
@@ -747,6 +974,20 @@ class AgentChannel:
             mcp.close(frames)
 
 
+def channel_socket_call(byom: ByomDaemon, token_file: Path,
+                        request: dict) -> dict:
+    """One call on a byomd channel surface, made by a SHORT-LIVED child of
+    this script (byomd binds a channel to ONE live process). The child
+    claims the channel, mints a per-call proof, calls, and exits."""
+    proc = subprocess.run(
+        [sys.executable, str(HERE / "run.py"), "--_agent-call",
+         str(byom.run_dir), str(token_file)],
+        input=json.dumps(request), capture_output=True, text=True)
+    need(proc.returncode == 0,
+         f"channel-call child failed ({proc.returncode}): {proc.stderr}")
+    return json.loads(proc.stdout)
+
+
 def agent_socket_call(byom: ByomDaemon, request: dict) -> dict:
     """One agent-channel call over byomd's participant socket, made by a
     SHORT-LIVED child of this script.
@@ -756,14 +997,8 @@ def agent_socket_call(byom: ByomDaemon, request: dict) -> dict:
     channel is held by one live process — so the call runs in a child that
     claims, calls, and exits, leaving the channel free for the next
     holder. The child is this same file (`--_agent-call`)."""
-    proc = subprocess.run(
-        [sys.executable, str(HERE / "run.py"), "--_agent-call",
-         str(byom.run_dir),
-         str(byom.token_file(f"participant-{AGENT}.token"))],
-        input=json.dumps(request), capture_output=True, text=True)
-    need(proc.returncode == 0,
-         f"agent-call child failed ({proc.returncode}): {proc.stderr}")
-    return json.loads(proc.stdout)
+    return channel_socket_call(
+        byom, byom.token_file(f"participant-{AGENT}.token"), request)
 
 
 def mode_agent_call(run_dir: str, token_file: str) -> int:
@@ -807,6 +1042,9 @@ class Driver:
         self.ev = ev
         self.env = dict(env or {})
         self.calls = 0
+        self.last_sends: dict | None = None
+        self.last_counter: Path | None = None
+        self.last_stdout = ""
 
     def base(self) -> dict:
         return {"store": str(self.kovee.store_path()),
@@ -817,6 +1055,13 @@ class Driver:
     def run(self, command: str, args: dict,
             expect_ok: bool = True) -> tuple[dict, int]:
         self.calls += 1
+        counter = None
+        if command == "complete":
+            # R3-I03: the send count lands in a file the DRIVER writes and
+            # THIS process reads, so a refusal (which returns a problem and
+            # no reply body) can still be checked for "not one byte left".
+            counter = self.ev.reserve(f"sends-{self.calls:02d}.json")
+            args = {**args, "send_counter": str(counter)}
         body = json.dumps({**self.base(), **args})
         proc = subprocess.run(
             [driver_bin(), command], input=body,
@@ -836,6 +1081,11 @@ class Driver:
                 reply = json.loads(proc.stdout.strip().splitlines()[-1])
             except json.JSONDecodeError:
                 reply = {}
+        self.last_sends = None
+        self.last_counter = counter
+        if counter is not None and counter.exists():
+            self.last_sends = json.loads(counter.read_text(encoding="utf-8"))
+        self.last_stdout = proc.stdout.strip()
         if expect_ok:
             need(proc.returncode == 0 and reply.get("ok"),
                  f"driver {command} failed ({proc.returncode}): "
@@ -851,6 +1101,21 @@ class Driver:
         need(code != 0 and not reply.get("ok"),
              f"driver {command} was expected to refuse: {reply}")
         return reply.get("problem") or {"error": reply.get("error")}
+
+    def durable_sends(self) -> int:
+        """The externally recorded send count of the last `complete` — the
+        number the error paths used to drop. Absent means the process never
+        got to report it (an armed abort), which is a different claim and
+        never reads as zero."""
+        need(self.last_sends is not None,
+             "the driver wrote no durable send counter: 'not one byte left' "
+             "cannot be claimed from an absent file")
+        return int(self.last_sends["sends"])
+
+    def no_send_counter(self) -> bool:
+        """True when the driver died before it could report — the only
+        honest reading of an absent counter."""
+        return self.last_sends is None
 
 
 def kovee_problem_kind(problem: dict) -> str:
@@ -987,15 +1252,31 @@ def byom_actor_rules(sov: str) -> dict:
         "endeavor.finalized": principal,
         "kovee.endeavor_formed": principal,
         "budget.delegated": principal,
+        # the CONTINUATION is the participant's own private state (§11.3)
+        "continuation.written": agent,
+        # the §13.2 effect axes: the SOURCE fact rides kovee's narrow
+        # effect-outcome adapter, the LOCAL consequence is a governance
+        # seat — two records, two owners, never one
+        "effect-outcome-admission.admitted": "kovee-adapter:effect-outcome",
+        "effect-governance-disposition.recorded": gov,
+        # the §7.4 onboarding path: the Society funds, kovee's broker
+        # consumes the one-shot compute, the hosted runtime claims
+        "onboarding-activation-offer.offered": gov,
+        "onboarding-compute-intent.authorized": gov,
+        "onboarding-compute-intent.consumed": "kovee-adapter:model-broker",
+        "onboarding-episode.completed": "kovee-adapter:model-broker",
     }
     prefix = {
         # the workload identity that holds the lease, and the candidate
         # channel that closes at admission
         "episode-lease.claimed": "runtime:",
         "episode.running": "runtime:",
+        "episode.yielded": "runtime:",
         "episode.completed": "runtime:",
         "pledge.underway": "participant:",
         "membership.accepted": "candidate:",
+        # the hosted candidate's own workload, named by its runtime binding
+        "onboarding-episode.claimed": "candidate-runtime:",
     }
     either = {
         # both the governance seat (mandate) and the agent (pledge, act)
@@ -1013,6 +1294,13 @@ def byom_actor_rules(sov: str) -> dict:
 def verify_byom_attribution(events: list, sov: str) -> list:
     rules = byom_actor_rules(sov)
     table = []
+    unmapped = sorted({e["kind"] for e in events
+                       if e["kind"] not in rules["exact"]
+                       and e["kind"] not in rules["prefix"]
+                       and e["kind"] not in rules["either"]})
+    need(not unmapped,
+         f"unchecked byom event kinds {unmapped}: the attribution map must "
+         f"be exhaustive")
     for e in events:
         kind, actor = e["kind"], e["actor_ref"]
         need(actor, f"byom event without an actor: {e}")
@@ -1204,6 +1492,59 @@ def kovee_bind_governance(kovee: Koveed, byom: ByomDaemon, society: str,
          "an exact retry must return the identical binding")
     need(kovee.count("SELECT COUNT(*) AS n FROM kovee_realm_byom_bindings")
          == 1, "a retry must not create a second binding")
+    # R3-I04: "overlap impossible" was NARRATED and never attempted. Both
+    # of these are now tried against the live daemon and must be refused.
+    overlapping = kovee.call(kv("governance_enable", None, "idem-i1-overlap",
+                                {"byom_endpoint_ref": "local",
+                                 "society_ref": society,
+                                 # `project:*` is already owned, and this
+                                 # extends it, so the two selectors overlap.
+                                 "exact_scope_selector":
+                                     "project:proj-i1-overlap/space:sp-1",
+                                 "allowed_project_and_space_selectors":
+                                     ["project:proj-i1-overlap/space:sp-1"],
+                                 "classification_binding_ref":
+                                     "class-bind-i1",
+                                 "expected_owner_revision":
+                                     owner["revision"]}))
+    need(overlapping.get("outcome") != "ok",
+         f"an OVERLAPPING governed scope must be refused, not enabled: "
+         f"{overlapping}")
+    overlap_detail = json.dumps(overlapping.get("problem") or {})
+    need("overlap" in overlap_detail,
+         f"the refusal must name the overlap rule: {overlapping}")
+    # A re-enable carrying CHANGED members cannot re-configure the seam.
+    # kovee answers "already active" for an owned scope (the D10 saga has
+    # nothing to do), and this checks that the answer is the COMMITTED
+    # configuration, not the one the caller just asked for.
+    changed = kovee.expect_ok(kv("governance_enable", None,
+                                 "idem-i1-reconfigure",
+                                 {"byom_endpoint_ref": "local",
+                                  "society_ref": society,
+                                  "exact_scope_selector": SCOPE,
+                                  "allowed_project_and_space_selectors":
+                                      [SCOPE],
+                                  "classification_binding_ref":
+                                      "class-bind-OTHER",
+                                  "expected_owner_revision": 0}))
+    need(changed["result"]["mapping"]["classification_binding_ref"]
+         == "class-bind-i1",
+         f"a re-enable must not re-configure the committed mapping: "
+         f"{changed['result']['mapping']}")
+    need(changed["result"]["binding"]["binding_ref"]
+         == result["binding"]["binding_ref"],
+         "and it names the same binding")
+    need(kovee.count("SELECT COUNT(*) AS n FROM kovee_realm_byom_bindings")
+         == 1,
+         "no refusal or re-enable may leave a second binding behind")
+    need(kovee.expect_ok(kv("governance_show", None, None, {}))["result"]
+         ["governance_owner"] == "byom",
+         "and the owner binding is untouched throughout")
+    result["refused_overlap"] = overlapping.get("problem")
+    result["reconfigure_ignored"] = {
+        "sent_classification_binding_ref": "class-bind-OTHER",
+        "committed": changed["result"]["mapping"][
+            "classification_binding_ref"]}
     return result
 
 
@@ -1264,29 +1605,30 @@ def kovee_deliberation(kovee: Koveed, ev: Evidence) -> dict:
             "question": q["contribution_id"], "event": event}
 
 
-def attention_notice(byom: ByomDaemon, stream: str, event: dict, key: str,
+def attention_notice(driver: Driver, stream: str, event: dict, key: str,
                      generation: int = 1) -> dict:
     """kovee Attention may NOTIFY byom's adapter of an admitted exact
     event; byom alone decides whether a Participant's WakeIntent and
     ActivityStream permit a new Episode (byom §16.4, family contract L25).
 
-    The notice rides byom's narrow attention runtime channel under the
-    token byomd published for this exact ActivityStream generation, and it
-    carries kovee's OWN committed event id. kovee ships no attention
-    sender yet (its `kovee-attention` crate is a stub), so the scenario
-    delivers the notice as that adapter would — the record, the surface
-    and the refusals are byom's own."""
-    token = byom.read_token(f"runtime-attention-{stream}.token")
-    return byom.expect_ok("runtime", {
-        "version": "0.2", "op": "attention_notice_record",
-        "meta": meta(byom.incarnation(), key),
-        "source_protocol": "kovee",
-        "source_endpoint_ref": "kovee-endpoint-local",
-        "source_event_ref": event["event_id"],
-        "source_event_digest": portable_of(event["event_id"]),
+    R3-I01 (f): the notice is now sent by KOVEE — the kovee-linked driver
+    verifies the event is in koveed's OWN ledger, derives the
+    cross-boundary `source_event_digest` with kovee's own hashing, and
+    sends over kovee's own byom client (`Endpoint::call_with_preamble`) on
+    byomd's narrow attention channel, under the token byomd published for
+    this exact ActivityStream generation.
+
+    What is STILL not kovee's, said plainly: kovee's `kovee-attention`
+    crate is a two-line stub, so no AttentionContract subsystem exists to
+    DECIDE that this event deserves a notice, and kovee has no
+    `Workload::Attention` channel class — the driver reads byomd's token
+    file for it. The trigger is the scenario's; the record, the surface,
+    the digest and every refusal are the daemons' own."""
+    return driver.ok("attention-notice", {
         "activity_stream_ref": stream,
         "generation": generation,
-        "stable_notice_key": f"notice-{key}"}, token)
+        "source_event_ref": event["event_id"],
+        "stable_notice_key": f"notice-{key}"})
 
 
 def governed_setup(ev: Evidence, tag: str, provider_env: dict,
@@ -1329,12 +1671,18 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
     enabled = kovee_bind_governance(kovee, byom, society, driver, ev)
     ev.step("kovee: governance_enable — the D10 GREENFIELD saga against "
             "the live byomd: two INERT bindings, then the owner CAS "
-            "none -> byom at the expected revision; exact retry returns "
-            "the identical binding (crash-safe), overlap impossible",
+            "none -> byom at the expected revision; the exact retry "
+            "returns the identical binding (crash-safe), an OVERLAPPING "
+            "scope selector is ATTEMPTED and refused by the overlap rule, "
+            "and a re-enable carrying CHANGED members cannot "
+            "re-configure the committed mapping — nothing leaves a second "
+            "binding or moves the owner",
             binding_ref=enabled["binding"]["binding_ref"],
             governance_owner=enabled["owner_binding"]["governance_owner"],
             owner_revision=enabled["owner_binding"]["revision"],
-            state=enabled["state"])
+            state=enabled["state"],
+            refused_overlap=enabled["refused_overlap"],
+            reconfigure_ignored=enabled["reconfigure_ignored"])
 
     # 4. byomd configured with the inert host binding Kovee derived.
     host = install_host_binding(driver, byom, enabled, ev)
@@ -1384,8 +1732,8 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
     need(before == {"wake_intents": 0, "activation_admissions": 0,
                     "resource_allocations": 0, "episodes": 0},
          f"nothing has woken yet: {before}")
-    notice = attention_notice(byom, stream, ctx["event"], f"{tag}-n1")
-    r = notice["result"]
+    notice = attention_notice(driver, stream, ctx["event"], f"{tag}-n1")
+    r = notice["notice"]
     need(r["eligibility_effect"] == "no_effect", f"notice: {notice}")
     need(all(r["created"][k] is False for k in
              ("wake_intent", "activation_admission", "resource_allocation",
@@ -1397,20 +1745,39 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
     need(after == before,
          f"a notification alone creates no admission, no allocation and "
          f"no episode: {after}")
-    replayed = attention_notice(byom, stream, ctx["event"], f"{tag}-n1")
+    replayed = attention_notice(driver, stream, ctx["event"], f"{tag}-n1")
     need(replayed == notice, "the exact retry replays byte-identically")
     need(byom.count("SELECT COUNT(*) FROM attention_notices") == 1,
          "a replay commits no second notice")
-    ev.step("byom: attention_notice_record on the narrow attention runtime "
-            "channel, carrying KOVEE's own committed event id — "
-            "eligibility_effect=no_effect, created.{wake_intent,"
+    # An event kovee has NOT committed is not notifiable: kovee's own
+    # sender refuses before byom is touched (R3-I01 f).
+    invented = driver.problem("attention-notice", {
+        "activity_stream_ref": stream, "generation": 1,
+        "source_event_ref": "kvevt-not-in-koveed-ledger",
+        "stable_notice_key": f"notice-{tag}-invented"})
+    need("ledger" in json.dumps(invented),
+         f"kovee must refuse to notify byom of an event it never committed: "
+         f"{invented}")
+    need(byom.count("SELECT COUNT(*) FROM attention_notices") == 1,
+         "the refused notice reached no byom record")
+    ev.step("kovee -> byom: attention_notice_record, SENT BY KOVEE's own "
+            "byom client on byomd's narrow attention channel, carrying "
+            "kovee's own committed event id and a source digest kovee "
+            "derived — eligibility_effect=no_effect, created.{wake_intent,"
             "activation_admission,resource_allocation,episode} all false, "
-            "and byom's four activation tables are still EMPTY: "
-            "NOTIFICATION IS NOT A WAKE (L25)",
+            "byom's four activation tables still EMPTY (NOTIFICATION IS "
+            "NOT A WAKE, L25), the exact retry replays byte-identically, "
+            "and an event NOT in koveed's ledger is refused by kovee "
+            "before byom is touched. HONEST LIMIT: kovee's "
+            "`kovee-attention` crate is a two-line stub, so no "
+            "AttentionContract subsystem DECIDES to notify — the trigger "
+            "is the scenario's, the sender and every record are not",
             kovee_event=ctx["event"]["event_id"],
+            sender=notice["sender"],
             activation_rows=after,
             required_stages=r["required_stages"],
-            replay_byte_identical=True)
+            replay_byte_identical=True,
+            uncommitted_event_refused=True)
 
     # 8. The participant's OWN wake intent, citing that exact cause; then
     #    a second notice, whose AT-MOST effect is eligibility.
@@ -1424,8 +1791,8 @@ def governed_setup(ev: Evidence, tag: str, provider_env: dict,
     wake_id = wake["result"]["wake_intent_id"]
     need(wake["result"]["state"] == "submitted", f"wake: {wake}")
     ctx["wake"] = wake_id
-    second = attention_notice(byom, stream, ctx["event"], f"{tag}-n2")
-    effect = second["result"]["eligibility_effect"]
+    second = attention_notice(driver, stream, ctx["event"], f"{tag}-n2")
+    effect = second["notice"]["eligibility_effect"]
     need(effect in ("no_effect", "wake_intent_eligible"),
          f"notice effect: {second}")
     rows = activation_rows(byom)
@@ -1710,7 +2077,6 @@ def form_endeavor(kovee: Koveed, byom: ByomDaemon, ctx: dict, tag: str,
     side. It never bootstraps: the active Society, Standing, recovery
     epoch and realm binding are all required."""
     frontier, assembly, formation = formation_prepare(kovee, byom, ctx, tag)
-    need(True, "")
     prepared_state = kovee.expect_ok(kv(
         "endeavor_promotion_show", None, None,
         {"formation_id": formation}))["result"]
@@ -1718,6 +2084,77 @@ def form_endeavor(kovee: Koveed, byom: ByomDaemon, ctx: dict, tag: str,
          f"prepare: {prepared_state}")
     need(prepared_state["slot"]["state"] == "held",
          f"the formation slot is held: {prepared_state}")
+    # R3-I04: this line used to be `need(True, "")` — an assertion that
+    # asserted nothing, standing exactly where the saga's adversarial
+    # checks belong. Three of them, against the live daemons, all before
+    # the one legitimate attempt:
+    #   1. a formation cannot BOOTSTRAP a Society: prepared against a
+    #      society byomd does not know, it is refused;
+    #   2. nor under a stale participant binding epoch;
+    #   3. `start` on a formation id that does not exist is refused, so an
+    #      external link is never minted from a name.
+    epoch = int(byom.row("SELECT binding_epoch FROM participants"
+                         " WHERE participant_id = ?", ctx["sovereign"]) or 1)
+    def prepare_variant(key: str, society: str, binding_epoch: int) -> dict:
+        return kovee.call(kv(
+            "endeavor_promotion_prepare", None, f"idem-i1-prep-{key}",
+            {"byom_endpoint_ref": "local", "society_ref": society,
+             "frontier_ref": frontier,
+             "collaboration_context_bundle_ref": assembly,
+             "bound_participant_ref": ctx["sovereign"],
+             "participant_binding_epoch": binding_epoch,
+             "client_formation_key": f"form-key-{tag}-{key}",
+             "endeavor_proposal_ref": f"prop-i1-{key}",
+             "endeavor_proposal": {
+                 "purpose_ref": "purpose-improve-i1",
+                 "purpose_digest": portable(0xE1),
+                 "sponsor_participant_refs": [ctx["sovereign"]],
+                 "governance_rule_set_ref": "rules-endeavor-i1",
+                 "outcome_schema_refs": ["schema-change-set-1"],
+                 "acceptance_rule_ref": "rule-accept-1",
+                 "classification_join_ref": "class-join-1",
+                 "budget_account_set_ref": f"budget-endeavor-{tag}"},
+             "source_principal_position": {
+                 "participant_ref": ctx["sovereign"], "value": "assent",
+                 "assent_mode": "direct_participant"}}))
+    foreign = prepare_variant("foreign-society", "soc-not-this-installation",
+                              epoch)
+    need(foreign.get("outcome") != "ok",
+         f"a formation must not prepare against a Society byomd does not "
+         f"know: {foreign}")
+    # A stale participant binding epoch passes PREPARE — prepare makes no
+    # external contact at all, which is the property the step below
+    # asserts — and is then refused by BYOM at `start`, where the
+    # delegated-principal attempt actually reaches the Society.
+    stale_epoch = prepare_variant("stale-epoch", ctx["society"], epoch + 7)
+    need(stale_epoch.get("outcome") == "ok",
+         f"prepare is local, so a stale epoch cannot be caught here: "
+         f"{stale_epoch}")
+    stale_start = kovee.call(kv(
+        "endeavor_promotion_start", None, "idem-i1-start-stale",
+        {"formation_id": stale_epoch["result"]["formation_id"],
+         "authentication_observation_ref": f"authobs-{tag}-stale"}))
+    need(stale_start.get("outcome") != "ok",
+         f"byom must refuse a formation attempt under a stale participant "
+         f"binding epoch: {stale_start}")
+    need(byom.count("SELECT COUNT(*) FROM endeavors") == 0,
+         "the refused attempt formed no Endeavor")
+    unknown = kovee.call(kv("endeavor_promotion_start", None,
+                            "idem-i1-start-unknown",
+                            {"formation_id": "efi-not-a-formation",
+                             "authentication_observation_ref":
+                                 f"authobs-{tag}-x"}))
+    need(unknown.get("outcome") != "ok",
+         f"`start` on a formation that does not exist must be refused: "
+         f"{unknown}")
+    need(byom.count("SELECT COUNT(*) FROM endeavors") == 0,
+         "no refusal may form an Endeavor")
+    ctx["formation_refusals"] = {
+        "prepare_foreign_society":
+            (foreign.get("problem") or {}).get("type"),
+        "start_under_stale_binding_epoch":
+            (stale_start.get("problem") or {}).get("type"),
+        "start_unknown_formation": (unknown.get("problem") or {}).get("type")}
     # prepare makes NO external contact: byom has no Endeavor yet.
     snap = byom.expect_ok("projection", {
         "version": "0.2", "op": "snapshot_get",
@@ -1811,10 +2248,16 @@ def form_endeavor_start(kovee: Koveed, byom: ByomDaemon, ctx: dict,
             "kovee_endeavor_form: EXACTLY ONE active Endeavor, the slot "
             "released, and a byte-identical replay that forms nothing "
             "new — Position + GovernanceDecision + Endeavor as one "
-            "atomic result",
+            "atomic result. Attempted and refused FIRST: a prepare "
+            "against a Society byomd does not know, a START under a "
+            "stale participant binding epoch (refused by BYOM, since "
+            "prepare is local), and a `start` on a "
+            "formation id that does not exist — a formation never "
+            "bootstraps anything",
             formation_id=formation, endeavor=endeavor,
             frontier=frontier, assembly=assembly,
-            byom_endeavor_rows=1)
+            byom_endeavor_rows=1,
+            refusals=ctx.get("formation_refusals"))
     return {"endeavor": endeavor, "formation": formation,
             "assembly": assembly, "frontier": frontier}
 
@@ -1923,6 +2366,59 @@ def worker_call(kovee: Koveed, ctx: dict, transport: dict, prompt: str,
                        "fence": claimed["result"]["fence_epoch"]}
 
 
+def worker_model_complete(kovee: Koveed, ctx: dict, transport: dict,
+                          prompt: str, call_args: dict,
+                          authorization: dict) -> dict:
+    """koveed's REAL worker-socket `model_complete` (R3-I02).
+
+    The driver exists because kovee exposes the episode pipeline as library
+    API only — but the model call is NOT in that set: koveed serves
+    `model_complete` on its disjoint §23.3 worker socket, and that op owns
+    the parsing, the worker attempt-binding authentication, the mutexed
+    store and — decisively — the choice of egress. Driving the broker only
+    through the driver meant the harness chose the wire.
+
+    This is the op, on the live daemon, with exactly the members a worker
+    may express: no provider, host, header, credential or transport is
+    nameable here, and the daemon supplies the wire.
+
+    HONEST LIMIT, stated because it is the residual of this fix: koveed's
+    `Daemon` constructs `HttpsTransport` unconditionally and kovee's
+    recording double exists only under kovee-effects' `testing` feature, so
+    the daemon has no no-network wire to offer and a COMPLETING call
+    through this op would have to reach a real provider. The gate therefore
+    drives the op at the points where it must refuse BEFORE egress (no
+    permit; a spent permit) — the whole authority chain, zero bytes — and
+    the completing dispatch still runs in the kovee-linked driver over
+    kovee's sealed `Egress::recording`. Closing the residual needs one
+    kovee-side change: a `testing`-gated daemon egress."""
+    return kovee.call({
+        "version": "0.1", "op": "model_complete", "realm_id": REALM,
+        "project_id": ctx["project"],
+        "meta": {"request_id": f"req-worker-model-{authorization['act_revision']}",
+                 "idempotency_key":
+                     f"idem-worker-model-{authorization['stable_execution_key']}"
+                     f"-r{authorization['act_revision']}"},
+        "args": {
+            "attempt_id": call_args["attempt_id"],
+            "fence_epoch": call_args["fence_epoch"],
+            "model_profile_ref": transport["model_profile_ref"],
+            "purpose_ref": "purpose-explore-i1",
+            "classification_ref": "class-public",
+            "system": "Answer with OK.",
+            "prompt": prompt,
+            "max_output_tokens": 16,
+            "stable_binding_key": ctx["bound"]["stable_binding_key"],
+            "act_intent_ref": authorization["act_intent_ref"],
+            "act_intent_digest": authorization["act_intent_digest"],
+            "act_revision": authorization["act_revision"],
+            "subject_digest": authorization["subject_digest"],
+            "stable_execution_key": authorization["stable_execution_key"],
+            "budget_reservation_set_ref":
+                authorization["budget_reservation_set_ref"]}},
+        worker=True)
+
+
 def prepare_act(byom: ByomDaemon, agent, ctx: dict, staged: dict, tag: str,
                 key: str) -> dict:
     """`act_intent_prepare` for the Δ4 `model_egress` class, over the
@@ -2019,15 +2515,42 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
          == f"model-profile:{transport['model_profile_ref']}",
          "the disclosure names the EXACT model profile bytes leave "
          f"through, not a vendor: {staged}")
+    # R3-I04: `exact_items` used to be printed and never checked. §16.2 is
+    # about the FINAL BYTES, so this compares kovee's committed items with
+    # the exact strings this scenario is sending — ref, digest and size,
+    # item by item, plus the total.
+    expect_items = [
+        {"ref": f"{attempt}#system",
+         "digest": hashlib.sha256(call_args["system"].encode()).hexdigest(),
+         "size": len(call_args["system"].encode())},
+        {"ref": f"{attempt}#prompt",
+         "digest": hashlib.sha256(call_args["prompt"].encode()).hexdigest(),
+         "size": len(call_args["prompt"].encode())}]
+    got_items = [{"ref": i["ref"],
+                  "digest": i["digest"]["value_hex"],
+                  "size": i["size"]} for i in staged["exact_items"]]
+    need(got_items == expect_items,
+         f"the disclosure's exact_items must be the exact bytes that "
+         f"leave: {got_items} vs {expect_items}")
+    need(all(i["digest"]["class"] == "portable_public"
+             for i in staged["exact_items"]),
+         f"each item digest is re-derivable by byom: {staged['exact_items']}")
+    need(staged["total_bytes"] == sum(i["size"] for i in expect_items),
+         f"total_bytes is the sum of the exact items: {staged}")
     ev.step("kovee: the §16.2 DisclosureManifest is STAGED and COMMITTED "
             "before any authority is asked for — it names the exact "
-            "model profile the bytes leave through, the exact items, and "
-            "the provider's asserted {region, retention, training_use}",
+            "model profile the bytes leave through, the provider's "
+            "asserted {region, retention, training_use}, and exact_items "
+            "that this run RE-DERIVED independently: ref, sha-256 and "
+            "byte size per item and the total, over the very strings it "
+            "is sending",
             disclosure=staged["disclosure_manifest_ref"],
             provider_claims=claims,
             recipient_binding=staged["recipient_binding"],
             model_selector=staged["model_selector"],
             invocation=invocation_id, attempt=attempt, fence_epoch=fence,
+            exact_items=got_items,
+            items_reproduced_independently=True,
             total_bytes=staged["total_bytes"])
 
     # byom's own act chain over kovee's committed disclosure.
@@ -2057,6 +2580,27 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
     detail = str(refused.get("detail") or "")
     need("prepared" in detail,
          f"byom's own answer must name the act's state: {refused}")
+    # R3-I03: the refusal path used to DROP the send count (the reply is a
+    # problem, and the count only ever rode the ok reply). The driver now
+    # writes it to a file this process reads, so "not one byte left" is a
+    # number from outside the failing call, not an inference.
+    refused_sends = driver.durable_sends()
+    need(refused_sends == 0,
+         f"a refused call must leave the transport untouched, and the "
+         f"external counter says {refused_sends}")
+    # The SAME refusal over koveed's REAL worker-socket `model_complete`
+    # (R3-I02): the op koveed exposes, with koveed's own parsing,
+    # authentication of the worker attempt binding, mutexed store and
+    # DAEMON-CHOSEN egress. It refuses before the socket, so the
+    # deterministic gate can drive the real op with no network at all.
+    worker_refusal = worker_model_complete(kovee, ctx, transport, prompt,
+                                           call_args, authorization)
+    need(worker_refusal["outcome"] != "ok",
+         f"koveed's own worker op must refuse an unauthorized act: "
+         f"{worker_refusal}")
+    need("prepared" in json.dumps(worker_refusal),
+         f"and its refusal is byom's own answer about the act's state: "
+         f"{worker_refusal}")
     effect = driver.ok("effect-show",
                        {"execution_key": act["stable_execution_key"]})
     need(effect["effect"]["state"] == "prepared",
@@ -2066,12 +2610,20 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
     need(byom.count("SELECT COUNT(*) FROM execution_consumption_receipts")
          == 0 and byom.count("SELECT COUNT(*) FROM mandate_uses") == 0,
          "byom minted no receipt and inserted no MandateUse")
-    ev.step("kovee broker REFUSES without the permit: byom answers that "
-            "the act is only `prepared`, the Effect row is already "
-            "COMMITTED prepared (write order = the safety property), "
-            "there is NO attempt, NO consumption, NO receipt and NO "
-            "MandateUse — and not one byte left the process",
+    ev.step("kovee broker REFUSES without the permit — through the driver "
+            "AND through koveed's own worker-socket `model_complete`: "
+            "byom answers that the act is only `prepared`, the Effect row "
+            "is already COMMITTED prepared (write order = the safety "
+            "property), there is NO attempt, NO consumption, NO receipt "
+            "and NO MandateUse, and the EXTERNAL durable send counter "
+            "reads 0 — the refusal path no longer discards it",
             problem=refused.get("type"), detail=detail,
+            durable_transport_sends=refused_sends,
+            worker_socket_op="model_complete",
+            worker_socket_refusal=worker_refusal.get("problem", {}).get(
+                "type") or worker_refusal.get("outcome"),
+            worker_socket_refusal_detail=str(
+                worker_refusal.get("problem", {}).get("detail"))[:240],
             effect_state=effect["effect"]["state"],
             byom_receipts=0, byom_mandate_uses=0)
 
@@ -2105,6 +2657,8 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
         need(completion["transport_send_count"]
              == transport["expect_send_count"],
              f"exactly one exchange: {completion}")
+        need(driver.durable_sends() == transport["expect_send_count"],
+             f"and the EXTERNAL counter agrees: {driver.last_sends}")
     usage = completion["usage"]
 
     # byom's side of the permit: ONE receipt, max_uses 1, ONE MandateUse.
@@ -2226,20 +2780,47 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
     need(a["committed"] == charged,
          f"the charge left kovee's `reserved` for `committed`: {a}")
 
-    # A SPENT one-shot permit refuses a second dispatch — kovee's own gate
-    # answers before any byte can leave, and byom never sees a second
-    # consumption.
+    # A SPENT one-shot permit REFUSES a second dispatch. R3-I04: this was
+    # narrated as "the exact retry replays" — it is not a replay, it is a
+    # refusal, and the difference is the whole point of a one-shot permit.
+    # The durable counter proves the refusal happened before the wire.
     spent = driver.problem("complete", {
         **call_args, **transport["args"],
         "authorization": authorization})
     need("spent" in str(spent.get("detail") or ""),
          f"the one-shot permit must refuse a second dispatch: {spent}")
+    spent_sends = driver.durable_sends()
+    need(spent_sends == 0,
+         f"the refused second dispatch sent nothing, and the external "
+         f"counter says {spent_sends}")
     need(byom.count("SELECT COUNT(*) FROM mandate_uses") == 1,
          "a refused second dispatch never inserts a second MandateUse")
     after = driver.ok("effect-show",
                       {"execution_key": act["stable_execution_key"]})
     need(len(after["attempts"]) == len(effect["attempts"]),
          f"a refused second dispatch adds no attempt: {after}")
+    # And the same refusal through koveed's OWN worker-socket op (R3-I02),
+    # so the spent-permit gate is proven on the daemon's path too.
+    worker_spent = worker_model_complete(kovee, ctx, transport, prompt,
+                                         call_args, authorization)
+    need(worker_spent["outcome"] != "ok",
+         f"koveed's worker op must refuse a spent permit: {worker_spent}")
+    need("spent" in json.dumps(worker_spent),
+         f"and name it spent: {worker_spent}")
+    need(byom.count("SELECT COUNT(*) FROM mandate_uses") == 1,
+         "the worker-op refusal inserts no MandateUse either")
+    # The model call is a WORKER operation and nothing else: the same
+    # request on the external client surface is not even an operation
+    # there (§23.3's disjoint surfaces, asserted rather than assumed).
+    external = kovee.call({
+        "version": "0.1", "op": "model_complete", "realm_id": REALM,
+        "project_id": ctx["project"],
+        "meta": {"request_id": "req-external-model",
+                 "idempotency_key": "idem-external-model"},
+        "args": {}})
+    need(external.get("outcome") != "ok",
+         f"model_complete must not exist on the external surface: "
+         f"{external}")
 
     # The disclosure manifest, read from KOVEE's own read surface.
     shown = kovee.expect_ok(kv("disclosure_manifest_show", None, None,
@@ -2253,9 +2834,11 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
             "execution_permit_consume on byom's permit channel yields ONE "
             "receipt (max_uses 1) and ONE MandateUse; the effect goes "
             "prepared -> dispatching -> completed on the recorded wire; "
-            "usage is metered back to byom and BYOM settles it; the exact "
-            "retry replays with no second MandateUse and no second "
-            "dispatch",
+            "usage is metered back to byom and BYOM settles it. A second "
+            "dispatch of the SPENT one-shot permit is REFUSED — not "
+            "replayed: no second MandateUse, no second attempt, and the "
+            "external send counter reads 0 for it — and koveed's own "
+            "worker-socket `model_complete` refuses it the same way",
             effect=completion["effect_id"],
             transport_profile=completion["transport_profile"],
             usage=usage, charged=charged,
@@ -2264,7 +2847,13 @@ def broker_call(kovee: Koveed, byom: ByomDaemon, driver: Driver,
             kovee_usage_report=report["stable_report_key"],
             settled_by_byom=report["settled_by_byom"],
             byom_measured=measured, byom_charged=charged_q,
-            second_dispatch_refused=spent.get("type"),
+            second_dispatch_refused_as_spent=spent.get("type"),
+            second_dispatch_durable_sends=spent_sends,
+            worker_socket_spent_refusal=worker_spent.get(
+                "problem", {}).get("type"),
+            worker_socket_spent_detail=str(
+                worker_spent.get("problem", {}).get("detail"))[:240],
+            model_complete_absent_on_external_surface=True,
             disclosure_claims=disclosed["provider_claims"])
     return {"charged": charged, "usage": usage, "effect": completion,
             "act_committed": act_committed[0],
@@ -2325,6 +2914,21 @@ def per_source_trails(ctx: dict, ev: Evidence, label: str):
             broker_actor="svc-kovee-model-broker")
 
 
+def cell_attribution(byom: ByomDaemon, genesis: str, sov: str,
+                     ev: Evidence, label: str) -> list:
+    """Every event a CELL produced, checked against the same exhaustive
+    actor map the main flow uses — so the records the new cells introduce
+    (the Continuation, the yield, both effect heads, the onboarding path)
+    are attributed too, and an unmapped kind fails the gate."""
+    events = timeline(byom, genesis)
+    table = verify_byom_attribution(events, sov)
+    ev.blob("byom-attribution.json", json.dumps(table, indent=1))
+    ev.blob("byom-timeline.json",
+            json.dumps([e["kind"] for e in events], indent=1))
+    need(len({r["kind"] for r in table}) >= 1, f"{label}: no events")
+    return table
+
+
 def honesty_labels(ev: Evidence, transport: dict, note: str = ""):
     ev.step("assurance profile, labeled honestly: DEVELOPER — no UID "
             "separation, no attested process identity, no asymmetric "
@@ -2340,6 +2944,786 @@ def honesty_labels(ev: Evidence, transport: dict, note: str = ""):
             transport_profile=transport["profile"], note=note)
 
 
+# ------------------------------------------- plan §8 I1: the extra cells ----
+
+# The hosted Manifestation the successor attempt runs under. It is backed by
+# KOVEE's own assistant deployment (`dep-local-dev`, revision 1, security
+# profile `developer`, status `active` — a row in koveed's schema), which is
+# what makes it a HOSTED Manifestation rather than the attached harness the
+# offer proposed.
+#
+# HONEST LIMIT, asserted below rather than glossed: byom mints
+# ManifestationRevisions ONLY inside `membership_offer`, which fixes
+# `kind: attached_harness`, and there is no byom operation that admits a
+# `host_kind: kovee_deployment` revision (`grep -rn kovee_deployment
+# byom/crates` finds nothing but the DESIGN.md enum). `placement_admit` also
+# does not resolve `selected_manifestation_ref` against that table. So the
+# hosted Manifestation is exercised as far as the two daemons' surfaces
+# reach: kovee SELECTS it at placement from its own deployment record, byom
+# COMMITS it on the Episode and in the PlacementAdmission, and both are read
+# back per source — while byom's own ManifestationRevision rows still say
+# `attached_harness`, which the evidence states.
+KOVEE_DEPLOYMENT = "dep-local-dev"
+HOSTED_MANIFESTATION = f"manif-hosted-{KOVEE_DEPLOYMENT}"
+
+
+def agent_refusal(agent: AgentChannel, tool: str, args: dict) -> str:
+    """One agent-channel call that MUST be refused, with the refusal text
+    returned so the cell can name it."""
+    mcp = agent.open()
+    try:
+        text, is_error = mcp.call(tool, args)
+        need(is_error, f"{tool} must be refused, it answered: {text}")
+        return text
+    finally:
+        mcp.close()
+
+
+def continuation_write(agent: AgentChannel, stream: str, episode: str,
+                       fence: int, head: int, summary: str,
+                       prior: dict | None = None) -> dict:
+    body = {"activity_stream_ref": stream, "generation": 1,
+            "summary_ref": summary, "unresolved_refs": [],
+            "exact_state_refs": [f"state-{summary}"],
+            "source_event_cursor": f"cursor-{summary}",
+            "expected_head_revision": head,
+            "classification_ref": "class-participant-private",
+            "episode_ref": episode, "byom_fence_epoch": fence}
+    if prior is not None:
+        body["prior_continuation_ref"] = prior["continuation_id"]
+        body["prior_continuation_digest"] = prior["digest"]
+    return agent.one("byom_continuation_write", body)["result"]
+
+
+def continuation_resume_cell(ev: Evidence) -> None:
+    """Plan §8 I1: **cross-Manifestation Continuation resume**, live.
+
+    One Episode writes the participant-owned Continuation and YIELDS; a
+    DIFFERENT, hosted Manifestation resumes from that portable Continuation
+    under a new Kovee invocation and a new byom fence, and advances the ONE
+    ContinuationHead through its CAS. Both halves are asserted from the
+    daemon that owns them: byom owns the Continuation, the head revision and
+    the Episode states; kovee owns the placement, the invocation fence and
+    the binding rows.
+
+    Why a successor EPISODE and not a second attempt of the first one: byom
+    records the Manifestation on the Episode at queueing, from the
+    PlacementAdmission, and a second `placement_admit` for the same
+    allocation is refused (the bridge is already `confirmed`). A resume
+    under a DIFFERENT Manifestation is therefore a new activation of the
+    same ActivityStream generation — which is exactly what the head CAS is
+    for, and what makes the hand-off portable rather than in-process."""
+    ev.namespace("continuation-resume")
+    tag = "i1cont"
+    ctx = governed_setup(ev, tag, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY},
+                         stop_after="activation")
+    try:
+        byom, kovee, driver = ctx["byom"], ctx["kovee"], ctx["driver"]
+        agent, stream = ctx["agent"], ctx["stream"]
+        first_episode, first_bound = ctx["episode"], ctx["bound"]
+        first_manifestation = byom.row(
+            "SELECT manifestation_ref FROM episodes WHERE episode_id = ?",
+            first_episode)
+        need(first_manifestation == ctx["manifestation"],
+             f"the first Episode runs under the admitted attached_harness "
+             f"Manifestation: {first_manifestation}")
+        need(byom.row("SELECT kind FROM manifestation_revisions"
+                      " WHERE manifestation_id = ?", ctx["manifestation"])
+             == "attached_harness",
+             "byom's own row says what kind the offer proposed")
+
+        # 1. The yielding attempt writes the Continuation: head 0 -> 1.
+        first_cont = continuation_write(
+            agent, stream, first_episode, first_bound["byom_fence_epoch"],
+            0, "summary-i1-yield")
+        need(first_cont["head_revision"] == 1,
+             f"the head advances to 1: {first_cont}")
+        need(first_cont["digest"]["class"] == "local_erasure_safe",
+             f"a Continuation is participant-private state, so its digest "
+             f"is erasure-safe: {first_cont}")
+
+        # The CAS is a CAS: a second write at the SAME expected revision
+        # loses, and a write citing the wrong predecessor is refused.
+        stale = agent_refusal(agent, "byom_continuation_write", {
+            "activity_stream_ref": stream, "generation": 1,
+            "summary_ref": "summary-i1-stale", "unresolved_refs": [],
+            "exact_state_refs": [], "source_event_cursor": "cursor-stale",
+            "expected_head_revision": 0,
+            "classification_ref": "class-participant-private",
+            "episode_ref": first_episode,
+            "byom_fence_epoch": first_bound["byom_fence_epoch"]})
+        need("stale" in stale or "conflict" in stale,
+             f"a stale expected_head_revision must lose the CAS: {stale}")
+        wrong_prior = agent_refusal(agent, "byom_continuation_write", {
+            "activity_stream_ref": stream, "generation": 1,
+            "summary_ref": "summary-i1-wrong-prior", "unresolved_refs": [],
+            "exact_state_refs": [], "source_event_cursor": "cursor-wrong",
+            "prior_continuation_ref": "cont-not-the-head",
+            "prior_continuation_digest": first_cont["digest"],
+            "expected_head_revision": 1,
+            "classification_ref": "class-participant-private",
+            "episode_ref": first_episode,
+            "byom_fence_epoch": first_bound["byom_fence_epoch"]})
+        need(byom.count("SELECT COUNT(*) FROM continuations") == 1,
+             "neither refusal wrote a Continuation")
+        need(int(byom.row("SELECT continuation_head_revision FROM"
+                          " activity_streams WHERE activity_stream_id = ?",
+                          stream)) == 1,
+             "and neither advanced the head")
+
+        # 2. KOVEE yields the Episode, naming the Continuation a successor
+        #    must resume from.
+        yielded = driver.ok("episode-yield", {
+            "stable_binding_key": first_bound["stable_binding_key"],
+            "continuation_ref": first_cont["continuation_id"]})["yielded"]
+        need(yielded["continuation_ref"] == first_cont["continuation_id"]
+             and yielded["successor_requires_new_binding"] is True,
+             f"kovee records the hand-off: {yielded}")
+        need(byom.row("SELECT state FROM episodes WHERE episode_id = ?",
+                      first_episode) == "yielded",
+             "byom's Episode is yielded")
+        need(byom.row("SELECT state FROM episode_lease_heads"
+                      " WHERE episode_id = ?", first_episode)
+             == "lease_yielding",
+             "and its lease head is the re-claimable one")
+
+        # 3. The successor activation: a new WakeIntent of the same
+        #    participant on the same ActivityStream generation, and byom's
+        #    kernel stages again.
+        wake2 = agent.one("byom_wake_intent_submit", {
+            "activity_stream_ref": stream, "generation": 1,
+            "origin": "direct_participant",
+            "exact_cause_ref": first_cont["continuation_id"],
+            "exact_cause_digest": keyed_of(first_cont["continuation_id"]),
+            "purpose_ref": "purpose-explore-i1",
+            "stable_wake_key": f"wake-{tag}-2",
+            "expires_at": FAR_FUTURE})["result"]["wake_intent_id"]
+        requested = agent.one("byom_episode_request", {
+            "activity_stream_ref": stream, "generation": 1,
+            "wake_intent_ref": wake2,
+            "activation_admission_ref": f"adm-{wake2}-r1"})["result"]
+        second_episode = requested["episode_id"]
+        need(second_episode != first_episode,
+             "the successor is its own Episode with its own allocation")
+
+        # 4. KOVEE places the successor under the HOSTED Manifestation,
+        #    with a new invocation and therefore a new binding key.
+        deployment = kovee.query(
+            "SELECT deployment_id, revision, security_profile, status"
+            " FROM assistant_deployments WHERE deployment_id = ?",
+            (KOVEE_DEPLOYMENT,))
+        need(len(deployment) == 1 and deployment[0]["status"] == "active",
+             f"the hosted Manifestation is backed by kovee's own active "
+             f"deployment record: {deployment}")
+        activated = driver.ok("episode-activate", {
+            "society_ref": ctx["society"], "recovery_epoch": 0,
+            "participant_ref": AGENT,
+            "participant_binding_epoch": ctx["binding_epoch"],
+            # THE DIFFERENT MANIFESTATION.
+            "manifestation_ref": HOSTED_MANIFESTATION,
+            "activity_stream_ref": stream, "generation": 1,
+            "wake_intent_ref": wake2,
+            "kovee_invocation_ref": f"kovee-inv-{tag}-successor",
+            "context_manifest_ref": "kovee-ctxman-i1",
+            "lease_ttl_seconds": 600,
+            "requested": {
+                "episode_ref": second_episode, "generation": 1,
+                "state": requested["state"],
+                "resource_allocation_ref":
+                    requested["resource_allocation_id"],
+                "resource_allocation_digest":
+                    requested["resource_allocation_digest"],
+                "parent_budget": requested["parent_budget"]}})
+        second_bound = activated["bound"]
+        need(second_bound["stable_binding_key"]
+             != first_bound["stable_binding_key"],
+             "the successor holds a NEW binding (family contract L21/L22)")
+        need(second_bound["kovee_invocation_fence"]
+             != first_bound["kovee_invocation_fence"]
+             or activated["placement"]["placement_id"]
+             != ctx["placement"]["placement_id"],
+             "under a new Kovee invocation")
+        need(byom.row("SELECT state FROM episodes WHERE episode_id = ?",
+                      second_episode) == "running",
+             "the successor Episode runs")
+        second_manifestation = byom.row(
+            "SELECT manifestation_ref FROM episodes WHERE episode_id = ?",
+            second_episode)
+        need(second_manifestation == HOSTED_MANIFESTATION
+             and second_manifestation != first_manifestation,
+             f"byom's OWN Episode row records the DIFFERENT, hosted "
+             f"Manifestation: {second_manifestation} vs "
+             f"{first_manifestation}")
+        need(byom.row("SELECT selected_manifestation_ref FROM"
+                      " placement_admissions WHERE kovee_placement_ref = ?",
+                      activated["placement"]["placement_id"])
+             == HOSTED_MANIFESTATION,
+             "and so does the PlacementAdmission byom committed")
+        kovee_placement = kovee.query(
+            "SELECT selected_manifestation_ref, host_runtime_binding,"
+            " kovee_invocation_ref, kovee_fence_epoch"
+            " FROM byom_placement_bindings WHERE placement_id = ?",
+            (activated["placement"]["placement_id"],))
+        need(len(kovee_placement) == 1
+             and kovee_placement[0]["selected_manifestation_ref"]
+             == HOSTED_MANIFESTATION,
+             f"kovee's own placement row selected it: {kovee_placement}")
+        # byom mints no `kovee_deployment` ManifestationRevision — stated,
+        # and CHECKED, so the label cannot rot into a false claim.
+        need(byom.count("SELECT COUNT(*) FROM manifestation_revisions"
+                        " WHERE kind <> 'attached_harness'") == 0,
+             "byom still mints only attached_harness ManifestationRevisions")
+
+        # 5. THE RESUME: the successor advances the ONE ContinuationHead,
+        #    citing the exact predecessor byom committed for the yielded
+        #    attempt — the portable hand-off, under a new fence and a
+        #    different Manifestation.
+        second_cont = continuation_write(
+            agent, stream, second_episode,
+            second_bound["byom_fence_epoch"], 1, "summary-i1-resume",
+            prior=first_cont)
+        need(second_cont["head_revision"] == 2,
+             f"the head advances to 2: {second_cont}")
+        rows = byom.rows(
+            "SELECT continuation_id, head_revision, prior_continuation_ref,"
+            " summary_ref FROM continuations WHERE activity_stream_ref = ?"
+            " ORDER BY head_revision", (stream,))
+        need([r["head_revision"] for r in rows] == [1, 2],
+             f"exactly two Continuations, in order: {rows}")
+        need(rows[1]["prior_continuation_ref"] == rows[0]["continuation_id"],
+             f"the successor's Continuation names its predecessor: {rows}")
+        shown = byom.expect_ok("projection", {
+            "version": "0.2", "op": "activity_show",
+            "activity_stream_ref": stream})["result"]
+        need(shown["continuation_head_revision"] == 2,
+             f"byom's own read surface reports the head: {shown}")
+        # The superseded attempt cannot advance the head any more.
+        superseded = agent_refusal(agent, "byom_continuation_write", {
+            "activity_stream_ref": stream, "generation": 1,
+            "summary_ref": "summary-i1-superseded", "unresolved_refs": [],
+            "exact_state_refs": [], "source_event_cursor": "cursor-sup",
+            "prior_continuation_ref": second_cont["continuation_id"],
+            "prior_continuation_digest": second_cont["digest"],
+            "expected_head_revision": 2,
+            "classification_ref": "class-participant-private",
+            "episode_ref": first_episode,
+            "byom_fence_epoch": first_bound["byom_fence_epoch"] + 9})
+        need(int(byom.row("SELECT continuation_head_revision FROM"
+                          " activity_streams WHERE activity_stream_id = ?",
+                          stream)) == 2,
+             "a superseded fence cannot advance the head")
+        ev.blob("continuations.json", json.dumps(rows, indent=1))
+        attribution = cell_attribution(byom, ctx["genesis"],
+                                       ctx["sovereign"], ev, "continuation")
+        ev.step("plan §8 I1 — CROSS-MANIFESTATION CONTINUATION RESUME: the "
+                "first Episode (attached_harness Manifestation) wrote the "
+                "participant-owned Continuation and kovee YIELDED it "
+                "naming that Continuation; a successor activation of the "
+                "same ActivityStream generation was placed by kovee under "
+                "a DIFFERENT, HOSTED Manifestation backed by kovee's own "
+                "active deployment record, with a new invocation fence and "
+                "a new binding key; the successor RESUMED by advancing the "
+                "one ContinuationHead 1 -> 2 citing the exact predecessor "
+                "ref+digest. Refused along the way: a stale "
+                "expected_head_revision, a wrong predecessor, and a write "
+                "from a superseded fence. HONEST LIMIT: byom mints "
+                "ManifestationRevisions only in `membership_offer` "
+                "(`kind: attached_harness`) and has no operation that "
+                "admits a `host_kind: kovee_deployment` revision, so the "
+                "hosted Manifestation is the one kovee SELECTS at "
+                "placement and byom COMMITS on the Episode and the "
+                "PlacementAdmission — checked in both stores — not a byom "
+                "`host_kind` row",
+                first_episode=first_episode,
+                first_manifestation=first_manifestation,
+                successor_episode=second_episode,
+                successor_manifestation=second_manifestation,
+                kovee_deployment=deployment[0],
+                first_binding_key=first_bound["stable_binding_key"],
+                successor_binding_key=second_bound["stable_binding_key"],
+                continuation_head=[r["head_revision"] for r in rows],
+                predecessor_link=rows[1]["prior_continuation_ref"],
+                refusals={"stale_head_revision": stale[:120],
+                          "wrong_predecessor": wrong_prior[:120],
+                          "superseded_fence": superseded[:120]},
+                byom_manifestation_kinds=byom.rows(
+                    "SELECT manifestation_id, kind, status FROM"
+                    " manifestation_revisions"),
+                attributed_event_kinds=sorted({r["kind"]
+                                               for r in attribution}))
+    finally:
+        cleanup_live()
+
+
+def ambiguous_effect_cell(ev: Evidence) -> None:
+    """Plan §8 I1: **one deliberately ambiguous effect walked through
+    EOA → disposition**, with the lock ordering and the conservative
+    settlement observable.
+
+    The ambiguity is FORCED, not simulated in a fixture: kovee's own
+    transport records the send and then reports an uncertain outcome, so
+    the request may have been received and billed. What follows is the two
+    INDEPENDENT axes of §13.2:
+
+        effect_outcome_admit  (byom runtime, kovee's WORKER channel)
+                              verified SOURCE facts only — no decision
+                              member exists in the shape at all
+        effect_reconcile      (byom governance, the human seat)
+                              the LOCAL consequence, under a fresh
+                              challenge, against the exact source
+                              admission
+
+    Both operations lock the EOA head BEFORE the disposition head, and both
+    heads then appear in the downstream dependency closure — asserted from
+    byom's own replies, not from the design document."""
+    ev.namespace("ambiguous-effect")
+    tag = "i1amb"
+    ctx = crash_cell_setup("ambiguous-effect", ev, tag)
+    try:
+        byom, kovee, driver = ctx["byom"], ctx["kovee"], ctx["driver"]
+        call_args, act, authorization = armed_broker_state(ctx, tag, "amb")
+        key = act["stable_execution_key"]
+        base = byom.ledger()
+
+        # 1. FORCE the ambiguity: the send is recorded, the outcome is not.
+        outcome = driver.ok("complete", {
+            **call_args, "transport": "recording_uncertain",
+            "uncertain_reason": "connection reset after the request flushed",
+            "authorization": authorization})
+        need(outcome["state"] == "ambiguous"
+             and outcome["retry_frozen"] is True,
+             f"the effect is ambiguous with retry frozen: {outcome}")
+        need(driver.durable_sends() == 1,
+             f"the request DID leave: {driver.last_sends}")
+        effect = driver.ok("effect-show", {"execution_key": key})
+        need(effect["usage_reports"] == []
+             and byom.count("SELECT COUNT(*) FROM usage_settlements") == 0,
+             f"nothing is metered or settled for an unobserved outcome: "
+             f"{effect}")
+
+        # 2. byom admits the SOURCE FACT on kovee's own worker channel.
+        admitted = driver.ok("effect-admit", {
+            "stable_binding_key": ctx["bound"]["stable_binding_key"],
+            "execution_key": key,
+            "act_intent_ref": authorization["act_intent_ref"],
+            "act_intent_digest": authorization["act_intent_digest"]})
+        basis = admitted["admission"]
+        source = admitted["source"]
+        need(source["outcome"] == "ambiguous",
+             f"kovee admits what its own rows say: {source}")
+        need(source["host_effect_digest"]["class"] == "portable_public"
+             and source["host_receipt_digest"]["class"] == "portable_public",
+             f"the host-owned digests cross the boundary unkeyed (A8): "
+             f"{source}")
+        need(basis["outcome"] == "ambiguous" and basis["revision"] == 1,
+             f"byom's EffectOutcomeAdmission: {basis}")
+        need(basis["lock_order"] == ["effect_outcome_admission_head",
+                                     "effect_governance_disposition_head"],
+             f"the EOA head is locked BEFORE the disposition head: {basis}")
+        closure = basis["dependency_closure"]
+        need(closure["effect_outcome_admission_heads"][0]["current_outcome"]
+             == "ambiguous",
+             f"the source head is in the closure: {closure}")
+        need(closure["effect_governance_disposition_heads"] == [],
+             f"and the disposition head member is present but empty: "
+             f"{closure}")
+        need(byom.count("SELECT COUNT(*) FROM governance_decisions"
+                        " WHERE kind = 'effect_reconciliation'") == 0,
+             "the source path forms NO GovernanceDecision (§13.2 path 1)")
+        # An ambiguous source admission carries no result: byom's shape
+        # refuses one, so "ambiguous" can never smuggle an outcome.
+        need(basis.get("result_ref") in (None, ""),
+             f"an ambiguous admission carries no result: {basis}")
+
+        # 3. The DISPOSITION: byom's governance seat, fresh challenge.
+        inc = byom.incarnation()
+
+        def reconcile(challenge: str, idem: str) -> dict:
+            return byom.call("governance", {
+                "version": "0.2", "op": "effect_reconcile",
+                "meta": meta(inc, idem),
+                "intent_ref": authorization["act_intent_ref"],
+                "intent_digest": authorization["act_intent_digest"],
+                "stable_execution_key": key,
+                "phase": "ambiguous_source",
+                "basis_source_admission_ref": basis["admission_id"],
+                "basis_source_admission_revision": basis["revision"],
+                "basis_source_admission_digest": basis["digest"],
+                "local_outcome": "failed",
+                "result_use": "unavailable",
+                "fresh_challenge_ref": challenge,
+                "late_source_policy": "quarantine_and_redecide"})
+
+        disposed = reconcile(f"challenge-{tag}-1", f"{tag}-rec1")
+        need(disposed.get("outcome") == "ok", f"reconcile: {disposed}")
+        r = disposed["result"]
+        need(r["phase"] == "ambiguous_source"
+             and r["result_use"] == "unavailable"
+             and r["disposition_head_state"] == "active_ambiguous",
+             f"the local consequence is recorded, held: {r}")
+        need(r["source_head_unchanged"]["current_outcome"] == "ambiguous"
+             and r["source_head_unchanged"]["current_admission_ref"]
+             == basis["admission_id"],
+             f"the disposition never advances the SOURCE head: {r}")
+        closure = r["dependency_closure"]
+        need(closure["effect_outcome_admission_heads"][0]["current_outcome"]
+             == "ambiguous"
+             and closure["effect_governance_disposition_heads"][0]["state"]
+             == "active_ambiguous",
+             f"BOTH heads are now in the downstream closure: {closure}")
+        need(closure["lock_order"] == ["effect_outcome_admission_head",
+                                       "effect_governance_disposition_head"],
+             f"in the same lock order: {closure}")
+        decision = r["governance_decision_ref"]
+        need(byom.row("SELECT kind FROM governance_decisions"
+                      " WHERE decision_id = ?", decision)
+             == "effect_reconciliation",
+             f"exactly one reconciliation decision: {decision}")
+        # A SECOND disposition needs a FRESH challenge: the same one is
+        # refused, so a disposition cannot be re-run on stale authority.
+        replayed_challenge = reconcile(f"challenge-{tag}-1", f"{tag}-rec2")
+        need(replayed_challenge.get("outcome") != "ok",
+             f"a second disposition on the SAME challenge must be refused: "
+             f"{replayed_challenge}")
+
+        # 4. The CONSERVATIVE settlement, in byom's own ledger: the act's
+        #    own reservation is committed (the permit was consumed before
+        #    the wire), and NOT ONE unit was charged for an effect nobody
+        #    observed — no usage report, no settlement, conservation holds.
+        led = byom.ledger()
+        act_committed = [x["amount"] for x in
+                         byom.reservations(state="committed")
+                         if x["holder_kind"] == "act_intent"]
+        need(len(act_committed) == 1,
+             f"the act's own reservation is committed once: {act_committed}")
+        need(led["committed"] == act_committed[0],
+             f"and NOTHING else is committed — the ambiguous effect is "
+             f"charged for nothing: {led}")
+        need(led["conserves"] and led["uncertain"] == 0,
+             f"conservation holds: {led}")
+        need(byom.count("SELECT COUNT(*) FROM usage_reports") == 0,
+             "no usage was reported for the ambiguous effect")
+        need(led["remaining"] == base["remaining"],
+             f"and the unspent reserve is untouched: {led} vs {base}")
+        # The one-shot permit is spent, so the ambiguous effect can never
+        # be quietly retried into a second charge.
+        retry = driver.problem("complete", {
+            **call_args, **RECORDING["args"],
+            "authorization": authorization})
+        need("spent" in str(retry.get("detail") or ""),
+             f"an ambiguous effect is never retried on the same permit: "
+             f"{retry}")
+        need(driver.durable_sends() == 0,
+             f"and that refusal sent nothing: {driver.last_sends}")
+        ev.blob("effect-heads.json", json.dumps(
+            {"source_admission": basis, "disposition": r,
+             "kovee_source_facts": source}, indent=1))
+        attribution = cell_attribution(byom, ctx["genesis"],
+                                       ctx["sovereign"], ev, "ambiguous")
+        ev.step("plan §8 I1 — AMBIGUOUS EFFECT walked through EOA -> "
+                "DISPOSITION: kovee's transport recorded the send and "
+                "reported an uncertain outcome (external counter = 1), so "
+                "the effect is AMBIGUOUS with retry frozen; kovee then "
+                "admitted the SOURCE FACTS on byom's worker channel with "
+                "portable host effect/receipt digests it derived itself "
+                "(no decision member exists in that shape, and byom formed "
+                "none), and byom's GOVERNANCE seat recorded the LOCAL "
+                "consequence under a FRESH challenge — result_use "
+                "unavailable, late_source_policy quarantine_and_redecide. "
+                "The EOA head is locked BEFORE the disposition head in "
+                "both operations, both heads are in the downstream "
+                "dependency closure, the same challenge is refused twice, "
+                "and the settlement is CONSERVATIVE: no usage report, no "
+                "settlement, nothing committed beyond the act's own "
+                "reservation, and a retry refused as spent",
+                effect_state="ambiguous", durable_sends=1,
+                retry_frozen=True,
+                source_admission=basis["admission_id"],
+                source_outcome=basis["outcome"],
+                lock_order=basis["lock_order"],
+                host_effect_ref=source["effect_id"],
+                host_receipt_ref=source["host_receipt_ref"],
+                host_cursor=source["host_cursor_or_signature_ref"],
+                disposition_decision=decision,
+                disposition_head=r["disposition_head_state"],
+                source_head_after_disposition=r["source_head_unchanged"],
+                closure_heads=[
+                    closure["effect_outcome_admission_heads"][0][
+                        "current_outcome"],
+                    closure["effect_governance_disposition_heads"][0][
+                        "state"]],
+                stale_challenge_refused=(
+                    replayed_challenge.get("problem") or {}).get("kind"),
+                byom_usage_reports=0, byom_settlements=0,
+                ledger=led, act_reservation=act_committed[0],
+                retry_refused_as=retry.get("type"),
+                attributed_event_kinds=sorted({r["kind"]
+                                               for r in attribution}))
+    finally:
+        cleanup_live()
+
+
+def onboarding_compute_cell(ev: Evidence) -> None:
+    """Plan §8 I1: the **one-shot OnboardingCompute path** — a hosted
+    candidate's `OnboardingComputeIntent` → `onboarding_compute_permit_
+    consume` → `OnboardingComputeReceipt`, with completion as EVIDENCE
+    ONLY. This is what makes C2's integration acceptance genuinely covered
+    at I1 (onboarding-compute here, dispatch at I2).
+
+    Two honest limits, both checked rather than asserted away:
+
+      * kovee has NO onboarding code (`grep -rn onboarding kovee/crates`
+        finds nothing), so no kovee subsystem owns this call. The consume,
+        the claim and the completion are sent by kovee's own byom client
+        from the kovee-linked driver, as the hosted candidate's runtime,
+        and the DECISION to call is the scenario's.
+      * byom's `onboarding_compute_permit_consume` shape demands
+        `local_erasure_safe` (byom-keyed) digests for three KOVEE-owned
+        objects — the provider context manifest, the disclosure manifest
+        and the model profile — which no kovee derivation can produce.
+        That is the same A8 direction R3-L01 closed for
+        `execution_permit_consume`, still open here; the three digests
+        therefore come from this scenario and the evidence says so. Every
+        value the receipt is CHECKED against is byom's own."""
+    ev.namespace("onboarding-compute")
+    tag = "i1onb"
+    candidate = "part-cand-hosted"
+    byom = ByomDaemon(tag, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+    kovee = Koveed(tag, byom, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+    driver = Driver(kovee, byom, ev, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+    try:
+        booted = bootstrap_society(byom, tag, ev)
+        society = booted["society"]
+        enabled = kovee_bind_governance(kovee, byom, society, driver, ev)
+        install_host_binding(driver, byom, enabled, ev)
+        inc = byom.incarnation()
+        subject = digest(0xB7)
+
+        # The Society OFFERS membership to a HOSTED candidate and then FUNDS
+        # the bounded onboarding activation with its one compute use.
+        offered = byom.expect_ok("governance", {
+            "version": "0.2", "op": "membership_offer",
+            "meta": meta(inc, f"{tag}-offer"),
+            "participant_ref": candidate,
+            "proposed_standing_ref": "standing-proposal-hosted",
+            "subject_digest": subject,
+            "offered_by_decision_ref": f"dec-society-{society}",
+            "expires_at": FAR_FUTURE})["result"]
+        offer_id = offered["offer_id"]
+        onboarding = f"onb-{offer_id}"
+        intent = f"oci-{onboarding}"
+        funded = byom.expect_ok("governance", {
+            "version": "0.2", "op": "onboarding_offer",
+            "meta": meta(inc, f"{tag}-fund"),
+            "membership_offer_ref": offer_id,
+            "candidate_participant_ref": candidate,
+            # The HOSTED Manifestation: byom binds its ref and digest here
+            # without minting a ManifestationRevision at all.
+            "proposed_manifestation_ref": HOSTED_MANIFESTATION,
+            "proposed_manifestation_digest": digest(0xB8),
+            "exact_context_ref": "ctx-onb-minimal",
+            "exact_context_digest": digest(0xB9),
+            "resource_reservation_ref": "resv-onb-i1",
+            "onboarding_compute_intent_ref": intent,
+            "expires_at": FAR_FUTURE,
+            "adopted_by_decision_ref": f"dec-offer-{offer_id}"})["result"]
+        need(funded["max_episodes"] == 1
+             and funded["general_effect_and_child_authority"] == "none"
+             and funded["membership_offer_state"] == "onboarding",
+             f"the offer is bounded by the RECORD, not by a request member: "
+             f"{funded}")
+        need(funded["allowed_operations"] == [
+                 "membership_refuse", "membership_accept",
+                 "candidate_self_policy_propose"],
+             f"§7.4 verbatim: the candidate channel may only refuse, "
+             f"accept, or return proposed policies: {funded}")
+        need(byom.row("SELECT state FROM onboarding_compute_intents"
+                      " WHERE compute_intent_id = ?", intent)
+             == "authorized",
+             "the one-shot compute intent is authorized by the funding")
+        intent_digest = json.loads(byom.row(
+            "SELECT digest FROM onboarding_compute_intents"
+            " WHERE compute_intent_id = ?", intent))
+
+        # kovee's own model profile, and a REAL kovee disclosure manifest id
+        # is not available on this path (there is no kovee onboarding
+        # broker), so the three peer-owned digests are the scenario's —
+        # named as such in the evidence.
+        consume_args = {
+            "compute_intent_ref": intent,
+            "compute_intent_digest": intent_digest,
+            "stable_compute_key": f"occ-{intent}",
+            "meta_key": f"occ-{intent}-c1",
+            "onboarding_fence_epoch": 1,
+            "expected_revision": funded["revision"],
+            "kovee_invocation_ref": f"kovee-inv-{tag}-onb",
+            "provider_context_manifest_ref": "kovee-pcm-onb-i1",
+            "provider_context_manifest_digest": digest(0xC3),
+            "disclosure_manifest_ref": "kovee-disclosure-onb-i1",
+            "disclosure_manifest_digest": digest(0xC4),
+            "model_profile_ref": RECORDING["model_profile_ref"],
+            "model_profile_digest": digest(0xC5)}
+        receipt = driver.ok("onboarding-consume", consume_args)["receipt"]
+        need(receipt["max_uses"] == 1,
+             f"§7.4: at most ONE compute use per offer: {receipt}")
+        need(all(receipt["grants"][g] == "none" for g in
+                 ("tools", "network", "workspace", "children",
+                  "reusable_participant_authority")),
+             f"the receipt grants NOTHING beyond the one compute: {receipt}")
+        receipt_id = receipt["receipt_id"]
+        need(byom.row("SELECT state FROM onboarding_compute_intents"
+                      " WHERE compute_intent_id = ?", intent) == "consumed",
+             "the one-shot authority is spent")
+
+        # A SECOND compute use with a CHANGED final manifest is refused.
+        second = driver.problem("onboarding-consume", {
+            **consume_args,
+            "meta_key": f"occ-{intent}-c2",
+            "expected_revision": funded["revision"] + 1,
+            "provider_context_manifest_digest": digest(0x0C)})
+        need("ONE compute use" in json.dumps(second),
+             f"a second compute use must be refused: {second}")
+        need(byom.count("SELECT COUNT(*) FROM onboarding_compute_receipts")
+             == 1, "and mint no second receipt")
+        # The EXACT retry recovers the stored receipt.
+        retried = driver.ok("onboarding-consume", {
+            **consume_args,
+            "meta_key": f"occ-{intent}-c3",
+            "expected_revision": funded["revision"] + 1})["receipt"]
+        need(retried["replayed"] is True
+             and retried["receipt_id"] == receipt_id,
+             f"the exact retry replays the stored receipt: {retried}")
+        need(byom.count("SELECT COUNT(*) FROM onboarding_compute_receipts")
+             == 1, "still exactly one receipt")
+
+        # The ONE onboarding Episode, claimed by the HOSTED runtime, citing
+        # the receipt; a second is refused.
+        receipt_digest = json.loads(byom.row(
+            "SELECT digest FROM onboarding_compute_receipts"
+            " WHERE receipt_id = ?", receipt_id))
+        claim_args = {
+            "onboarding_ref": onboarding,
+            "candidate_participant_ref": candidate,
+            "proposed_manifestation_ref": HOSTED_MANIFESTATION,
+            "proposed_manifestation_digest": digest(0xB8),
+            "onboarding_fence_epoch": 1,
+            "holder_runtime_binding": f"kovee-runtime-{KOVEE_DEPLOYMENT}",
+            "stable_claim_key": f"onbclaim-{tag}-1",
+            "compute_receipt_ref": receipt_id,
+            "compute_receipt_digest": receipt_digest}
+        claimed = driver.ok("onboarding-claim", claim_args)["claim"]
+        episode = claimed["onboarding_episode_id"]
+        need(claimed["max_episodes"] == 1
+             and claimed["acceptance_effect"] == "none",
+             f"the onboarding Episode grants no acceptance: {claimed}")
+        need(claimed["allowed_output_operations"] == [
+                 "refuse", "membership_accept",
+                 "candidate_self_policy_propose"],
+             f"§7.4 verbatim, on the output side too: {claimed}")
+        second_claim = driver.problem("onboarding-claim", {
+            **claim_args, "stable_claim_key": f"onbclaim-{tag}-2"})
+        need("max_episodes" in json.dumps(second_claim),
+             f"a second onboarding Episode is refused: {second_claim}")
+
+        # COMPLETION IS EVIDENCE ONLY.
+        completed = driver.ok("onboarding-complete", {
+            "onboarding_ref": onboarding,
+            "onboarding_episode_ref": episode,
+            "onboarding_fence_epoch": 1,
+            "expected_revision": 1,
+            "outcome": "completed",
+            "output_refs": ["candidate-output-i1"],
+            "evidence_refs": ["candidate-evidence-i1"]})["completion"]
+        need(completed["completion_is_evidence_only"] is True,
+             f"the reply says so: {completed}")
+        need(completed["acceptance"] == {
+                 "membership_accepted": False,
+                 "membership_acceptance_ref": None,
+                 "standing_created": False,
+                 "participant_authority_granted": False},
+             f"and names everything that did NOT happen: {completed}")
+        need(byom.row("SELECT state FROM membership_offers"
+                      " WHERE offer_id = ?", offer_id) == "onboarding",
+             "runtime output is never membership assent")
+        need(byom.row("SELECT acceptance_id FROM membership_offers"
+                      " WHERE offer_id = ?", offer_id) is None,
+             "no MembershipAcceptance follows a completed compute")
+        need(byom.count("SELECT COUNT(*) FROM standing_revisions"
+                        f" WHERE participant_ref = '{candidate}'") == 0,
+             "no Standing follows a completed compute")
+        need(byom.row("SELECT state FROM participants"
+                      " WHERE participant_id = ?", candidate) == "proposed",
+             "the candidate is still only proposed")
+
+        # Only the CANDIDATE's own act accepts — over its own channel.
+        #
+        # Not through byom-mcp here, and the reason is worth recording:
+        # `bridge.rs` derives `expected_revision: 1` for
+        # `membership_accept` (the offer's MINTED revision), while an
+        # onboarding-FUNDED offer sits at revision 2, so the tool binding
+        # answers `stale_revision` on this path. The candidate's own
+        # channel accepts it directly, with the revision byomd committed.
+        offer_revision = int(byom.row(
+            "SELECT revision FROM membership_offers WHERE offer_id = ?",
+            offer_id))
+        accepted = channel_socket_call(
+            byom, byom.token_file(f"candidate-{offer_id}.token"),
+            {"version": "0.2", "op": "membership_accept",
+             "meta": meta(byom.incarnation(), f"{tag}-accept",
+                          offer_revision),
+             "offer_ref": offer_id, "subject_digest": subject})
+        need(accepted.get("outcome") == "ok"
+             and accepted["result"]["offer_state"] == "accepted",
+             f"the candidate's own acceptance: {accepted}")
+        need(byom.row("SELECT state FROM membership_offers"
+                      " WHERE offer_id = ?", offer_id) == "accepted",
+             "only the candidate's own act accepts")
+        attribution = cell_attribution(byom, booted["genesis"],
+                                       sovereign_id(byom, society), ev,
+                                       "onboarding")
+        ev.step("plan §8 I1 — the ONE-SHOT OnboardingCompute path: the "
+                "Society funded a bounded OnboardingActivationOffer for a "
+                "HOSTED candidate (max_episodes 1, authority `none`, three "
+                "allowed candidate operations, all record constants); "
+                "kovee's client consumed the one-shot compute permit on "
+                "byom's BROKER channel and got an OnboardingComputeReceipt "
+                "with max_uses 1 and every grant `none`; a CHANGED second "
+                "use was refused and the exact retry replayed the stored "
+                "receipt; the ONE onboarding Episode was claimed by the "
+                "hosted runtime citing that receipt and a second claim was "
+                "refused; and COMPLETION IS EVIDENCE ONLY — the offer is "
+                "still `onboarding`, there is no acceptance, no Standing "
+                "and no participant authority, and only the CANDIDATE's "
+                "own act on its own channel accepted. HONEST LIMITS: kovee "
+                "ships no onboarding code, so the caller is kovee's client "
+                "and the trigger is the scenario's; and byom's shape still "
+                "demands byom-keyed digests for three kovee-owned objects "
+                "(the A8 direction R3-L01 closed for "
+                "execution_permit_consume), so those three values come "
+                "from this scenario",
+                candidate=candidate, offer=offer_id,
+                onboarding=onboarding, compute_intent=intent,
+                receipt=receipt_id, receipt_max_uses=1,
+                grants=receipt["grants"],
+                second_use_refused=True, exact_retry_replayed=True,
+                onboarding_episode=episode,
+                second_episode_refused=True,
+                completion_is_evidence_only=True,
+                acceptance=completed["acceptance"],
+                offer_state_after_completion="onboarding",
+                accepted_by="the candidate's own membership_accept on its "
+                            "own channel (byom-mcp pins expected_revision 1 "
+                            "for that op, so the tool binding cannot accept "
+                            "an onboarding-FUNDED offer at revision 2)",
+                scenario_supplied_digests=[
+                    "provider_context_manifest_digest",
+                    "disclosure_manifest_digest", "model_profile_digest"],
+                attributed_event_kinds=sorted({r["kind"]
+                                               for r in attribution}))
+    finally:
+        cleanup_live()
+
+
 # ------------------------------------------------------------ scripted ----
 
 RECORDING = {
@@ -2351,12 +3735,60 @@ RECORDING = {
 }
 
 
+# The plan-§8 I1 item list, and where this gate covers each one. The gate
+# FAILS if a covered item is not exercised, and the label of anything less
+# than complete travels with the evidence (R3-I01).
+PLAN_8_I1_ITEMS = [
+    ("greenfield binding saga", "governed-loop"),
+    ("AttentionContract notification (never a wake)", "governed-loop"),
+    ("the complete activation pipeline in A8 order", "governed-loop"),
+    ("hosted episode", "governed-loop"),
+    ("cross-Manifestation Continuation resume", "continuation-resume"),
+    ("a distinct hosted Manifestation", "continuation-resume"),
+    ("ambiguous effect: EOA -> disposition, lock order, conservative "
+     "settlement", "ambiguous-effect"),
+    ("execution path 1/3: hosted invocation through the disclosed metered "
+     "broker", "governed-loop"),
+    ("execution path 2/3: attached Claude Code", "harness-claude"),
+    ("execution path 3/3: attached Codex", "harness-codex"),
+    ("the one-shot OnboardingCompute path", "onboarding-compute"),
+    ("data boundary: synthetic data, provider claims bound by ref+digest, "
+     "honest developer/confined labels", "governed-loop"),
+]
+
+
+def plan_coverage(ev: Evidence, covered: dict):
+    """The gate's own coverage statement, checked. Every plan-§8 I1 item
+    names the cell that exercised it and how; an item marked `not covered`
+    fails the gate rather than being dropped from the list."""
+    ev.namespace(None)
+    rows = []
+    for item, cell in PLAN_8_I1_ITEMS:
+        state = covered.get(cell, "NOT EXERCISED")
+        rows.append({"plan_8_I1_item": item, "cell": cell, "how": state})
+        need(state != "NOT EXERCISED",
+             f"plan §8 I1 item {item!r} is not exercised by this gate")
+    ev.blob("plan-8-i1-coverage.json", json.dumps(rows, indent=1))
+    return rows
+
+
 def mode_scripted() -> int:
     ev = Evidence("i1-flow-scripted")
     print("i1-flow-scripted: the governed loop across both live daemons, "
           "with a STUB provider (no network) so the gate is deterministic")
     ctx = None
     try:
+        pinned = assert_pinned(ev)
+        ev.step("the revisions this gate is running, ASSERTED: the driver "
+                "reports the kovee commit its own build.rs read out of the "
+                "tree it links (a mismatch fails the BUILD), every daemon "
+                "and CLI binary was rebuilt in this run, and each one is "
+                "newer than every source file cargo says it was compiled "
+                "from",
+                byom=pinned["byom"], kovee=pinned["kovee"],
+                driver_built_against=pinned["driver_built_against"],
+                explicit_pins=pinned["explicit_pins"])
+        ev.namespace("governed-loop")
         ctx = scripted_flow(ev, "i1s", RECORDING,
                             {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY},
                             "Say OK.")
@@ -2369,7 +3801,97 @@ def mode_scripted() -> int:
                        "kovee's own RecordingTransport, which opens no "
                        "socket and stamps recording-test-double on the "
                        "effect")
+        cleanup_live()
+        # The plan-§8 I1 items the old gate excluded, each on its own live
+        # pair of daemons (R3-I01).
+        continuation_resume_cell(ev)
+        ambiguous_effect_cell(ev)
+        onboarding_compute_cell(ev)
+        rows = plan_coverage(ev, {
+            "governed-loop": "exercised live in this run",
+            "continuation-resume": "exercised live in this run",
+            "ambiguous-effect": "exercised live in this run",
+            "onboarding-compute": "exercised live in this run",
+            "harness-claude": "deterministic stand-in here (the same "
+                              "byom-mcp stdio surface and tool schemas); "
+                              "the real CLI session is `--harness claude`, "
+                              "gated by I1_REAL_HARNESS=1",
+            "harness-codex": "deterministic stand-in here (the same "
+                             "byom-mcp stdio surface and tool schemas); "
+                             "the real CLI session is `--harness codex`, "
+                             "gated by I1_REAL_HARNESS=1"})
+        ev.step("plan §8 I1 coverage, item by item: every item is "
+                "exercised by a named cell of this run — the greenfield "
+                "saga, the notice that is not a wake, the A8 activation "
+                "order, the hosted episode, the cross-Manifestation "
+                "Continuation resume, the distinct hosted Manifestation, "
+                "the ambiguous effect through EOA -> disposition, the "
+                "broker execution path, the one-shot OnboardingCompute "
+                "path and the data-boundary labels; the two ATTACHED "
+                "harness paths run their real CLI sessions under "
+                "I1_REAL_HARNESS=1 and their deterministic stand-in here",
+                coverage=rows)
         print(f"i1-flow-scripted: PASS ({ev.n} steps; evidence "
+              f"{ev.dir.relative_to(REPO)})")
+        return 0
+    finally:
+        ev.close()
+        cleanup_live()
+
+
+def mode_verify_trails() -> int:
+    """i1-trails: the per-source attribution focus.
+
+    The same live arc, with the actor map checked EXHAUSTIVELY over every
+    byom event of every cell — and the map's own negative run last: a
+    synthetic event of an unmapped kind must FAIL the check, so a record
+    this gate has never seen cannot pass unnoticed."""
+    ev = Evidence("i1-trails")
+    print("i1-trails: per-source attribution — byom's events over byom's "
+          "records, kovee's over kovee's, with an EXHAUSTIVE actor map")
+    ctx = None
+    try:
+        pinned = assert_pinned(ev)
+        ev.step("the revisions this run is checking, ASSERTED (R3-I02)",
+                byom=pinned["byom"], kovee=pinned["kovee"],
+                driver_built_against=pinned["driver_built_against"])
+        ev.namespace("governed-loop")
+        ctx = scripted_flow(ev, "i1t", RECORDING,
+                            {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY},
+                            "Say OK.")
+        per_source_trails(ctx, ev, "trails")
+        sov = ctx["sovereign"]
+        cleanup_live()
+        continuation_resume_cell(ev)
+        ambiguous_effect_cell(ev)
+        onboarding_compute_cell(ev)
+        ev.namespace(None)
+        # The map's own negative: an unmapped kind must FAIL.
+        try:
+            verify_byom_attribution([{"kind": "not.a.mapped.kind",
+                                      "actor_ref": GOV_ACTOR}], sov)
+        except Fail as refusal:
+            ev.step("the actor map is exhaustive BY CONSTRUCTION: a "
+                    "synthetic event of an unmapped kind FAILS the check "
+                    "instead of being skipped — so a new record kind "
+                    "cannot enter either daemon's trail unattributed",
+                    refusal=str(refusal))
+        else:
+            raise Fail("an unmapped event kind must fail --verify-trails")
+        # And an event with the WRONG author fails too.
+        try:
+            verify_byom_attribution([{"kind": "resource-allocation.reserved",
+                                      "actor_ref": f"participant:{AGENT}"}],
+                                    sov)
+        except Fail as refusal:
+            ev.step("and an event authored by the WRONG actor fails: the "
+                    "kernel's own stage-3 allocation attributed to the "
+                    "agent is refused, which is the property the whole map "
+                    "exists to hold",
+                    refusal=str(refusal))
+        else:
+            raise Fail("a mis-attributed kernel record must fail")
+        print(f"i1-trails: PASS ({ev.n} steps; evidence "
               f"{ev.dir.relative_to(REPO)})")
         return 0
     finally:
@@ -2466,6 +3988,7 @@ def mode_real_model() -> int:
         for provider, (secret, source) in available:
             ctx = None
             tag = f"i1r{provider['kind'][:3]}"
+            ev.namespace(f"real-{provider['kind']}")
             try:
                 ev.step(f"{provider['kind']}: credential resolved from "
                         f"{source} into the DAEMON's environment only — "
@@ -2598,6 +4121,51 @@ def harness_prompt(tool: str, args: dict) -> str:
     ])
 
 
+def harness_server_spec(byom: ByomDaemon, society: str) -> dict:
+    """The MCP server configuration BOTH harnesses are given: the real
+    byom-mcp binary in its PARTICIPANT profile, byomd's runtime directory,
+    the participant channel credential byomd minted, and the Society. No
+    other server, and no other environment."""
+    return {"byom": {
+        "command": byom_mcp_bin(),
+        "args": ["--profile", "participant"],
+        "env": {"BYOM_RUNTIME_DIR": str(byom.run_dir),
+                "BYOM_PARTICIPANT_TOKEN_FILE":
+                    str(byom.token_file(f"participant-{AGENT}.token")),
+                "BYOM_SOCIETY": society}}}
+
+
+def harness_launch(which: str, cli: str, prompt: str, server: dict,
+                   allowed: str, config_path: Path) -> list:
+    """The exact argv the attached harness is launched with. One function,
+    used both by the real session and by the deterministic stand-in, so the
+    stand-in cannot drift from what `--harness` actually runs."""
+    if which == "claude":
+        config_path.write_text(json.dumps({"mcpServers": server}, indent=1),
+                               encoding="utf-8")
+        return [cli, "-p", prompt, "--mcp-config", str(config_path),
+                "--strict-mcp-config", "--allowedTools", allowed]
+    overrides = []
+    for name, spec in server.items():
+        key = name.replace("-", "_")
+        overrides += ["-c", f"mcp_servers.{key}.command="
+                            f"{json.dumps(spec['command'])}"]
+        if spec.get("args"):
+            overrides += ["-c", f"mcp_servers.{key}.args="
+                                f"{json.dumps(spec['args'])}"]
+        for ek, evv in spec.get("env", {}).items():
+            overrides += ["-c", f"mcp_servers.{key}.env.{ek}="
+                                f"{json.dumps(evv)}"]
+    # Codex has no per-tool allowlist, so the grant is bounded
+    # structurally: with --ignore-user-config the session's ONLY MCP
+    # servers are the ones configured here. Both settings are required —
+    # an MCP tool call crosses a process boundary that the read-only and
+    # workspace-write sandboxes deny.
+    return [cli, "exec", "--skip-git-repo-check", "--ignore-user-config",
+            "-s", "danger-full-access", "-c", 'approval_policy="never"',
+            *overrides, prompt]
+
+
 class HarnessAgent:
     """The agent seat, driven by a REAL harness session per step.
 
@@ -2617,46 +4185,16 @@ class HarnessAgent:
         self.sessions = 0
 
     def server(self) -> dict:
-        return {"byom": {
-            "command": byom_mcp_bin(),
-            "args": ["--profile", "participant"],
-            "env": {"BYOM_RUNTIME_DIR": str(self.byom.run_dir),
-                    "BYOM_PARTICIPANT_TOKEN_FILE":
-                        str(self.byom.token_file(
-                            f"participant-{AGENT}.token")),
-                    "BYOM_SOCIETY": self.society}}}
+        return harness_server_spec(self.byom, self.society)
 
     def session(self, tool: str, args: dict):
         self.sessions += 1
         n = self.sessions
         prompt = harness_prompt(tool, args)
         allowed = f"mcp__byom__{tool}"
-        if self.which == "claude":
-            config = self.ev.dir / f"session-{n:02d}-{tool}.mcp.json"
-            config.write_text(json.dumps({"mcpServers": self.server()},
-                                         indent=1), encoding="utf-8")
-            argv = [self.cli, "-p", prompt, "--mcp-config", str(config),
-                    "--strict-mcp-config", "--allowedTools", allowed]
-        else:
-            overrides = []
-            for name, spec in self.server().items():
-                key = name.replace("-", "_")
-                overrides += ["-c", f"mcp_servers.{key}.command="
-                                    f"{json.dumps(spec['command'])}"]
-                if spec.get("args"):
-                    overrides += ["-c", f"mcp_servers.{key}.args="
-                                        f"{json.dumps(spec['args'])}"]
-                for ek, evv in spec.get("env", {}).items():
-                    overrides += ["-c", f"mcp_servers.{key}.env.{ek}="
-                                        f"{json.dumps(evv)}"]
-            # Codex has no per-tool allowlist, so the grant is bounded
-            # structurally: with --ignore-user-config the session's ONLY
-            # MCP servers are the ones configured here. Both settings are
-            # required — an MCP tool call crosses a process boundary that
-            # the read-only and workspace-write sandboxes deny.
-            argv = [self.cli, "exec", "--skip-git-repo-check",
-                    "--ignore-user-config", "-s", "danger-full-access",
-                    "-c", 'approval_policy="never"', *overrides, prompt]
+        argv = harness_launch(
+            self.which, self.cli, prompt, self.server(), allowed,
+            self.ev.path(f"session-{n:02d}-{tool}.mcp.json"))
         started = time.time()
         session = subprocess.run(argv, capture_output=True, text=True,
                                  stdin=subprocess.DEVNULL,
@@ -2781,6 +4319,147 @@ class HarnessAgent:
         raise Fail(f"the harness recovery map has no entry for {tool}")
 
 
+# The participant tool surface both harnesses see, captured once per
+# attached-path cell and compared BETWEEN them: "same tool schemas, zero
+# server-side changes" (plan §8) is then a comparison, not a claim.
+_TOOL_SURFACE: dict[str, str] = {}
+
+
+class AttachedStandIn(AgentChannel):
+    """The attached harness's execution path, driven deterministically.
+
+    Every agent step goes through the REAL byom-mcp binary over real MCP
+    stdio frames — the surface a Claude Code or Codex session speaks — and
+    for each step this also:
+
+      * asserts the tool the harness would be allowed EXISTS in the
+        server's own `tools/list`, with the input schema it would send
+        arguments against (so a real session cannot fail on a name or a
+        shape this gate never checked);
+      * constructs the exact launch argv `--harness <which>` would use, by
+        the same function, and records it as evidence.
+
+    What it does NOT do is run the model: no CLI is invoked, so this cell
+    is deterministic and gates CI, while `--harness <which>` runs the real
+    session under I1_REAL_HARNESS=1. The evidence says which one ran."""
+
+    def __init__(self, which: str, byom: ByomDaemon, society: str,
+                 ev: Evidence):
+        super().__init__(byom, society, ev)
+        self.which = which
+        self.cli = shutil.which(which) or f"<{which}: not on PATH>"
+        self.steps: list = []
+        self.tools: dict = {}
+
+    def one(self, tool: str, arguments: dict, frames: str | None = None):
+        mcp = self.open()
+        try:
+            if not self.tools:
+                listed = mcp.tools()
+                self.tools = {t["name"]: t for t in listed}
+                surface = hashlib.sha256(jcs(sorted(
+                    (t["name"], t.get("inputSchema") or t.get("input_schema"))
+                    for t in listed))).hexdigest()
+                previous = _TOOL_SURFACE.setdefault(self.which, surface)
+                need(previous == surface,
+                     "the participant tool surface changed within a run")
+                other = [v for k, v in _TOOL_SURFACE.items()
+                         if k != self.which]
+                need(all(v == surface for v in other),
+                     "the two attached harnesses must see the IDENTICAL "
+                     "tool surface: zero server-side changes (plan §8)")
+                self.ev.blob("participant-tools.json", json.dumps(
+                    {"count": len(listed), "surface_sha256": surface,
+                     "names": sorted(self.tools)}, indent=1))
+            need(tool in self.tools,
+                 f"{self.which} would be allowed {tool}, which byom-mcp "
+                 f"does not serve: {sorted(self.tools)}")
+            schema = (self.tools[tool].get("inputSchema")
+                      or self.tools[tool].get("input_schema") or {})
+            need(schema.get("type") == "object" and "properties" in schema,
+                 f"{tool} has no object input schema: {schema}")
+            unknown = [k for k in arguments
+                       if k not in (schema.get("properties") or {})]
+            need(not unknown,
+                 f"{tool}: the arguments this gate sends are not in the "
+                 f"schema the harness would see: {unknown}")
+            argv = harness_launch(
+                self.which, self.cli, harness_prompt(tool, arguments),
+                harness_server_spec(self.byom, self.society),
+                f"mcp__byom__{tool}",
+                self.ev.path(f"launch-{len(self.steps) + 1:02d}-{tool}"
+                             ".mcp.json"))
+            self.steps.append({"tool": tool, "allowed": f"mcp__byom__{tool}",
+                               "argv_prefix": argv[:2],
+                               "argv_length": len(argv)})
+            return mcp.call_ok(tool, arguments)
+        finally:
+            mcp.close(frames)
+
+
+def mode_attached_path(which: str) -> int:
+    """i1-attached-<which>: plan §8's attached execution path, gated.
+
+    R3-I01 (e): `--all-checks` used to exclude the harness paths outright,
+    so two of the plan's three execution paths were not gated at all. This
+    cell gates the attached path deterministically — the real byom-mcp
+    surface, the harness's own allowlist and launch configuration, the
+    whole governed loop through it — and `--harness <which>` remains the
+    env-gated real session on top."""
+    test_id = f"i1-attached-{which}"
+    ev = Evidence(test_id)
+    print(f"{test_id}: plan §8 execution path — ATTACHED {which}, driven "
+          "deterministically over the real byom-mcp stdio surface "
+          f"(the real {which} CLI session is `--harness {which}`, gated by "
+          "I1_REAL_HARNESS=1)")
+    ctx = None
+    try:
+        pinned = assert_pinned(ev)
+        ev.step("the revisions this path is running, ASSERTED (R3-I02)",
+                byom=pinned["byom"], kovee=pinned["kovee"],
+                driver_built_against=pinned["driver_built_against"])
+        ev.namespace(f"attached-{which}")
+        ctx = scripted_flow(
+            ev, f"i1a{which[:2]}", RECORDING,
+            {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY}, "Say OK.",
+            agent_factory=lambda byom, society, e, genesis: AttachedStandIn(
+                which, byom, society, e))
+        per_source_trails(ctx, ev, which)
+        agent = ctx["agent"]
+        need(len(agent.steps) >= 8,
+             f"the attached path must drive the agent's own steps: "
+             f"{agent.steps}")
+        need(len(agent.tools) == 34,
+             f"the participant profile serves 34 tools: {len(agent.tools)}")
+        ev.blob("attached-steps.json", json.dumps(agent.steps, indent=1))
+        honesty_labels(ev, RECORDING,
+                       f"the agent half went through the real byom-mcp "
+                       f"PARTICIPANT surface with the exact tool allowlist "
+                       f"and launch configuration `--harness {which}` uses; "
+                       f"no {which} CLI was invoked in this cell, so it is "
+                       f"deterministic — the real session is env-gated")
+        ev.step(f"plan §8 execution path {2 if which == 'claude' else 3}/3 "
+                f"— ATTACHED {which}: every agent step of the governed loop "
+                "went through the REAL byom-mcp participant surface; each "
+                "tool the harness would be allowed exists in the server's "
+                "own tools/list with the object input schema the arguments "
+                "are sent against; the exact launch argv is built by the "
+                "same function `--harness` uses; and the tool surface is "
+                "byte-identical to the other harness's — zero server-side "
+                "changes",
+                harness=which, agent_steps=len(agent.steps),
+                tools_served=len(agent.tools),
+                tool_surface_sha256=_TOOL_SURFACE[which],
+                cli_on_path=shutil.which(which) is not None,
+                real_session_mode=f"--harness {which} (I1_REAL_HARNESS=1)")
+        print(f"{test_id}: PASS ({ev.n} steps; evidence "
+              f"{ev.dir.relative_to(REPO)})")
+        return 0
+    finally:
+        ev.close()
+        cleanup_live()
+
+
 def harness_instructions(which: str) -> str:
     return f"""\
 Spawn the daemons first (isolated dirs), establish the Society and the
@@ -2825,6 +4504,7 @@ def mode_harness(which: str) -> int:
           "byomd's own records")
     ev.blob("setup-instructions.txt", harness_instructions(which))
     workdir = Path(tempfile.mkdtemp(prefix=f"i1-harness-{which}-cwd-"))
+    ev.namespace(f"harness-{which}")
     ctx = None
     try:
         ctx = scripted_flow(
@@ -2865,18 +4545,33 @@ CRASH_CELLS = [
     "byom/execution_permit_consume@before_witness",
     "byom/execution_permit_consume@after_finalize",
     "kovee/model_effect@after_prepare",
-    "kovee/model_effect@after_dispatch_record",
+    # Named for what it IS (R3-I03): the abort point is statically before
+    # `dispatch_bytes`, so the attempt row is committed `dispatching` and
+    # nothing has been transmitted.
+    "kovee/model_effect@after_dispatch_record_before_wire",
+    # The genuine post-write uncertainty: the send is RECORDED and the
+    # outcome is unknown.
+    "kovee/model_effect@post_write_uncertain",
     "byom/usage_report@before_witness",
     "byom/usage_report@after_finalize",
     "kovee/endeavor_promotion_start@after_commit",
 ]
 
 
+def cell_slug(cell: str) -> str:
+    """One evidence directory per cell (R3-I04). Seven cells used to write
+    `driver-01-complete.json` into one directory, each overwriting the
+    last, so only the final kill left raw evidence behind."""
+    return re.sub(r"[^a-z0-9]+", "-", cell.lower()).strip("-")
+
+
 def crash_cell_setup(cell: str, ev: Evidence, tag: str) -> dict:
+    ev.namespace(cell_slug(cell))
     ctx = governed_setup(ev, tag, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
     ev.step(f"{cell}: the governed loop is set up to the committed Pledge "
             "on both live daemons",
-            society=ctx["society"], episode=ctx["episode"])
+            society=ctx["society"], episode=ctx["episode"],
+            evidence_namespace=cell_slug(cell))
     return ctx
 
 
@@ -2908,11 +4603,16 @@ def byom_permit_cell(cell: str, phase: str, ev: Evidence) -> None:
         key = act["stable_execution_key"]
         byom.restart({"BYOMD_ABORT":
                       f"{phase}:execution_permit_consume"})
+        armed_pid = byom.pid()
         refused = driver.problem("complete", {
             **call_args, **RECORDING["args"],
             "authorization": authorization})
-        byom.wait_exit()
-        byom.start()
+        # R3-I03: the kill is now REQUIRED, not assumed — byomd died of the
+        # armed abort signal and a replacement process answers afterwards.
+        killed = byom.died_and_was_replaced(armed_pid, SIGABRT)
+        need(driver.durable_sends() == 0,
+             f"a permit consumption that never returned cannot have sent "
+             f"anything: {driver.last_sends}")
         # What survived the kill, read from byom's OWN store.
         receipts = byom.count("SELECT COUNT(*) FROM"
                               " execution_consumption_receipts")
@@ -2945,11 +4645,13 @@ def byom_permit_cell(cell: str, phase: str, ev: Evidence) -> None:
         need(len(after["attempts"]) == 1,
              f"{cell}: exactly one dispatch attempt: {after}")
         need(byom.ledger()["conserves"], f"{cell}: conservation")
-        ev.step(f"{cell}: killed byomd inside the permit consumption, "
-                "restarted; the retry consumed the SAME one-shot permit "
-                "and dispatched exactly once — one receipt, one "
+        ev.step(f"{cell}: killed byomd inside the permit consumption "
+                "(the armed process died of SIGABRT and a REPLACEMENT pid "
+                "came up), restarted; the retry consumed the SAME one-shot "
+                "permit and dispatched exactly once — one receipt, one "
                 "MandateUse, one attempt, conservation intact",
                 refused=refused.get("type"),
+                kill=killed, durable_sends_during_crash=0,
                 receipts_after_crash=receipts, uses_after_crash=uses,
                 receipts_after_retry=1, mandate_uses_after_retry=1,
                 attempts=1)
@@ -2960,9 +4662,17 @@ def byom_permit_cell(cell: str, phase: str, ev: Evidence) -> None:
 def kovee_effect_cell(cell: str, fault: str, ev: Evidence) -> None:
     """The broker's own write order, proven by a real process abort:
     `after_prepare` (the Effect is on disk, no permit consumed, nothing
-    sent) and `after_dispatch_record` (the attempt is committed
-    `dispatching`, so the outcome is genuinely unknown and must resolve
-    AMBIGUOUS with retry frozen)."""
+    sent) and `after_dispatch_record_before_wire` (the attempt is committed
+    `dispatching` and the process dies BEFORE the socket opens, so the
+    outcome is unknown to kovee and must resolve AMBIGUOUS with retry
+    frozen).
+
+    R3-I03 named the second cell's honesty problem: it was called "after
+    dispatch" while the abort is statically before `dispatch_bytes`, so
+    nothing had been transmitted and the cell proved recovery of a
+    write-order gap rather than of a real uncertainty. The name is now
+    accurate, and the genuine post-write uncertainty point is its own cell
+    (`kovee_uncertain_cell`)."""
     tag = f"i1c{len(fault) % 7}e"
     ctx = crash_cell_setup(cell, ev, tag)
     try:
@@ -2972,8 +4682,19 @@ def kovee_effect_cell(cell: str, fault: str, ev: Evidence) -> None:
         _, code = driver.run("complete", {
             **call_args, **RECORDING["args"], "fault": fault,
             "authorization": authorization}, expect_ok=False)
-        need(code != 0,
-             f"{cell}: the armed driver must die, exit was {code}")
+        # R3-I03: the ARMED SIGNAL is required, not merely a non-zero exit
+        # (a refusal, a bad argument or a missing binary all exit non-zero
+        # and none of them is the abort this cell claims to have caused),
+        # and an aborted process leaves NO reply line and NO send counter.
+        need(code == -SIGABRT,
+             f"{cell}: the armed broker must die of SIGABRT, exit was "
+             f"{code}")
+        need(driver.last_stdout == "",
+             f"{cell}: an aborted process answers nothing; it printed "
+             f"{driver.last_stdout!r}")
+        need(driver.no_send_counter(),
+             f"{cell}: an aborted process cannot have reported a send "
+             f"count: {driver.last_sends}")
         effect = driver.ok("effect-show", {"execution_key": key})
         receipts = byom.count("SELECT COUNT(*) FROM"
                               " execution_consumption_receipts")
@@ -3010,7 +4731,11 @@ def kovee_effect_cell(cell: str, fault: str, ev: Evidence) -> None:
                     byom_receipts_after_crash=0,
                     attempts_after_rerun=1, mandate_uses=1)
             return
-        # after_dispatch_record: the request MAY have been transmitted.
+        # after_dispatch_record_before_wire: the attempt row is committed
+        # `dispatching` and the process dies BEFORE `dispatch_bytes`, so
+        # NOTHING was transmitted and kovee cannot know that. The recovery
+        # obligation is identical to a real post-write loss, which is what
+        # the cell proves; the genuine post-write case is its own cell.
         need(len(effect["attempts"]) == 1
              and effect["attempts"][0]["state"] == "dispatching",
              f"{cell}: the attempt is committed dispatching BEFORE the "
@@ -3036,15 +4761,97 @@ def kovee_effect_cell(cell: str, fault: str, ev: Evidence) -> None:
         after = driver.ok("effect-show", {"execution_key": key})
         need(len(after["attempts"]) == 1,
              f"{cell}: never a second attempt: {after}")
-        ev.step(f"{cell}: aborted the broker right after the attempt was "
-                "committed `dispatching` — the request MAY have been "
-                "transmitted, so koveed's startup sweep resolves it "
-                "AMBIGUOUS with retry frozen; the spent one-shot permit "
-                "then refuses a second dispatch and byom never sees a "
-                "second MandateUse",
+        ev.step(f"{cell}: SIGABRT'd the broker right after the attempt was "
+                "committed `dispatching` and BEFORE the socket opened "
+                "(the fault point is statically before dispatch_bytes, and "
+                "the cell name now says so) — kovee cannot know that, so "
+                "koveed's startup sweep resolves it AMBIGUOUS with retry "
+                "frozen; the spent one-shot permit then refuses a second "
+                "dispatch and byom never sees a second MandateUse",
                 state_after_crash="dispatching",
                 state_after_sweep="ambiguous", retry_frozen=True,
+                bytes_transmitted="none (abort precedes dispatch_bytes)",
                 byom_receipts=1, byom_mandate_uses=1, attempts=1)
+    finally:
+        cleanup_live()
+
+
+def kovee_uncertain_cell(cell: str, ev: Evidence) -> None:
+    """The GENUINE post-write uncertainty point (R3-I03).
+
+    The two broker abort cells both fire before `dispatch_bytes`, so no
+    request ever left. This one drives kovee's own `RecordingTransport::
+    uncertain`: the transport RECORDS the send — the external counter reads
+    1 — and then reports `TransportError::Uncertain`, exactly the case
+    where the provider may have received and billed the request. That is
+    the state the effect must resolve `ambiguous` with retry frozen, and
+    where byom's one-shot permit must already be spent."""
+    tag = "i1cunc"
+    ctx = crash_cell_setup(cell, ev, tag)
+    try:
+        byom, kovee, driver = ctx["byom"], ctx["kovee"], ctx["driver"]
+        call_args, act, authorization = armed_broker_state(ctx, tag, "c")
+        key = act["stable_execution_key"]
+        outcome = driver.ok("complete", {
+            **call_args, "transport": "recording_uncertain",
+            "uncertain_reason": "connection reset after the request flushed",
+            "authorization": authorization})
+        need(outcome["state"] == "ambiguous",
+             f"{cell}: an uncertain send is AMBIGUOUS, never failed: "
+             f"{outcome}")
+        need(outcome["retry_frozen"] is True,
+             f"{cell}: an ambiguous effect freezes retry: {outcome}")
+        # The bytes DID leave, and the external counter says so — this is
+        # what separates this cell from the two aborts.
+        need(driver.durable_sends() == 1,
+             f"{cell}: the request was transmitted exactly once: "
+             f"{driver.last_sends}")
+        effect = driver.ok("effect-show", {"execution_key": key})
+        need(effect["effect"]["state"] == "ambiguous"
+             and effect["attempts"][0]["state"] == "ambiguous"
+             and effect["attempts"][0]["retry_frozen"] is True,
+             f"{cell}: kovee's own rows hold the ambiguity: {effect}")
+        need(effect["usage_reports"] == [],
+             f"{cell}: no usage may be metered for an outcome nobody "
+             f"observed: {effect}")
+        need(byom.count("SELECT COUNT(*) FROM usage_settlements") == 0,
+             f"{cell}: and nothing is settled")
+        need(byom.count("SELECT COUNT(*) FROM"
+                        " execution_consumption_receipts") == 1
+             and byom.count("SELECT COUNT(*) FROM mandate_uses") == 1,
+             f"{cell}: the permit was consumed exactly once, before the "
+             f"wire")
+        # A restart cannot turn an ambiguous outcome into either answer.
+        old = kovee.pid()
+        kovee.restart({"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+        need(kovee.pid() != old, f"{cell}: koveed was not restarted")
+        swept = driver.ok("effect-show", {"execution_key": key})
+        need(swept["attempts"][0]["state"] == "ambiguous"
+             and swept["attempts"][0]["retry_frozen"] is True,
+             f"{cell}: the sweep never resolves an ambiguity it cannot "
+             f"observe: {swept}")
+        spent = driver.problem("complete", {
+            **call_args, **RECORDING["args"],
+            "authorization": authorization})
+        need("spent" in str(spent.get("detail") or ""),
+             f"{cell}: the spent permit refuses a retry of an ambiguous "
+             f"effect: {spent}")
+        need(driver.durable_sends() == 0,
+             f"{cell}: and that refusal sent nothing: {driver.last_sends}")
+        led = byom.ledger()
+        need(led["conserves"], f"{cell}: conservation: {led}")
+        ev.step(f"{cell}: a GENUINE post-write uncertainty — kovee's "
+                "transport recorded the send (external counter = 1) and "
+                "then reported an uncertain outcome: the effect and its "
+                "attempt are AMBIGUOUS with retry frozen, no usage is "
+                "metered and nothing is settled, byom's one-shot permit is "
+                "already spent (one receipt, one MandateUse), a koveed "
+                "restart does not resolve what nobody observed, and a "
+                "retry is refused as spent with zero further sends",
+                durable_sends=1, effect_state="ambiguous",
+                retry_frozen=True, kovee_usage_reports=0,
+                byom_settlements=0, byom_receipts=1, byom_mandate_uses=1,
+                retry_refused_as=spent.get("type"), ledger=led)
     finally:
         cleanup_live()
 
@@ -3063,11 +4870,14 @@ def byom_usage_cell(cell: str, phase: str, ev: Evidence) -> None:
             call_args, act, authorization = armed_broker_state(ctx, tag, "c")
             key = act["stable_execution_key"]
             byom.restart({"BYOMD_ABORT": f"{phase}:usage_report"})
+            armed_pid = byom.pid()
             driver.problem("complete", {
                 **call_args, **RECORDING["args"],
                 "authorization": authorization})
-            byom.wait_exit()
-            byom.start()
+            killed = byom.died_and_was_replaced(armed_pid, SIGABRT)
+            need(driver.durable_sends() == 1,
+                 f"{cell}: the dispatch itself DID happen — the metering "
+                 f"report is what died: {driver.last_sends}")
             need(byom.count("SELECT COUNT(*) FROM usage_settlements") == 0,
                  f"{cell}: nothing settled")
             need(byom.count("SELECT COUNT(*) FROM usage_reports") == 0,
@@ -3088,21 +4898,23 @@ def byom_usage_cell(cell: str, phase: str, ev: Evidence) -> None:
                  f"{cell}: an unsettled report moves no ledger units: "
                  f"{led}")
             ev.step(f"{cell}: killed byomd inside the broker's metering "
-                    "report — the dispatch stands, NOTHING settled, the "
-                    "ledger moved no unit beyond the act's own "
-                    "reservation, and kovee claims no metering it could "
-                    "not report",
+                    "report (SIGABRT, replacement pid up) — the dispatch "
+                    "stands and the external counter proves it (1 send), "
+                    "NOTHING settled, the ledger moved no unit beyond the "
+                    "act's own reservation, and kovee claims no metering "
+                    "it could not report",
+                    kill=killed, durable_sends=1,
                     byom_settlements=0, byom_usage_reports=0,
                     kovee_usage_reports=0, mandate_uses=1, ledger=led)
             return
         # after_finalize, on the Episode's own metered settlement.
         charge = 12
         byom.restart({"BYOMD_ABORT": f"{phase}:usage_report"})
+        armed_pid = byom.pid()
         driver.problem("episode-settle", {
             "stable_binding_key": ctx["bound"]["stable_binding_key"],
             "charge": charge})
-        byom.wait_exit()
-        byom.start()
+        killed = byom.died_and_was_replaced(armed_pid, SIGABRT)
         settled = byom.rows("SELECT stable_settlement_key, status,"
                             " charged_quantities FROM usage_settlements")
         need(len(settled) == 1,
@@ -3124,10 +4936,11 @@ def byom_usage_cell(cell: str, phase: str, ev: Evidence) -> None:
         need(led["committed"] == charge,
              f"{cell}: exactly one charge of {charge}: {led}")
         ev.step(f"{cell}: killed byomd after the settlement committed but "
-                "before the reply — the retry REPLAYS the stored "
-                "settlement (SettleOnce), replays are byte-identical, and "
-                f"exactly {charge} units are committed once",
-                byom_settlements=1, charged=charge, ledger=led,
+                "before the reply (SIGABRT, replacement pid up) — the "
+                "retry REPLAYS the stored settlement (SettleOnce), replays "
+                f"are byte-identical, and exactly {charge} units are "
+                "committed once",
+                kill=killed, byom_settlements=1, charged=charge, ledger=led,
                 replay_byte_identical=True)
     finally:
         cleanup_live()
@@ -3140,6 +4953,7 @@ def kovee_formation_cell(cell: str, phase: str, ev: Evidence) -> None:
     tag = "i1cf"
     point = "endeavor_promotion_start#result"
     ctx = None
+    ev.namespace(cell_slug(cell))
     try:
         ctx = governed_setup(ev, tag,
                              {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY},
@@ -3148,13 +4962,21 @@ def kovee_formation_cell(cell: str, phase: str, ev: Evidence) -> None:
         _, _, prepared = formation_prepare(kovee, byom, ctx, tag)
         kovee.restart({"KOVEED_ABORT": f"{phase}:{point}",
                        "ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+        armed_pid = kovee.pid()
         start = kv("endeavor_promotion_start", None, "idem-i1c-start",
                    {"formation_id": prepared,
                     "authentication_observation_ref": "authobs-crash-1"})
         first = kovee.call_raw(start)
-        if first is None:
-            kovee.wait_exit()
-            kovee.start({"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+        # R3-I03: this cell used to pass whether or not koveed died — a
+        # `first` that ANSWERED meant the fault never fired and the rest of
+        # the cell then verified an ordinary success. The kill is now
+        # required: no reply line, death by the armed abort signal, and a
+        # replacement process afterwards.
+        need(first is None,
+             f"{cell}: the armed commit point must kill koveed before it "
+             f"can answer; it replied {first!r}")
+        killed = kovee.died_and_was_replaced(
+            armed_pid, SIGABRT, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
         formed = byom.count("SELECT COUNT(*) FROM endeavors")
         need(formed <= 1, f"{cell}: {formed} Endeavors formed")
         # The exact retry, on a daemon with no fault armed.
@@ -3186,10 +5008,12 @@ def kovee_formation_cell(cell: str, phase: str, ev: Evidence) -> None:
         need(byom.count("SELECT COUNT(*) FROM endeavors") == 1,
              f"{cell}: exactly one Endeavor at the end")
         ev.step(f"{cell}: killed koveed at the formation saga's {phase} "
-                "commit point; at most one Endeavor ever exists on byom's "
-                "side, the slot never releases with nothing formed, and "
-                "the retry reaches `linked` with byte-identical replays",
-                formed_after_crash=formed, formed_at_end=1,
+                "commit point — the armed call got NO reply, the process "
+                "died of SIGABRT and a REPLACEMENT pid came up; at most "
+                "one Endeavor ever exists on byom's side, the slot never "
+                "releases with nothing formed, and the retry reaches "
+                "`linked` with byte-identical replays",
+                kill=killed, formed_after_crash=formed, formed_at_end=1,
                 state=view["state"], slot=view["slot"]["state"])
     finally:
         cleanup_live()
@@ -3201,13 +5025,18 @@ def mode_crash_matrix() -> int:
           "commit points (BYOMD_ABORT / KOVEED_ABORT / the broker's own "
           "Fault hooks)")
     try:
+        pinned = assert_pinned(ev)
+        ev.step("the revisions this matrix is running, ASSERTED (R3-I02)",
+                byom=pinned["byom"], kovee=pinned["kovee"],
+                driver_built_against=pinned["driver_built_against"])
         byom_permit_cell(CRASH_CELLS[0], "before_witness", ev)
         byom_permit_cell(CRASH_CELLS[1], "after_finalize", ev)
         kovee_effect_cell(CRASH_CELLS[2], "after_prepare", ev)
         kovee_effect_cell(CRASH_CELLS[3], "after_dispatch_record", ev)
-        byom_usage_cell(CRASH_CELLS[4], "before_witness", ev)
-        byom_usage_cell(CRASH_CELLS[5], "after_finalize", ev)
-        kovee_formation_cell(CRASH_CELLS[6], "after_commit", ev)
+        kovee_uncertain_cell(CRASH_CELLS[4], ev)
+        byom_usage_cell(CRASH_CELLS[5], "before_witness", ev)
+        byom_usage_cell(CRASH_CELLS[6], "after_finalize", ev)
+        kovee_formation_cell(CRASH_CELLS[7], "after_commit", ev)
         print(f"i1-crash: PASS ({len(CRASH_CELLS)} cells; evidence "
               f"{ev.dir.relative_to(REPO)})")
         return 0
@@ -3218,6 +5047,52 @@ def mode_crash_matrix() -> int:
 
 # ---------------------------------------------------------------- main ----
 
+def mode_all_checks() -> int:
+    """Every deterministic check this gate has, plus the env-gated real
+    ones — reported, never silently excluded (R3-I01 e).
+
+    The three plan-§8 execution paths are all in here: the hosted broker
+    invocation inside `--scripted`, and the two ATTACHED harness paths as
+    their own gated cells. The real Claude/Codex sessions run when
+    I1_REAL_HARNESS=1 and are reported as an honest SKIP when it is not —
+    the one thing they are never again is left off the list."""
+    results = []
+    for name, mode in (("scripted", mode_scripted),
+                       ("crash-matrix", mode_crash_matrix),
+                       ("verify-trails", mode_verify_trails),
+                       ("attached-claude",
+                        lambda: mode_attached_path("claude")),
+                       ("attached-codex",
+                        lambda: mode_attached_path("codex"))):
+        code = mode()
+        results.append((name, code, "PASS" if code == 0 else "FAIL"))
+        if code != 0:
+            print(f"i1: all checks FAILED at {name} (exit {code})")
+            return code
+    for which in ("claude", "codex"):
+        code = mode_harness(which)
+        if code == 2:
+            results.append((f"real-harness-{which}", 2,
+                            "SKIP (env-gated: I1_REAL_HARNESS=1 and the "
+                            f"{which} CLI on PATH)"))
+        elif code == 0:
+            results.append((f"real-harness-{which}", 0, "PASS (real "
+                            f"{which} session)"))
+        else:
+            print(f"i1: all checks FAILED at real-harness-{which}")
+            return code
+    print("\ni1 all-checks summary:")
+    for name, code, state in results:
+        print(f"  {name:<20} exit {code}  {state}")
+    skipped = [n for n, c, _ in results if c == 2]
+    print("i1: all checks PASS — the deterministic gate covers every "
+          "plan-§8 I1 item and all three execution paths"
+          + (f"; env-gated and SKIPPED here: {', '.join(skipped)}"
+             if skipped else "")
+          + ". --real-model is separate (it spends money).")
+    return 0
+
+
 def main(argv: list) -> int:
     args = argv[1:]
     try:
@@ -3225,20 +5100,18 @@ def main(argv: list) -> int:
             return mode_scripted()
         if args == ["--crash-matrix"]:
             return mode_crash_matrix()
+        if args == ["--verify-trails"]:
+            return mode_verify_trails()
         if args == ["--real-model"]:
             return mode_real_model()
+        if len(args) == 2 and args[0] == "--attached-path" \
+                and args[1] in ("claude", "codex"):
+            return mode_attached_path(args[1])
         if len(args) == 2 and args[0] == "--harness" \
                 and args[1] in ("claude", "codex"):
             return mode_harness(args[1])
         if args == ["--all-checks"]:
-            for mode in (mode_scripted, mode_crash_matrix):
-                code = mode()
-                if code != 0:
-                    return code
-            print("i1: all checks PASS (scripted + crash-matrix). "
-                  "--real-model and --harness are env-gated and run "
-                  "separately.")
-            return 0
+            return mode_all_checks()
         if len(args) == 3 and args[0] == "--_agent-call":
             return mode_agent_call(args[1], args[2])
     except Fail as e:
