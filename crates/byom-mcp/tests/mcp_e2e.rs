@@ -103,7 +103,20 @@ impl DaemonProc {
             .unwrap();
         let mut line = String::new();
         if let Some(token) = token {
-            line.push_str(token);
+            // A channel credential presents a FRESH sender-constrained
+            // proof per call (BY-C1), exactly as a real client does.
+            let preamble = if token.starts_with("bpk1.") {
+                byomd::channel::mint_proof(
+                    token,
+                    request["op"].as_str().unwrap_or_default(),
+                    byomd::channel::Peer::current(),
+                    bpp_core::time::unix_now(),
+                )
+                .expect("mint channel proof")
+            } else {
+                token.to_owned()
+            };
+            line.push_str(&preamble);
             line.push('\n');
         }
         line.push_str(&request.to_string());
@@ -211,7 +224,12 @@ fn bootstrap_society(daemon: &DaemonProc) -> (String, String, String) {
 /// Creates one membership offer for `participant`; returns
 /// (offer_id, subject_digest) — the candidate channel token file appears
 /// under `<data-dir>/channels/candidate-<offer_id>.token`.
-fn make_offer(daemon: &DaemonProc, incarnation: &str, participant: &str) -> (String, Value) {
+fn make_offer(
+    daemon: &DaemonProc,
+    incarnation: &str,
+    society_id: &str,
+    participant: &str,
+) -> (String, Value) {
     let subject_digest = test_digest(0xb1);
     let reply = daemon.expect_ok(
         "governance",
@@ -222,7 +240,7 @@ fn make_offer(daemon: &DaemonProc, incarnation: &str, participant: &str) -> (Str
             "participant_ref": participant,
             "proposed_standing_ref": "standing-proposal-1",
             "subject_digest": subject_digest,
-            "offered_by_decision_ref": "dec-offer-1",
+            "offered_by_decision_ref": format!("dec-society-{society_id}"),
             "expires_at": "2030-01-01T00:00:00Z",
         }),
     );
@@ -250,7 +268,7 @@ fn admit_participant(
             "meta": meta(incarnation, "e2e-admit", Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": acceptance_id,
-            "admitted_by_decision_ref": "dec-admit-1",
+            "admitted_by_decision_ref": format!("dec-offer-{offer_id}"),
             "admission_subject_digest": subject_digest,
         }),
     );
@@ -276,7 +294,7 @@ fn admit_participant(
             "version": "0.2", "op": "manifestation_admit",
             "meta": meta(incarnation, "e2e-manif", Some(1)),
             "manifestation_ref": manifestation_id,
-            "admitted_by_decision_ref": "dec-manif-1",
+            "admitted_by_decision_ref": format!("dec-manif-{manifestation_id}"),
         }),
     );
     daemon.channel_token(&format!("participant-{participant}.token"))
@@ -589,7 +607,7 @@ fn candidate_accept_then_participant_work_over_mcp() {
     let daemon = DaemonProc::start(&data, &runtime);
     let (society_id, genesis_cursor, incarnation) = bootstrap_society(&daemon);
     let participant = "part-agent-1";
-    let (offer_id, subject_digest) = make_offer(&daemon, &incarnation, participant);
+    let (offer_id, subject_digest) = make_offer(&daemon, &incarnation, &society_id, participant);
     let token_file = data
         .join("channels")
         .join(format!("candidate-{offer_id}.token"));
@@ -620,19 +638,34 @@ fn candidate_accept_then_participant_work_over_mcp() {
     // moved to revision 2.
     assert_eq!(accepted["revision"].as_u64(), Some(2));
 
-    // Acceptance leaves the channel OPEN (only refusal, expiry, and
-    // admission close it) — but a re-accept is a NEW command (fresh
-    // idempotency key) against the moved offer: the same-revision race
-    // discipline answers stale_revision with zero effects.
-    let (text, is_error) = candidate.call(
+    // MCP-1 / D-R1-3: the idempotency key is the LOGICAL-CALL key
+    // derived from (tool, canonical input, session), so an AMBIGUOUS
+    // TRANSPORT RETRY of the identical call reuses it and replays the
+    // retained receipt — it does NOT mint a second acceptance. (With
+    // the withdrawn fresh-random-key-per-invocation behaviour this
+    // answered stale_revision, i.e. a second command had been formed.)
+    let retried = candidate.call_ok(
         "byom_membership_accept",
         json!({"offer_ref": offer_id, "subject_digest": subject_digest}),
     );
-    assert!(is_error);
-    assert!(
-        text.contains("https://byom.dev/problems/stale_revision"),
-        "{text}"
+    assert_eq!(
+        retried, accepted,
+        "an ambiguous retry replays the SAME receipt, byte-identically"
     );
+    // Exactly ONE acceptance exists for the offer.
+    let accepted_events = daemon.expect_ok(
+        "projection",
+        None,
+        &json!({"version": "0.2", "op": "events_read",
+                "continuation": genesis_cursor, "page_size": 512}),
+    );
+    let acceptances = accepted_events["result"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "membership.accepted")
+        .count();
+    assert_eq!(acceptances, 1, "one logical call, one committed effect");
 
     // -- governance admits; the participant channel credential is
     //    minted at participant_admit --

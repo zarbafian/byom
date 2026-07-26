@@ -25,7 +25,7 @@ fn ok_bytes(result: Value) -> Result<Vec<u8>, Problem> {
 
 /// The slice-1 implemented operations, advertised per §14.1 (a feature
 /// is advertised only when fully implemented).
-pub const SLICE1_OPS: [&str; 12] = [
+pub const SLICE1_OPS: [&str; 13] = [
     "hello",
     "protocol_info",
     "feature_info",
@@ -33,6 +33,7 @@ pub const SLICE1_OPS: [&str; 12] = [
     "society_bootstrap",
     "society_show",
     "membership_offer",
+    "membership_offer_revoke",
     "membership_accept",
     "membership_refuse",
     "participant_admit",
@@ -561,7 +562,7 @@ pub fn event_payload(
     };
     let digest: Value = serde_json::from_str(&digest_text).unwrap_or(Value::Null);
     if let Some(pinned) = &req.payload_digest {
-        if digest["value_hex"].as_str() != Some(pinned.value_hex.as_str()) {
+        if !pinned.same_ref_json(&digest) {
             record_access(
                 store,
                 &society_id,

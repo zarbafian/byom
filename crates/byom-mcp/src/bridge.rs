@@ -6,19 +6,22 @@
 //! Socket routing follows the tool's registry surface (the same rows
 //! byomd dispatches with):
 //! - candidate profile: everything on `candidate.sock`, the offer-scoped
-//!   channel token as the transport preamble line (§7.4);
+//!   channel CREDENTIAL minting a fresh sender-constrained proof as the
+//!   transport preamble line of every call (§7.4, BY-C1);
 //! - participant profile: participant-surface ops AND the
 //!   originating-surface recovery reads on `participant.sock` (§14.4
-//!   "originating surface"), with the sender-constrained participant
-//!   token preamble when one is configured — the same-UID sovereign of
+//!   "originating surface"), with a freshly minted participant channel
+//!   proof preamble when a credential is configured — the same-UID sovereign of
 //!   the developer profile sends the request directly, exactly byomd's
 //!   channel rule; projection reads on `projection.sock`, never with a
 //!   preamble.
 //!
 //! Envelope derivation — the C3a binding envelope: `version` is the
 //! document's pinned protocol version; mutations carry `meta` with a
-//! **fresh idempotency key per call** (a harness retry is a NEW command;
-//! §14.2 replay safety stays in the daemon), the endpoint incarnation
+//! **logical-call idempotency key** derived from (tool, canonical JCS
+//! input, per-session salt) — MCP-1/D-R1-3: an ambiguous transport
+//! retry of the identical call reuses the key and replays the retained
+//! receipt instead of minting a second command — the endpoint incarnation
 //! learned via `hello` on the dispatch surface, and recovery epoch 0
 //! (the byom-cli developer-profile discipline; a recovered Society
 //! answers `stale_binding` honestly). Update-class ops additionally
@@ -48,10 +51,12 @@
 //! A wrong derivation always fails CLOSED in the daemon
 //! (`stale_revision`, zero effects); the bridge never retries.
 
-use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
 
+use bpp_core::canonical::{jcs, sha256_hex};
 use bpp_core::registry::{OpClass, Surface};
+use byomd::channel::{self, Peer};
 use byomd::socket::{self, SocketSurface};
 use serde_json::{json, Map, Value};
 
@@ -70,13 +75,18 @@ pub enum BridgeError {
 /// The daemon connection state: profile, credential, Society pin.
 pub struct Bridge {
     profile: Profile,
-    /// Candidate: the offer-scoped channel token (required).
-    /// Participant: the sender-constrained participant token, or None
-    /// for the same-UID sovereign.
+    /// Candidate: the offer-scoped channel CREDENTIAL (required) — the
+    /// proof key byomd minted, never a bearer token.
+    /// Participant: the participant channel credential, or None for the
+    /// same-UID sovereign.
     token: Option<String>,
     /// `$BYOM_SOCIETY` — the Society scope for snapshot-resolved
     /// revision derivations (only those need it).
     society: Option<String>,
+    /// The LOGICAL-CALL salt (D-R1-3): stable for this MCP session, so
+    /// an ambiguous transport retry of the same tool call reuses the
+    /// same idempotency key instead of minting a second command.
+    session_salt: String,
 }
 
 impl Bridge {
@@ -109,12 +119,20 @@ impl Bridge {
         Ok(Bridge::new(profile, token, society))
     }
 
-    /// The explicit constructor (tests).
+    /// The explicit constructor (tests). The session salt comes from
+    /// `$BYOM_MCP_SESSION` when the harness pins one, else from this
+    /// process's identity — stable for the session either way, so the
+    /// logical-call key is stable across ambiguous retries.
     pub fn new(profile: Profile, token: Option<String>, society: Option<String>) -> Bridge {
+        let session_salt = std::env::var("BYOM_MCP_SESSION")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("pid:{}", std::process::id()));
         Bridge {
             profile,
             token,
             society,
+            session_salt,
         }
     }
 
@@ -174,9 +192,14 @@ impl Bridge {
         }
     }
 
-    /// MutationMeta for one call: fresh request id and idempotency key,
-    /// the live endpoint incarnation, recovery epoch 0, and — for the
-    /// update class — the derived expected_revision (RT-01).
+    /// MutationMeta for one call. The idempotency key is the LOGICAL
+    /// CALL key (MCP-1 / D-R1-3): a deterministic derivation from
+    /// (tool, canonical JCS input, per-session salt). A fresh random key
+    /// per invocation was a double-commit hazard — if the daemon
+    /// committed and the reply was lost, the MCP caller could not
+    /// recover or reuse the key and the retry minted a SECOND Mandate.
+    /// With this derivation the ambiguous retry of an identical call
+    /// carries the identical key and replays the retained receipt.
     fn meta(
         &self,
         version: &str,
@@ -184,7 +207,7 @@ impl Bridge {
         args: &Map<String, Value>,
         surface: SocketSurface,
     ) -> Result<Value, BridgeError> {
-        let key = fresh_key()?;
+        let key = self.logical_call_key(tool, args)?;
         let mut meta = Map::new();
         meta.insert("request_id".into(), json!(format!("req-{key}")));
         meta.insert("idempotency_key".into(), json!(format!("mcp-{key}")));
@@ -200,6 +223,23 @@ impl Bridge {
             );
         }
         Ok(Value::Object(meta))
+    }
+
+    /// The deterministic logical-call key of one tool invocation.
+    pub fn logical_call_key(
+        &self,
+        tool: &Tool,
+        args: &Map<String, Value>,
+    ) -> Result<String, BridgeError> {
+        let bound = json!({
+            "session": self.session_salt,
+            "tool": tool.name,
+            "op": tool.op,
+            "input": Value::Object(args.clone()),
+        });
+        let bytes = jcs(&bound)
+            .map_err(|e| BridgeError::Io(format!("canonicalizing the logical call: {e}")))?;
+        Ok(sha256_hex(&bytes)[..32].to_owned())
     }
 
     /// The daemon's endpoint incarnation, learned via `hello` on the
@@ -315,14 +355,21 @@ impl Bridge {
         }
     }
 
-    /// One request line in, one reply line out (the whole protocol),
-    /// with the credential preamble line when the surface takes one.
+    /// One request line in, one reply line out (the whole protocol).
+    /// The preamble is a FRESH sender-constrained proof minted for this
+    /// exact operation and this process's connection (BY-C1) — never a
+    /// replayable bearer token.
     fn request(
         &self,
         surface: SocketSurface,
         preamble: Option<&str>,
         body: &Value,
     ) -> Result<Value, BridgeError> {
+        let preamble = match preamble {
+            Some(credential) => Some(self.proof_for(credential, body)?),
+            None => None,
+        };
+        let preamble = preamble.as_deref();
         let path = socket::socket_path(surface);
         let mut stream = UnixStream::connect(&path).map_err(|e| {
             BridgeError::Io(format!(
@@ -356,6 +403,22 @@ impl Bridge {
     }
 }
 
+impl Bridge {
+    /// Mints the per-call proof for the surface's channel credential.
+    /// The daemon rebuilds the same preimage from what it OBSERVES, so a
+    /// proof copied to another process does not verify there.
+    fn proof_for(&self, credential: &str, body: &Value) -> Result<String, BridgeError> {
+        let operation = body["op"].as_str().unwrap_or_default();
+        channel::mint_proof(
+            credential,
+            operation,
+            Peer::current(),
+            bpp_core::time::unix_now(),
+        )
+        .ok_or_else(|| BridgeError::Io("channel credential is not a byom proof key".to_owned()))
+    }
+}
+
 fn required_str<'a>(args: &'a Map<String, Value>, name: &str) -> Result<&'a str, BridgeError> {
     args.get(name)
         .and_then(Value::as_str)
@@ -370,19 +433,6 @@ fn revision_of(row: &Value, what: &str) -> Result<u64, BridgeError> {
 
 fn io_error(e: std::io::Error) -> BridgeError {
     BridgeError::Io(format!("daemon socket io: {e}"))
-}
-
-/// A fresh key per mutation call (the byom-cli shape, hex over urandom).
-fn fresh_key() -> Result<String, BridgeError> {
-    let mut bytes = [0u8; 12];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut bytes))
-        .map_err(io_error)?;
-    let mut hex = String::with_capacity(24);
-    for byte in bytes {
-        hex.push_str(&format!("{byte:02x}"));
-    }
-    Ok(hex)
 }
 
 /// Loads and checks one credential from the environment: the token

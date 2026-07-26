@@ -36,9 +36,12 @@ pub struct Caller {
 /// an exact terminal receipt (§7.4 discipline, reused for cease).
 pub fn resolve_caller(
     store: &Store,
-    token: &str,
+    presented: &str,
+    operation: &str,
+    peer: crate::channel::Peer,
+    now: i64,
 ) -> Result<Result<Caller, rows::ChannelRow>, Problem> {
-    if token.is_empty() {
+    if presented.is_empty() {
         // The sovereign human of the sole Society (developer profile:
         // same-UID peer is the sovereign; the fresh phishing-resistant
         // challenge remains the recorded developer-profile stub).
@@ -56,9 +59,18 @@ pub fn resolve_caller(
             channel: None,
         }));
     }
-    let channel = rows::participant_channel_by_token(store.conn(), token)
-        .map_err(db_err)?
-        .ok_or_else(state::forbidden)?;
+    // An agent participant presents a sender-constrained PROOF bound to
+    // its connection and this exact operation (BY-C1), never a reusable
+    // bearer token.
+    let channel = crate::channel::verify(
+        store,
+        crate::channel::AUDIENCE_PARTICIPANT,
+        operation,
+        presented,
+        peer,
+        now,
+    )?
+    .channel;
     if channel.state != "open" {
         return Ok(Err(channel));
     }
@@ -87,6 +99,17 @@ pub fn closed_channel_replay(
     meta: &MutationMeta,
     body: &Value,
 ) -> Result<Vec<u8>, Problem> {
+    // BY-C2: only the exact terminal call that closed the channel
+    // replays, and only under its own idempotency domain.
+    let (Some(closing_op), Some(closing_domain)) = (
+        channel.closed_by_operation.as_deref(),
+        channel.closed_by_domain_digest.as_deref(),
+    ) else {
+        return Err(state::forbidden());
+    };
+    if closing_op != operation {
+        return Err(state::forbidden());
+    }
     let scope = MutationScope {
         society_id: channel.society_id.clone(),
         operation: operation.to_owned(),
@@ -97,6 +120,9 @@ pub fn closed_channel_replay(
     let digest = store
         .domain_digest(&scope)
         .map_err(|e| state::internal(&e.to_string()))?;
+    if digest.value_hex != closing_domain {
+        return Err(state::forbidden());
+    }
     let request_digest =
         Store::request_digest(body).map_err(|e| state::internal(&e.to_string()))?;
     match store
@@ -223,9 +249,11 @@ pub fn mint_position(store: &Store) -> Result<PositionMint, Problem> {
     })
 }
 
-/// A deterministic `local_erasure_safe` record digest derivable inside
-/// an open prepare transaction (byte-identical to
-/// `Store::record_digest` — same root key, same derivation).
+/// A `local_erasure_safe` record digest minted inside an open prepare
+/// transaction, under a RANDOM per-object secret retained wrapped under
+/// the Society key (D-R1-2) — the same construction as
+/// `Store::record_digest`, so both sides agree and each object stays
+/// individually destroyable.
 pub fn conn_record_digest(
     conn: &rusqlite::Connection,
     society_id: &str,
@@ -237,19 +265,30 @@ pub fn conn_record_digest(
     let root = byom_store::schema::meta_get(conn, "index_root_key")
         .map_err(|e| state::internal(&e.to_string()))?
         .ok_or_else(|| state::internal("store is not bootstrapped"))?;
-    let object_key = hmac_sha256(&root, format!("record:{society_id}:{object_id}").as_bytes());
+    let wrap_key = hmac_sha256(&root, format!("object-secret-wrap:{society_id}").as_bytes());
+    let key_ref = format!("society-key:{society_id}/object:{object_id}");
+    let secret = byom_store::object_secrets::ensure(conn, &wrap_key, &key_ref, society_id, tag)
+        .map_err(|e| state::internal(&e.to_string()))?;
     let preimage = tagged_canonical(tag, object).map_err(|e| state::internal(&e.to_string()))?;
     Ok(bpp_core::digest::DigestRef::local_erasure_safe(
-        &format!("society-key:{society_id}/object:{object_id}"),
-        hex(&hmac_sha256(&object_key, &preimage)),
+        &key_ref,
+        hex(&hmac_sha256(&secret, &preimage)),
     ))
 }
 
 /// The RT-03 position discipline inside an open prepare transaction:
-/// exact proposal revision, exact subject digest, an eligible prepared
-/// seat on THIS surface for THIS actor, and the one-current-seat-head
-/// CAS (`prior_position_digest` consumes the head; a second head without
-/// it is `stale_revision`). Returns `(effects, result)`.
+/// exact proposal revision, exact subject digest (the COMPLETE canonical
+/// `DigestRef`, BY-D1), an eligible prepared seat on THIS surface for
+/// THIS actor, and the one-current-seat-head CAS
+/// (`prior_position_digest` consumes the head; a second head without it
+/// is `stale_revision`).
+///
+/// PositionRevisions are APPEND-ONLY (BY-P1): superseding never rewrites
+/// the prior row's status — it appends a new immutable revision carrying
+/// the prior position digest, the participant binding epoch, the
+/// endpoint incarnation, the Society recovery epoch and the
+/// authentication observation, and CASes the SEPARATE seat-head row.
+/// Returns `(effects, result)`.
 #[allow(clippy::too_many_arguments)]
 pub fn record_position(
     conn: &rusqlite::Connection,
@@ -257,7 +296,7 @@ pub fn record_position(
     proposal_kind: &str,
     society_id: &str,
     current_revision: u64,
-    proposal_subject_hex: &str,
+    proposal_subject: &bpp_core::digest::DigestRef,
     seats: &[Seat],
     req: &ops::PositionRequest,
     actor_participant: &str,
@@ -268,7 +307,7 @@ pub fn record_position(
     if req.proposal_revision != current_revision {
         return Err(state::stale_revision());
     }
-    if req.subject_digest.value_hex != proposal_subject_hex {
+    if !req.subject_digest.same_ref(proposal_subject) {
         return Err(state::invalid(
             "subject_digest does not commit to the exact prepared subject",
         ));
@@ -286,31 +325,33 @@ pub fn record_position(
             "position operations fill only the authenticated actor's eligible seat",
         ));
     }
-    let head = rows::active_position(conn, proposal_kind, &req.proposal_ref, &req.seat_ref)
+    let head = rows::position_seat_head(conn, proposal_kind, &req.proposal_ref, &req.seat_ref)
         .map_err(db_err)?;
+    let live_head = head
+        .as_ref()
+        .filter(|h| rows::str_of(h, "status") == "active");
     let target_status = req.target_status.as_deref().unwrap_or("active");
     let mut effects = Vec::new();
-    let next_revision = match &head {
+    let (next_revision, prior_digest) = match live_head {
         Some(head_row) => {
             let head_digest = rows::json_of(head_row, "digest");
-            let cited = req
+            // The COMPLETE canonical DigestRef must match, not the
+            // 32-byte value alone (BY-D1).
+            let cited_matches = req
                 .prior_position_digest
                 .as_ref()
-                .map(|d| d.value_hex.as_str());
-            if cited != head_digest["value_hex"].as_str() {
+                .is_some_and(|d| d.same_ref_json(&head_digest));
+            if !cited_matches {
                 return Err(Problem::new(
                     ProblemKind::StaleRevision,
                     "the seat head is taken; superseding requires prior_position_digest",
                 )
                 .with_status(409));
             }
-            let mut superseded = head_row.clone();
-            superseded.insert("status".into(), json!("superseded"));
-            effects.push(Effect::Upsert {
-                table: "positions".into(),
-                row: superseded,
-            });
-            rows::u64_of(head_row, "revision") + 1
+            (
+                rows::u64_of(head_row, "revision") + 1,
+                Some(head_digest.to_string()),
+            )
         }
         None => {
             if req.prior_position_digest.is_some() {
@@ -321,10 +362,29 @@ pub fn record_position(
             if target_status == "withdrawn" {
                 return Err(state::stale_binding("no position to withdraw"));
             }
-            1
+            (
+                head.as_ref()
+                    .map(|h| rows::u64_of(h, "revision"))
+                    .unwrap_or(0)
+                    + 1,
+                None,
+            )
         }
     };
     let created_at = rfc3339_utc(now);
+    let participant = rows::get_participant(conn, actor_participant)
+        .map_err(db_err)?
+        .ok_or_else(state::not_found)?;
+    let incarnation = byom_store::schema::meta_get_text(conn, "endpoint_incarnation")
+        .map_err(|e| state::internal(&e.to_string()))?
+        .unwrap_or_default();
+    let recovery_epoch = rows::get_society(conn, society_id)
+        .map_err(db_err)?
+        .map(|s| s.recovery_epoch)
+        .unwrap_or(0);
+    // The §14.5 authentication observation of the authoring channel —
+    // honestly the developer-profile same-UID observation at this slice.
+    let authentication_observation = format!("same-uid-peer:{surface}");
     let position_digest = conn_record_digest(
         conn,
         society_id,
@@ -337,6 +397,11 @@ pub fn record_position(
                 "proposal_revision": req.proposal_revision,
                 "seat_ref": req.seat_ref,
                 "participant_ref": actor_participant,
+                "participant_binding_epoch": participant.binding_epoch,
+                "endpoint_incarnation": incarnation,
+                "recovery_epoch": recovery_epoch,
+                "authentication_observation": authentication_observation,
+                "prior_position_digest": prior_digest,
                 "value": req.value,
                 "status": target_status,
                 "created_at": created_at,
@@ -344,7 +409,7 @@ pub fn record_position(
     )?;
     let opt = |v: &Option<String>| v.as_ref().map(|s| json!(s)).unwrap_or(Value::Null);
     effects.push(Effect::Upsert {
-        table: "positions".into(),
+        table: "position_revisions".into(),
         row: crate::gov_ops::obj_pairs([
             ("position_id", json!(minted.position_id)),
             ("society_id", json!(society_id)),
@@ -353,7 +418,17 @@ pub fn record_position(
             ("proposal_revision", json!(req.proposal_revision)),
             ("seat_ref", json!(req.seat_ref)),
             ("participant_ref", json!(actor_participant)),
+            (
+                "participant_binding_epoch",
+                json!(participant.binding_epoch),
+            ),
             ("actor_ref", json!(actor)),
+            (
+                "authentication_observation",
+                json!(authentication_observation),
+            ),
+            ("endpoint_incarnation", json!(incarnation)),
+            ("recovery_epoch", json!(recovery_epoch)),
             ("value", json!(req.value)),
             ("status", json!(target_status)),
             ("revision", json!(next_revision)),
@@ -364,8 +439,28 @@ pub fn record_position(
             ),
             ("reason_ref", opt(&req.reason_ref)),
             ("subject_digest", json!(digest_json(&req.subject_digest))),
+            (
+                "prior_position_digest",
+                prior_digest.map(Value::from).unwrap_or(Value::Null),
+            ),
             ("digest", json!(digest_json(&position_digest))),
             ("created_at", json!(created_at)),
+        ]),
+    });
+    // The SEPARATE current-seat-head CAS row.
+    effects.push(Effect::Upsert {
+        table: "position_seat_heads".into(),
+        row: crate::gov_ops::obj_pairs([
+            ("proposal_kind", json!(proposal_kind)),
+            ("proposal_ref", json!(req.proposal_ref)),
+            ("seat_ref", json!(req.seat_ref)),
+            ("society_id", json!(society_id)),
+            ("position_ref", json!(minted.position_id)),
+            ("revision", json!(next_revision)),
+            ("value", json!(req.value)),
+            ("status", json!(target_status)),
+            ("digest", json!(digest_json(&position_digest))),
+            ("updated_at", json!(created_at)),
         ]),
     });
     let mut result = json!({
@@ -383,6 +478,14 @@ pub fn record_position(
         result["assent_mode"] = json!(mode);
     }
     Ok((effects, result))
+}
+
+/// Parses a stored/serialized digest column into a complete canonical
+/// `DigestRef` (BY-D1). A column that is not a well-formed DigestRef is
+/// an internal fault, never a `value_hex`-only comparison.
+pub fn digest_of(stored: &Value) -> Result<bpp_core::digest::DigestRef, Problem> {
+    serde_json::from_value(stored.clone())
+        .map_err(|_| state::internal("stored digest is not a canonical DigestRef"))
 }
 
 pub fn position_ineligible(detail: &str) -> Problem {

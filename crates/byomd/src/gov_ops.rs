@@ -21,7 +21,7 @@ use byom_store::{
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 
-use crate::state;
+use crate::{channel, gov_decision, state};
 
 /// The governance actor of the developer profile: the same-UID sovereign
 /// human channel (§14.5; fresh phishing-resistant challenge is a
@@ -350,6 +350,72 @@ fn source_row(output: &str, request_id: &str, source_pointer: &str, transform: &
     })
 }
 
+/// One channel row (candidate or participant). `token` no longer holds a
+/// bearer secret: it carries the proof-key VERIFIER reference (BY-C1).
+/// `closed_by_*` record the exact refusal a closed channel may replay
+/// and nothing else (BY-C2).
+#[allow(clippy::too_many_arguments)]
+pub fn channel_row(
+    table: &str,
+    channel_id: &str,
+    society_id: &str,
+    scope_ref: &str,
+    proof_key_id: &str,
+    key_path: &str,
+    channel_state: &str,
+    at: &str,
+    closed_by_operation: Option<&str>,
+    closed_by_domain_digest: Option<&str>,
+) -> Map<String, Value> {
+    let scope_column = if table == "candidate_channels" {
+        "offer_ref"
+    } else {
+        "participant_ref"
+    };
+    obj_pairs([
+        ("channel_id", json!(channel_id)),
+        ("society_id", json!(society_id)),
+        (scope_column, json!(scope_ref)),
+        ("token", json!(proof_key_id)),
+        ("token_path", json!(key_path)),
+        ("state", json!(channel_state)),
+        ("created_at", json!(at)),
+        (
+            "closed_at",
+            if channel_state == "open" {
+                Value::Null
+            } else {
+                json!(at)
+            },
+        ),
+        (
+            "closed_by_operation",
+            closed_by_operation.map(|v| json!(v)).unwrap_or(Value::Null),
+        ),
+        (
+            "closed_by_domain_digest",
+            closed_by_domain_digest
+                .map(|v| json!(v))
+                .unwrap_or(Value::Null),
+        ),
+    ])
+}
+
+/// The credential row of a channel being closed: the same VERIFIER row
+/// marked terminal, so no proof can verify against it again.
+pub fn closed_credential(
+    conn: &Connection,
+    channel_id: &str,
+    at: &str,
+) -> Result<Map<String, Value>, Problem> {
+    let mut row = rows::get_row(conn, "channel_credentials", "channel_id", channel_id)
+        .map_err(db_err)?
+        .ok_or_else(state::not_found)?;
+    row.insert("state".into(), json!("closed"));
+    row.insert("closed_at".into(), json!(at));
+    Ok(row)
+}
+
 pub fn obj_pairs<const N: usize>(entries: [(&str, Value); N]) -> Map<String, Value> {
     let mut m = Map::new();
     for (k, v) in entries {
@@ -430,7 +496,10 @@ pub fn society_bootstrap(
 
     // Stable mints for the genesis set (one command transaction, one
     // journal entry; §6.1 crash result: none or complete genesis).
-    let decision_ref = mint(store, "dec-bootstrap")?;
+    // The genesis GovernanceDecision is IMMUTABLE and derived from the
+    // Society it seats (BY-A1): every later governance act resolves it
+    // or a decision formed under it.
+    let decision_ref = gov_decision::society_decision_ref(&req.society_id);
     let participant_id = mint(store, "part-sov")?;
     let standing_id = mint(store, "standing")?;
     let genesis_event = mint(store, "evt")?;
@@ -478,8 +547,16 @@ pub fn society_bootstrap(
         let secret = unhex(secret_hex).ok_or_else(|| state::internal("corrupt preparation"))?;
         let preimage = tagged_canonical("bpp-bootstrap-subject-v0", &preparation["subject"])
             .map_err(|e| state::internal(&e.to_string()))?;
-        let recomputed = hex(&hmac_sha256(&secret, &preimage));
-        if recomputed != req.subject_digest.value_hex {
+        // The COMPLETE canonical DigestRef must match (BY-D1): class,
+        // algorithm, key reference and value together.
+        let recomputed = bpp_core::digest::DigestRef::local_erasure_safe(
+            &format!(
+                "society-key:{}/object:bootstrap-subject",
+                society.society_id
+            ),
+            hex(&hmac_sha256(&secret, &preimage)),
+        );
+        if !req.subject_digest.same_ref(&recomputed) {
             return Err(state::invalid(
                 "subject_digest does not match the prepared bootstrap subject",
             ));
@@ -505,7 +582,30 @@ pub fn society_bootstrap(
         society_effect_row.insert("revision".into(), json!(new_revision));
         society_effect_row.insert("state".into(), json!("active"));
         society_effect_row.insert("genesis_event_ref".into(), json!(genesis_event));
-        let effects = vec![
+        // The genesis decision seats the sovereign over the exact
+        // prepared bootstrap subject (BY-A1).
+        let genesis_decision = gov_decision::form(
+            conn,
+            &decision_ref,
+            &society.society_id,
+            gov_decision::KIND_SOCIETY_GENESIS,
+            "society",
+            &society.society_id,
+            &req.subject_digest,
+            &society.charter_head_ref,
+            &[gov_decision::DecisionSeat {
+                seat_ref: seat.clone(),
+                participant_ref: participant_id.clone(),
+                actor_ref: ACTOR_GOVERNANCE.to_owned(),
+                participant_binding_epoch: 1,
+            }],
+            &[],
+            "society_bootstrap",
+            ACTOR_GOVERNANCE,
+            now,
+        )?;
+        let mut effects = vec![genesis_decision];
+        effects.extend([
             Effect::Upsert {
                 table: "societies".into(),
                 row: society_effect_row,
@@ -558,7 +658,7 @@ pub fn society_bootstrap(
                     ("created_at", json!(created_at)),
                 ]),
             },
-        ];
+        ]);
         let causation = causation_of(&req.meta);
         let correlation = correlation_of(&req.meta);
         let ev =
@@ -738,7 +838,11 @@ pub fn membership_offer(
     let offer_id = mint(store, "offer")?;
     let channel_id = mint(store, "chan")?;
     let manifestation_id = mint(store, "manif")?;
-    let token = mint(store, "cand-token")?;
+    // The candidate credential is a sender-constrained PROOF key, never
+    // a reusable bearer token (BY-C1): the store keeps only the verifier
+    // reference and the binding a presented proof must commit to.
+    let proof_key = channel::proof_key(store, &channel_id)?;
+    let proof_key_id = channel::key_id(&proof_key);
     let offer_event = mint(store, "evt")?;
     let participant_event = mint(store, "evt")?;
     let manifestation_event = mint(store, "evt")?;
@@ -782,6 +886,27 @@ pub fn membership_offer(
         if society.state != "active" {
             return Err(state::stale_binding("society is not active"));
         }
+        // BY-A1: the offer is authorized by the Society's immutable
+        // genesis GovernanceDecision, resolved in full — actor, seat,
+        // subject digest, snapshot and dependency closure — BEFORE any
+        // mutation is prepared. A literal decision reference fails here.
+        let preparation: Value = serde_json::from_str(&society.preparation)
+            .map_err(|e| state::internal(&e.to_string()))?;
+        let genesis_subject: bpp_core::digest::DigestRef =
+            serde_json::from_value(preparation["subject_digest"].clone())
+                .map_err(|_| state::internal("society preparation has no subject digest"))?;
+        gov_decision::resolve(
+            conn,
+            &req.offered_by_decision_ref,
+            &gov_decision::Expect {
+                society_id: &sid,
+                kind: gov_decision::KIND_SOCIETY_GENESIS,
+                subject_kind: "society",
+                subject_ref: &sid,
+                subject_digest: &genesis_subject,
+                actor: ACTOR_GOVERNANCE,
+            },
+        )?;
         if parse_rfc3339_utc(&req.expires_at).is_some_and(|t| t <= now) {
             return Err(state::invalid("expires_at is already past"));
         }
@@ -792,7 +917,54 @@ pub fn membership_offer(
                 return Err(state::forbidden());
             }
         }
+        let sovereign = rows::sovereign_participant(conn, &sid)
+            .map_err(db_err)?
+            .ok_or_else(state::not_found)?;
+        let sovereign_seat = preparation["sovereign_seat_set"][0]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        let seats = [gov_decision::DecisionSeat {
+            seat_ref: sovereign_seat,
+            participant_ref: sovereign.participant_id.clone(),
+            actor_ref: ACTOR_GOVERNANCE.to_owned(),
+            participant_binding_epoch: sovereign.binding_epoch,
+        }];
+        // The two decisions the dependent acts resolve: admission of
+        // THIS offer and admission of THIS proposed Manifestation.
+        let admission_decision = gov_decision::form(
+            conn,
+            &gov_decision::offer_decision_ref(&offer_id),
+            &sid,
+            gov_decision::KIND_MEMBERSHIP_ADMISSION,
+            "membership_offer",
+            &offer_id,
+            &req.subject_digest,
+            &society.charter_head_ref,
+            &seats,
+            &[],
+            "membership_offer",
+            ACTOR_GOVERNANCE,
+            now,
+        )?;
+        let manifestation_decision = gov_decision::form(
+            conn,
+            &gov_decision::manifestation_decision_ref(&manifestation_id),
+            &sid,
+            gov_decision::KIND_MANIFESTATION_ADMISSION,
+            "manifestation",
+            &manifestation_id,
+            &req.subject_digest,
+            &society.charter_head_ref,
+            &seats,
+            &[],
+            "membership_offer",
+            ACTOR_GOVERNANCE,
+            now,
+        )?;
         let effects = vec![
+            admission_decision,
+            manifestation_decision,
             Effect::Upsert {
                 table: "membership_offers".into(),
                 row: obj_pairs([
@@ -854,12 +1026,36 @@ pub fn membership_offer(
             },
             Effect::Upsert {
                 table: "candidate_channels".into(),
+                row: channel_row(
+                    "candidate_channels",
+                    &channel_id,
+                    &sid,
+                    &offer_id,
+                    &proof_key_id,
+                    &token_path,
+                    "open",
+                    &created_at,
+                    None,
+                    None,
+                ),
+            },
+            // The VERIFIER: what a presented proof must commit to.
+            Effect::Upsert {
+                table: "channel_credentials".into(),
                 row: obj_pairs([
                     ("channel_id", json!(channel_id)),
                     ("society_id", json!(sid)),
-                    ("offer_ref", json!(offer_id)),
-                    ("token", json!(token)),
-                    ("token_path", json!(token_path)),
+                    ("audience", json!(channel::AUDIENCE_CANDIDATE)),
+                    ("scope_ref", json!(offer_id)),
+                    ("proof_key_id", json!(proof_key_id)),
+                    ("key_path", json!(token_path)),
+                    (
+                        "operations",
+                        json!(json!(channel::candidate_operations()).to_string()),
+                    ),
+                    ("binding_ref", json!(manifestation_id)),
+                    ("fence_epoch", json!(1)),
+                    ("expires_at", json!(req.expires_at)),
                     ("state", json!("open")),
                     ("created_at", json!(created_at)),
                     ("closed_at", Value::Null),
@@ -905,7 +1101,10 @@ pub fn membership_offer(
                 &channel_event,
                 "channel.candidate_minted",
                 &channel_id,
-                json!({"offer_ref": offer_id, "constraint": "sender-constrained token file (developer profile)"}),
+                json!({"offer_ref": offer_id,
+                       "constraint": "sender-constrained proof bound to connection, offer, \
+                                      Manifestation binding, fence, audience, operations and expiry",
+                       "proof_key_id": proof_key_id}),
             ),
         ];
         Ok(Prepared {
@@ -947,7 +1146,8 @@ pub fn participant_admit(
 
     let standing_id = mint(store, "standing")?;
     let participant_channel_id = mint(store, "chan")?;
-    let participant_token = mint(store, "part-token")?;
+    let participant_proof_key_id =
+        channel::key_id(&channel::proof_key(store, &participant_channel_id)?);
     let admit_event = mint(store, "evt")?;
     let standing_event = mint(store, "evt")?;
     let channel_event = mint(store, "evt")?;
@@ -994,16 +1194,29 @@ pub fn participant_admit(
                 "membership_acceptance_ref does not cite the current acceptance",
             ));
         }
-        // The admission subject is the exact offer subject.
+        // The admission subject is the exact offer subject — the
+        // COMPLETE canonical DigestRef, not the 32 bytes alone (BY-D1).
         let offer_subject: Value =
             serde_json::from_str(&offer.subject_digest).unwrap_or(Value::Null);
-        if offer_subject["value_hex"].as_str()
-            != Some(req.admission_subject_digest.value_hex.as_str())
-        {
+        if !req.admission_subject_digest.same_ref_json(&offer_subject) {
             return Err(state::invalid(
                 "admission_subject_digest does not match the offer subject",
             ));
         }
+        // BY-A1: admission resolves the immutable admission decision
+        // formed for THIS offer, in full, before preparing anything.
+        gov_decision::resolve(
+            conn,
+            &req.admitted_by_decision_ref,
+            &gov_decision::Expect {
+                society_id: &offer.society_id,
+                kind: gov_decision::KIND_MEMBERSHIP_ADMISSION,
+                subject_kind: "membership_offer",
+                subject_ref: &offer.offer_id,
+                subject_digest: &req.admission_subject_digest,
+                actor: ACTOR_GOVERNANCE,
+            },
+        )?;
         // Pre-admission candidate self-policy proposals activate HERE,
         // exactly as authored, never before Standing (B1 sheet). A cited
         // proposal must exist, belong to THIS offer, and still be
@@ -1113,28 +1326,59 @@ pub fn participant_admit(
                 ]),
             },
             // Admission atomically fences/converts the credential: the
-            // candidate channel closes, a participant channel is minted.
+            // candidate channel closes with NO replayable refusal
+            // (BY-C2), and a participant channel is minted with its own
+            // sender-constrained proof verifier (BY-C1).
             Effect::Upsert {
                 table: "candidate_channels".into(),
-                row: obj_pairs([
-                    ("channel_id", json!(channel.channel_id)),
-                    ("society_id", json!(channel.society_id)),
-                    ("offer_ref", json!(channel.scope_ref)),
-                    ("token", json!(channel.token)),
-                    ("token_path", json!(channel.token_path)),
-                    ("state", json!("closed")),
-                    ("created_at", json!(created_at)),
-                    ("closed_at", json!(created_at)),
-                ]),
+                row: channel_row(
+                    "candidate_channels",
+                    &channel.channel_id,
+                    &channel.society_id,
+                    &channel.scope_ref,
+                    &channel.token,
+                    &channel.token_path,
+                    "closed",
+                    &created_at,
+                    None,
+                    None,
+                ),
+            },
+            Effect::Upsert {
+                table: "channel_credentials".into(),
+                row: closed_credential(conn, &channel.channel_id, &created_at)?,
             },
             Effect::Upsert {
                 table: "participant_channels".into(),
+                row: channel_row(
+                    "participant_channels",
+                    &participant_channel_id,
+                    &offer.society_id,
+                    &offer.participant_ref,
+                    &participant_proof_key_id,
+                    &token_path,
+                    "open",
+                    &created_at,
+                    None,
+                    None,
+                ),
+            },
+            Effect::Upsert {
+                table: "channel_credentials".into(),
                 row: obj_pairs([
                     ("channel_id", json!(participant_channel_id)),
                     ("society_id", json!(offer.society_id)),
-                    ("participant_ref", json!(offer.participant_ref)),
-                    ("token", json!(participant_token)),
-                    ("token_path", json!(token_path)),
+                    ("audience", json!(channel::AUDIENCE_PARTICIPANT)),
+                    ("scope_ref", json!(offer.participant_ref)),
+                    ("proof_key_id", json!(participant_proof_key_id)),
+                    ("key_path", json!(token_path)),
+                    (
+                        "operations",
+                        json!(json!(channel::participant_operations()).to_string()),
+                    ),
+                    ("binding_ref", json!(standing_id)),
+                    ("fence_epoch", json!(new_binding_epoch)),
+                    ("expires_at", json!("9999-12-31T23:59:59Z")),
                     ("state", json!("open")),
                     ("created_at", json!(created_at)),
                     ("closed_at", Value::Null),
@@ -1208,6 +1452,149 @@ pub fn participant_admit(
     Ok(bytes)
 }
 
+// -------------------------------------------- membership_offer_revoke ----
+
+/// membership_offer_revoke (governance, update; §7.4, BY-C3): the same
+/// authority fencing refusal performs — same-revision CAS against
+/// admission, terminal `revoked` state, fence advance, candidate channel
+/// closure and events — WITHOUT attributing a refusal to the candidate.
+/// Revocation leaves NO replayable receipt on the closed channel: only
+/// the candidate's own refusal does (BY-C2).
+pub fn membership_offer_revoke(
+    store: &mut Store,
+    req: &ops::MembershipOfferRevokeRequest,
+    body: &Value,
+    now: i64,
+    hooks: CrashHooks,
+) -> Result<Vec<u8>, Problem> {
+    let offer = rows::get_offer(store.conn(), &req.offer_ref)
+        .map_err(db_err)?
+        .ok_or_else(state::not_found)?;
+    check_meta_binding(store, &req.meta, &offer.society_id)?;
+    // Deterministic server-time expiry races revocation through the
+    // same CAS: apply it first, as its own journaled transition.
+    expire_offer_if_due(store, &req.offer_ref, now)?;
+
+    let revoke_event = mint(store, "evt")?;
+    let channel_event = mint(store, "evt")?;
+    let revoked_at = rfc3339_utc(now);
+    let scope = MutationScope {
+        society_id: offer.society_id.clone(),
+        operation: "membership_offer_revoke".into(),
+        actor: ACTOR_GOVERNANCE.into(),
+        meta: req.meta.clone(),
+        body: body.clone(),
+    };
+    let req = req.clone();
+    let bytes = run(store, scope, now, hooks, move |conn, _| {
+        let offer = rows::get_offer(conn, &req.offer_ref)
+            .map_err(db_err)?
+            .ok_or_else(state::not_found)?;
+        // Same-revision CAS: revocation and admission cannot both win.
+        if req.meta.expected_revision != Some(offer.revision) {
+            return Err(state::stale_revision());
+        }
+        if !matches!(offer.state.as_str(), "offered" | "onboarding" | "accepted") {
+            return Err(state::stale_binding("terminal offer cannot be revoked"));
+        }
+        let offer_subject: bpp_core::digest::DigestRef =
+            serde_json::from_str(&offer.subject_digest)
+                .map_err(|_| state::internal("offer subject digest is not canonical"))?;
+        // BY-A1: revocation resolves the same immutable decision that
+        // seats this offer's subject.
+        gov_decision::resolve(
+            conn,
+            &req.revoked_by_decision_ref,
+            &gov_decision::Expect {
+                society_id: &offer.society_id,
+                kind: gov_decision::KIND_MEMBERSHIP_ADMISSION,
+                subject_kind: "membership_offer",
+                subject_ref: &offer.offer_id,
+                subject_digest: &offer_subject,
+                actor: ACTOR_GOVERNANCE,
+            },
+        )?;
+        let new_revision = offer.revision + 1;
+        let new_fence = offer.fence_epoch + 1;
+        let mut offer_row = offer.to_effect_row();
+        offer_row.insert("state".into(), json!("revoked"));
+        offer_row.insert("revision".into(), json!(new_revision));
+        offer_row.insert("fence_epoch".into(), json!(new_fence));
+        let mut effects = vec![Effect::Upsert {
+            table: "membership_offers".into(),
+            row: offer_row,
+        }];
+        let mut events = vec![NewEvent {
+            event_id: revoke_event.clone(),
+            society_id: offer.society_id.clone(),
+            kind: "membership.revoked".into(),
+            object_ref: offer.offer_id.clone(),
+            object_revision: new_revision,
+            participant_ref: Some(offer.participant_ref.clone()),
+            actor_ref: ACTOR_GOVERNANCE.into(),
+            causation_ref: causation_of(&req.meta),
+            correlation_ref: correlation_of(&req.meta),
+            payload: json!({"state": "revoked", "fence_epoch": new_fence,
+                            "decision_ref": req.revoked_by_decision_ref}),
+            visibility_scope_ref: "scope:society".into(),
+        }];
+        if let Some(channel) =
+            rows::candidate_channel_for_offer(conn, &offer.offer_id).map_err(db_err)?
+        {
+            if channel.state == "open" {
+                effects.push(Effect::Upsert {
+                    table: "candidate_channels".into(),
+                    row: channel_row(
+                        "candidate_channels",
+                        &channel.channel_id,
+                        &channel.society_id,
+                        &channel.scope_ref,
+                        &channel.token,
+                        &channel.token_path,
+                        "closed",
+                        &revoked_at,
+                        None,
+                        None,
+                    ),
+                });
+                effects.push(Effect::Upsert {
+                    table: "channel_credentials".into(),
+                    row: closed_credential(conn, &channel.channel_id, &revoked_at)?,
+                });
+                events.push(NewEvent {
+                    event_id: channel_event.clone(),
+                    society_id: offer.society_id.clone(),
+                    kind: "channel.candidate_closed".into(),
+                    object_ref: channel.channel_id.clone(),
+                    object_revision: 1,
+                    participant_ref: Some(offer.participant_ref.clone()),
+                    actor_ref: ACTOR_GOVERNANCE.into(),
+                    causation_ref: causation_of(&req.meta),
+                    correlation_ref: correlation_of(&req.meta),
+                    payload: json!({"reason": "offer revoked"}),
+                    visibility_scope_ref: "scope:society".into(),
+                });
+            }
+        }
+        Ok(Prepared {
+            result: json!({
+                "offer_ref": offer.offer_id,
+                "revision": new_revision,
+                "state": "revoked",
+                "fence_epoch": new_fence,
+            }),
+            revision: Some(new_revision),
+            cursor: CursorMint::AfterEvents {
+                society_id: offer.society_id.clone(),
+            },
+            effects,
+            events,
+        })
+    })?;
+    ensure_channel_files(store);
+    Ok(bytes)
+}
+
 // ------------------------------------------------ manifestation_admit ----
 
 pub fn manifestation_admit(
@@ -1241,6 +1628,21 @@ pub fn manifestation_admit(
         if m.status != "proposed" {
             return Err(state::stale_binding("manifestation is not proposed"));
         }
+        // BY-A1: the admission decision formed for THIS Manifestation.
+        let body_digest: bpp_core::digest::DigestRef = serde_json::from_str(&m.body_digest)
+            .map_err(|_| state::internal("manifestation body digest is not canonical"))?;
+        gov_decision::resolve(
+            conn,
+            &req.admitted_by_decision_ref,
+            &gov_decision::Expect {
+                society_id: &m.society_id,
+                kind: gov_decision::KIND_MANIFESTATION_ADMISSION,
+                subject_kind: "manifestation",
+                subject_ref: &m.manifestation_id,
+                subject_digest: &body_digest,
+                actor: ACTOR_GOVERNANCE,
+            },
+        )?;
         // Manifestation admission requires the Participant's Standing:
         // never before admission (§7.3).
         let participant = rows::get_participant(conn, &m.participant_ref)
@@ -1382,16 +1784,22 @@ pub fn expire_offer_if_due(store: &mut Store, offer_id: &str, now: i64) -> Resul
             if channel.state == "open" {
                 effects.push(Effect::Upsert {
                     table: "candidate_channels".into(),
-                    row: obj_pairs([
-                        ("channel_id", json!(channel.channel_id)),
-                        ("society_id", json!(channel.society_id)),
-                        ("offer_ref", json!(channel.scope_ref)),
-                        ("token", json!(channel.token)),
-                        ("token_path", json!(channel.token_path)),
-                        ("state", json!("closed")),
-                        ("created_at", json!(closed_at)),
-                        ("closed_at", json!(closed_at)),
-                    ]),
+                    row: channel_row(
+                        "candidate_channels",
+                        &channel.channel_id,
+                        &channel.society_id,
+                        &channel.scope_ref,
+                        &channel.token,
+                        &channel.token_path,
+                        "closed",
+                        &closed_at,
+                        None,
+                        None,
+                    ),
+                });
+                effects.push(Effect::Upsert {
+                    table: "channel_credentials".into(),
+                    row: closed_credential(conn, &channel.channel_id, &closed_at)?,
                 });
                 events.push(NewEvent {
                     event_id: channel_event.clone(),
@@ -1442,24 +1850,47 @@ pub fn ensure_channel_files(store: &Store) {
     let dir = channels_dir(store);
     let _ = std::fs::create_dir_all(&dir);
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    let channels: Vec<(String, String, String)> = {
+    type CredentialRow = (String, String, String, String, String, String, i64);
+    let credentials: Vec<CredentialRow> = {
         let Ok(mut stmt) = store.conn().prepare(
-            "SELECT token_path, token, state FROM candidate_channels
-             UNION ALL SELECT token_path, token, state FROM participant_channels",
+            "SELECT channel_id, key_path, state, audience, scope_ref, binding_ref, fence_epoch
+             FROM channel_credentials",
         ) else {
             return;
         };
-        let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))) else {
+        let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        }) else {
             return;
         };
         rows.flatten().collect()
     };
-    for (path, token, channel_state) in channels {
+    for (channel_id, path, channel_state, audience, scope_ref, binding_ref, fence) in credentials {
         let path = std::path::PathBuf::from(path);
         if channel_state == "open" {
-            if !path.exists() {
+            let Ok(key) = channel::proof_key(store, &channel_id) else {
+                continue;
+            };
+            let line = channel::credential_line(
+                &channel_id,
+                &audience,
+                &scope_ref,
+                &binding_ref,
+                fence.max(0) as u64,
+                &key,
+            );
+            let current = std::fs::read_to_string(&path).unwrap_or_default();
+            if current.trim() != line {
                 if let Ok(mut f) = std::fs::File::create(&path) {
-                    let _ = f.write_all(token.as_bytes());
+                    let _ = f.write_all(line.as_bytes());
                     let _ = f.write_all(b"\n");
                 }
                 let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));

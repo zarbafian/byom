@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 
 use crate::gov_ops::{check_meta_binding, db_err, digest_json, mint, obj_pairs, run};
 use crate::part_common::{
-    self, all_seats_assent, mint_position, prepare_trace, record_position, reserve,
+    self, all_seats_assent, digest_of, mint_position, prepare_trace, record_position, reserve,
     seats_from_json, seats_json, settle_holder, source_row, Caller, Seat,
 };
 use crate::part_ops::event;
@@ -272,7 +272,7 @@ pub fn endeavor_position(
             "endeavor",
             &caller.society_id,
             rows::u64_of(&endeavor, "revision"),
-            subject["value_hex"].as_str().unwrap_or_default(),
+            &digest_of(&subject)?,
             &seats,
             &req,
             &caller.participant.participant_id,
@@ -335,7 +335,7 @@ pub fn endeavor_finalize(
             return Err(state::stale_binding("endeavor is not in state proposed"));
         }
         let subject = rows::json_of(&endeavor, "subject_digest");
-        if subject["value_hex"].as_str() != Some(req.subject_digest.value_hex.as_str()) {
+        if !req.subject_digest.same_ref_json(&subject) {
             return Err(state::invalid(
                 "subject_digest does not commit to the exact prepared subject",
             ));
@@ -1074,9 +1074,7 @@ pub fn pledge_amend(
             return Err(state::stale_revision());
         }
         let prior = rows::json_of(&pledge, "terms_digest");
-        if prior["value_hex"].as_str()
-            != Some(req.amendment_of.prior_terms_digest.value_hex.as_str())
-        {
+        if !req.amendment_of.prior_terms_digest.same_ref_json(&prior) {
             return Err(state::stale_binding(
                 "prior_terms_digest does not pin the committed terms",
             ));
@@ -1209,7 +1207,7 @@ pub fn pledge_position(
             "pledge",
             &caller.society_id,
             rows::u64_of(&proposal, "revision"),
-            terms["value_hex"].as_str().unwrap_or_default(),
+            &digest_of(&terms)?,
             &seats,
             &req,
             &caller.participant.participant_id,
@@ -1285,7 +1283,7 @@ pub fn pledge_finalize(
             return Err(state::stale_binding("pledge proposal is not proposed"));
         }
         let terms_digest = rows::json_of(&proposal, "terms_digest");
-        if terms_digest["value_hex"].as_str() != Some(req.subject_digest.value_hex.as_str()) {
+        if !req.subject_digest.same_ref_json(&terms_digest) {
             return Err(state::invalid(
                 "subject_digest does not commit to the exact proposed terms",
             ));
@@ -1658,7 +1656,7 @@ pub fn delivery_submit(
             return Err(state::stale_revision());
         }
         let terms = rows::json_of(&pledge, "terms_digest");
-        if terms["value_hex"].as_str() != Some(req.terms_digest.value_hex.as_str()) {
+        if !req.terms_digest.same_ref_json(&terms) {
             return Err(state::invalid(
                 "terms_digest does not pin the committed terms",
             ));
@@ -1799,9 +1797,7 @@ pub fn review_record(
             return Err(state::stale_binding("delivery is not awaiting review"));
         }
         let delivery_subject = rows::json_of(&delivery, "subject_digest");
-        if delivery_subject["value_hex"].as_str()
-            != Some(req.reviewed_subject_digest.value_hex.as_str())
-        {
+        if !req.reviewed_subject_digest.same_ref_json(&delivery_subject) {
             return Err(state::invalid(
                 "reviewed_subject_digest does not pin the exact delivery",
             ));
@@ -2004,7 +2000,7 @@ pub fn charter_propose(
             .ok_or_else(state::not_found)?;
         // The restatement pins the EXACT current head.
         let head: Value = serde_json::from_str(&society.charter_head_digest).unwrap_or(Value::Null);
-        if head["value_hex"].as_str() != Some(req.previous_digest.value_hex.as_str()) {
+        if !req.previous_digest.same_ref_json(&head) {
             return Err(state::stale_binding(
                 "previous_digest does not pin the current charter head",
             ));

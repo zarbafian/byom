@@ -432,6 +432,29 @@ impl MembershipOfferRequest {
     }
 }
 
+/// membership_offer_revoke (governance, update; §7.4, R10).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MembershipOfferRevokeRequest {
+    pub version: String,
+    pub op: String,
+    pub meta: MutationMeta,
+    pub offer_ref: String,
+    pub revoked_by_decision_ref: String,
+}
+
+impl MembershipOfferRevokeRequest {
+    pub fn parse(body: &Value) -> Result<MembershipOfferRevokeRequest, String> {
+        let req: MembershipOfferRevokeRequest = parse_closed(body)?;
+        check_version(&req.version)?;
+        check_op(&req.op, "membership_offer_revoke")?;
+        check_update_meta(&req.meta)?;
+        check_identifier("offer_ref", &req.offer_ref)?;
+        check_identifier("revoked_by_decision_ref", &req.revoked_by_decision_ref)?;
+        Ok(req)
+    }
+}
+
 /// membership_accept (candidate, update; §7.4, R11).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

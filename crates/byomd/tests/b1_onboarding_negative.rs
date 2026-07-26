@@ -67,7 +67,7 @@ fn nothing_but_governance_admits() {
         "meta": meta(&incarnation, "ng-admit", Some(2)),
         "offer_ref": offer_id,
         "membership_acceptance_ref": acceptance_id,
-        "admitted_by_decision_ref": "dec-1",
+        "admitted_by_decision_ref": offer_decision(&offer_id),
         "admission_subject_digest": subject,
     });
     // participant_admit has ONLY a governance row.
@@ -371,7 +371,7 @@ fn accepted_then_refused_retraction_and_same_revision_race() {
             "meta": meta(&incarnation, "nx-admit", Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": acceptance_id,
-            "admitted_by_decision_ref": "dec-1",
+            "admitted_by_decision_ref": offer_decision(&offer_id),
             "admission_subject_digest": subject,
         }),
     );
@@ -409,7 +409,7 @@ fn post_admission_credential_fencing() {
             "meta": meta(&incarnation, "nf-admit", Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": acceptance_id,
-            "admitted_by_decision_ref": "dec-1",
+            "admitted_by_decision_ref": offer_decision(&offer_id),
             "admission_subject_digest": subject,
         }),
     );
@@ -486,7 +486,7 @@ fn candidate_self_policy_activates_at_admission_exactly_as_authored() {
             "meta": meta(&incarnation, "sp-admit-ghost", Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": acceptance_id,
-            "admitted_by_decision_ref": "dec-admit-1",
+            "admitted_by_decision_ref": offer_decision(&offer_id),
             "admission_subject_digest": subject,
             "included_self_policy_proposal_refs": ["candpol-none"],
         }),
@@ -502,7 +502,7 @@ fn candidate_self_policy_activates_at_admission_exactly_as_authored() {
             "meta": meta(&incarnation, "sp-admit", Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": acceptance_id,
-            "admitted_by_decision_ref": "dec-admit-1",
+            "admitted_by_decision_ref": offer_decision(&offer_id),
             "admission_subject_digest": subject,
             "included_self_policy_proposal_refs": [p1_id],
         }),

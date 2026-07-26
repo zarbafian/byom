@@ -14,8 +14,10 @@ use byom_store::rows::{self, ChannelRow};
 use byom_store::{CrashHooks, CursorMint, MutationScope, Prepared, Store};
 use serde_json::{json, Value};
 
+use crate::channel::{self, Peer};
 use crate::gov_ops::{
-    check_meta_binding, ensure_channel_files, expire_offer_if_due, obj_pairs, run,
+    channel_row, check_meta_binding, closed_credential, ensure_channel_files, expire_offer_if_due,
+    obj_pairs, run,
 };
 use crate::state;
 
@@ -25,20 +27,39 @@ fn candidate_actor(channel: &ChannelRow) -> String {
     format!("candidate:{}", channel.channel_id)
 }
 
-/// Resolves the presented candidate token. An unknown token is
+/// Verifies the presented candidate PROOF (BY-C1) and resolves its
+/// channel. The proof is bound to the connection, the exact offer, the
+/// Manifestation binding, the fence, the audience, the operation and a
+/// short expiry, and its nonce is spent once. Anything else is
 /// non-enumerating `forbidden`.
-pub fn resolve_channel(store: &Store, token: &str) -> Result<ChannelRow, Problem> {
-    if token.is_empty() {
+pub fn resolve_channel(
+    store: &Store,
+    presented: &str,
+    operation: &str,
+    peer: Peer,
+    now: i64,
+) -> Result<ChannelRow, Problem> {
+    if presented.is_empty() {
         return Err(state::forbidden());
     }
-    rows::candidate_channel_by_token(store.conn(), token)
-        .map_err(|e| state::internal(&e.to_string()))?
-        .ok_or_else(state::forbidden)
+    Ok(channel::verify(
+        store,
+        channel::AUDIENCE_CANDIDATE,
+        operation,
+        presented,
+        peer,
+        now,
+    )?
+    .channel)
 }
 
-/// A closed channel serves exactly one thing: the byte-identical replay
-/// of a terminal receipt for the exact same request (§7.4 refusal-retry
-/// rule). Everything else is `forbidden`.
+/// A closed channel serves EXACTLY ONE thing (BY-C2): the byte-identical
+/// replay of the exact refusal that closed it. Not "any retained result
+/// for any operation" — the channel records which operation's refusal
+/// closed it and that refusal's idempotency domain, so an acceptance or
+/// self-policy call after admission, refusal, revocation or expiry
+/// cannot borrow the replay path. Everything else is the terminal
+/// non-enumerating `forbidden`.
 fn closed_channel_replay(
     store: &Store,
     channel: &ChannelRow,
@@ -46,6 +67,17 @@ fn closed_channel_replay(
     meta: &bpp_core::envelope::MutationMeta,
     body: &Value,
 ) -> Result<Vec<u8>, Problem> {
+    let (Some(closing_op), Some(closing_domain)) = (
+        channel.closed_by_operation.as_deref(),
+        channel.closed_by_domain_digest.as_deref(),
+    ) else {
+        // The channel closed by admission, revocation or expiry: no
+        // candidate-authored refusal exists to replay.
+        return Err(state::forbidden());
+    };
+    if closing_op != operation {
+        return Err(state::forbidden());
+    }
     let scope = MutationScope {
         society_id: channel.society_id.clone(),
         operation: operation.to_owned(),
@@ -56,6 +88,11 @@ fn closed_channel_replay(
     let digest = store
         .domain_digest(&scope)
         .map_err(|e| state::internal(&e.to_string()))?;
+    if digest.value_hex != closing_domain {
+        // A different idempotency key is a NEW command on a terminally
+        // fenced channel, never a replay.
+        return Err(state::forbidden());
+    }
     let request_digest =
         Store::request_digest(body).map_err(|e| state::internal(&e.to_string()))?;
     match store
@@ -71,16 +108,18 @@ fn closed_channel_replay(
 
 /// Common candidate-mutation admission: channel state, offer scoping,
 /// lazy server-time expiry, meta binding.
+#[allow(clippy::too_many_arguments)]
 fn admit_candidate_mutation(
     store: &mut Store,
     token: &str,
+    peer: Peer,
     operation: &str,
     offer_ref: &str,
     meta: &bpp_core::envelope::MutationMeta,
     body: &Value,
     now: i64,
 ) -> Result<Result<ChannelRow, Vec<u8>>, Problem> {
-    let channel = resolve_channel(store, token)?;
+    let channel = resolve_channel(store, token, operation, peer, now)?;
     if channel.state != "open" {
         // Terminal fence survives retry: only the exact receipt replays.
         return Ok(Err(closed_channel_replay(
@@ -95,7 +134,9 @@ fn admit_candidate_mutation(
     check_meta_binding(store, meta, &channel.society_id)?;
     expire_offer_if_due(store, offer_ref, now)?;
     // Expiry may have closed the channel just now.
-    let channel = resolve_channel(store, token)?;
+    let channel = rows::candidate_channel_by_id(store.conn(), &channel.channel_id)
+        .map_err(|e| state::internal(&e.to_string()))?
+        .ok_or_else(state::forbidden)?;
     if channel.state != "open" {
         return Ok(Err(closed_channel_replay(
             store, &channel, operation, meta, body,
@@ -113,6 +154,7 @@ fn db_err(e: rusqlite::Error) -> Problem {
 pub fn membership_accept(
     store: &mut Store,
     token: &str,
+    peer: Peer,
     req: &ops::MembershipAcceptRequest,
     body: &Value,
     now: i64,
@@ -121,6 +163,7 @@ pub fn membership_accept(
     let channel = match admit_candidate_mutation(
         store,
         token,
+        peer,
         "membership_accept",
         &req.offer_ref,
         &req.meta,
@@ -182,7 +225,7 @@ pub fn membership_accept(
         // Acceptance commits to the EXACT offer subject.
         let offer_subject: Value =
             serde_json::from_str(&offer.subject_digest).unwrap_or(Value::Null);
-        if offer_subject["value_hex"].as_str() != Some(req.subject_digest.value_hex.as_str()) {
+        if !req.subject_digest.same_ref_json(&offer_subject) {
             return Err(state::invalid(
                 "subject_digest does not match the exact offer subject",
             ));
@@ -240,6 +283,7 @@ pub fn membership_accept(
 pub fn candidate_self_policy_propose(
     store: &mut Store,
     token: &str,
+    peer: Peer,
     req: &ops::CandidateSelfPolicyProposeRequest,
     body: &Value,
     now: i64,
@@ -248,6 +292,7 @@ pub fn candidate_self_policy_propose(
     let channel = match admit_candidate_mutation(
         store,
         token,
+        peer,
         "candidate_self_policy_propose",
         &req.onboarding_ref,
         &req.meta,
@@ -344,6 +389,7 @@ pub fn candidate_self_policy_propose(
 pub fn membership_refuse(
     store: &mut Store,
     token: &str,
+    peer: Peer,
     req: &ops::MembershipRefuseRequest,
     body: &Value,
     now: i64,
@@ -352,6 +398,7 @@ pub fn membership_refuse(
     let channel = match admit_candidate_mutation(
         store,
         token,
+        peer,
         "membership_refuse",
         &req.offer_ref,
         &req.meta,
@@ -395,6 +442,12 @@ pub fn membership_refuse(
         meta: req.meta.clone(),
         body: body.clone(),
     };
+    // The exact idempotency domain of THIS refusal: the one receipt the
+    // closed channel will replay (BY-C2).
+    let refusal_domain = store
+        .domain_digest(&scope)
+        .map_err(|e| state::internal(&e.to_string()))?
+        .value_hex;
     let req = req.clone();
     let channel = channel.clone();
     let bytes = run(store, scope, now, hooks, move |conn, scope| {
@@ -409,8 +462,7 @@ pub fn membership_refuse(
         }
         let offer_subject: Value =
             serde_json::from_str(&offer.subject_digest).unwrap_or(Value::Null);
-        if offer_subject["value_hex"].as_str() != Some(req.offer_subject_digest.value_hex.as_str())
-        {
+        if !req.offer_subject_digest.same_ref_json(&offer_subject) {
             return Err(state::invalid(
                 "offer_subject_digest does not match the exact offer subject",
             ));
@@ -449,19 +501,26 @@ pub fn membership_refuse(
                 row: offer_row,
             },
             // Refusal advances the fence and closes the candidate
-            // channel (§7.4).
+            // channel (§7.4), recording THIS refusal as the ONLY call
+            // the closed channel replays (BY-C2).
             Effect::Upsert {
                 table: "candidate_channels".into(),
-                row: obj_pairs([
-                    ("channel_id", json!(channel.channel_id)),
-                    ("society_id", json!(channel.society_id)),
-                    ("offer_ref", json!(channel.scope_ref)),
-                    ("token", json!(channel.token)),
-                    ("token_path", json!(channel.token_path)),
-                    ("state", json!("closed")),
-                    ("created_at", json!(refused_at)),
-                    ("closed_at", json!(refused_at)),
-                ]),
+                row: channel_row(
+                    "candidate_channels",
+                    &channel.channel_id,
+                    &channel.society_id,
+                    &channel.scope_ref,
+                    &channel.token,
+                    &channel.token_path,
+                    "closed",
+                    &refused_at,
+                    Some("membership_refuse"),
+                    Some(&refusal_domain),
+                ),
+            },
+            Effect::Upsert {
+                table: "channel_credentials".into(),
+                row: closed_credential(conn, &channel.channel_id, &refused_at)?,
             },
         ];
         let events = vec![

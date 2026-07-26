@@ -154,6 +154,29 @@ impl DigestRef {
         Ok(class)
     }
 
+    /// The COMPLETE canonical identity of a digest reference: `class`,
+    /// `algorithm`, `key_ref` and `value_hex` jointly identify it
+    /// (BY-D1). Comparing `value_hex` alone lets a request substitute a
+    /// different keyed object reference while copying the 32 bytes.
+    pub fn same_ref(&self, other: &DigestRef) -> bool {
+        self.class == other.class
+            && self.algorithm == other.algorithm
+            && self.key_ref == other.key_ref
+            && self.value_hex == other.value_hex
+    }
+
+    /// The same complete comparison against a stored/serialized digest
+    /// (the JSON a row or a result carries). A stored value that is not
+    /// a well-formed `DigestRef` never matches.
+    pub fn same_ref_json(&self, stored: &serde_json::Value) -> bool {
+        match serde_json::from_value::<DigestRef>(stored.clone()) {
+            Ok(stored) => self.same_ref(&stored),
+            Err(_) => false,
+        }
+    }
+}
+
+impl DigestRef {
     /// PROFILE §6.3 step 9: a well-constructed digest of the wrong class
     /// is `digest_class_mismatch`, never a silent substitution (RT-02).
     pub fn require_class(&self, required: DigestClass) -> Result<(), DigestWireError> {
@@ -179,6 +202,28 @@ mod tests {
             value_hex: "a".repeat(64),
         };
         assert_eq!(d.validate_wire(), Err(DigestWireError::KeyRefForbidden));
+    }
+
+    #[test]
+    fn a_copied_value_under_another_reference_is_not_the_same_digest() {
+        let value = "a".repeat(64);
+        let d = DigestRef::local_erasure_safe("society-key:s/object:o1", value.clone());
+        // Same 32 bytes, different key reference / class / algorithm.
+        assert!(!d.same_ref(&DigestRef::local_erasure_safe(
+            "society-key:s/object:o2",
+            value.clone()
+        )));
+        assert!(!d.same_ref(&DigestRef::scope_erasure_safe(
+            "society-key:s/object:o1",
+            value.clone()
+        )));
+        let mut wrong_algorithm = d.clone();
+        wrong_algorithm.algorithm = "sha-256".to_owned();
+        assert!(!d.same_ref(&wrong_algorithm));
+        assert!(d.same_ref(&DigestRef::local_erasure_safe(
+            "society-key:s/object:o1",
+            value
+        )));
     }
 
     #[test]

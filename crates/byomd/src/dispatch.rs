@@ -3,10 +3,12 @@
 //! truth, the meta-class rule, sealed-endpoint refusal, and dispatch
 //! into the handlers. One newline-terminated JSON request per
 //! connection: write one line, read one line, the daemon closes. The
-//! candidate socket takes one token preamble line before the request;
-//! the participant socket takes an OPTIONAL token preamble (an agent's
-//! sender-constrained participant token — a line not opening with `{`;
-//! the same-UID sovereign sends the request directly).
+//! candidate socket takes one PROOF preamble line before the request;
+//! the participant socket takes an OPTIONAL proof preamble (an agent's
+//! sender-constrained channel proof — a line not opening with `{`; the
+//! same-UID sovereign sends the request directly). A proof is minted per
+//! call and bound to the connection, the exact scope and the exact
+//! operation (BY-C1, `crate::channel`), never a reusable bearer token.
 
 use std::io::{BufRead as _, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -23,6 +25,7 @@ use byom_store::witness::WitnessFault;
 use byom_store::{CrashHooks, Store};
 use serde_json::Value;
 
+use crate::channel::Peer;
 use crate::part_common::{self, Caller};
 use crate::socket::SocketSurface;
 use crate::state;
@@ -88,19 +91,30 @@ impl Daemon {
             let Ok(stream) = stream else { continue };
             // Channel authentication first: a foreign UID is dropped
             // before a byte is read, and learns nothing.
-            if crate::peercred::authenticate_same_uid(&stream, uid).is_err() {
+            let Ok(credentials) = crate::peercred::authenticate_same_uid(&stream, uid) else {
                 continue;
-            }
+            };
+            // The connection identity a sender-constrained channel proof
+            // is bound to (BY-C1).
+            let peer = Peer {
+                pid: credentials.pid,
+                process_start: crate::channel::process_start(credentials.pid),
+            };
             let daemon = Arc::clone(self);
             std::thread::spawn(move || {
-                if let Err(e) = daemon.handle_connection(stream, surface) {
+                if let Err(e) = daemon.handle_connection(stream, surface, peer) {
                     eprintln!("byomd: connection error: {e}");
                 }
             });
         }
     }
 
-    fn handle_connection(&self, stream: UnixStream, surface: SocketSurface) -> std::io::Result<()> {
+    fn handle_connection(
+        &self,
+        stream: UnixStream,
+        surface: SocketSurface,
+        peer: Peer,
+    ) -> std::io::Result<()> {
         // ONE buffer for the whole connection: the token preamble and
         // the request line share it, so no buffered bytes are lost
         // between reads.
@@ -148,7 +162,7 @@ impl Daemon {
             limited.read_line(&mut line)?;
             trim_newline(&mut line);
         }
-        let reply = self.dispatch_line(&line, surface, token.as_deref());
+        let reply = self.dispatch_line(&line, surface, token.as_deref(), peer);
         let mut stream = stream;
         stream.write_all(&reply)?;
         stream.write_all(b"\n")?;
@@ -161,8 +175,9 @@ impl Daemon {
         line: &str,
         surface: SocketSurface,
         token: Option<&str>,
+        peer: Peer,
     ) -> Vec<u8> {
-        match self.dispatch_inner(line, surface, token) {
+        match self.dispatch_inner(line, surface, token, peer) {
             Ok(reply) => {
                 if reply.len() > limits::RESPONSE_MAX_BYTES {
                     // §14.9 response cap: fail closed rather than stream
@@ -181,6 +196,7 @@ impl Daemon {
         line: &str,
         surface: SocketSurface,
         token: Option<&str>,
+        peer: Peer,
     ) -> Result<Vec<u8>, Problem> {
         // Strict I-JSON acceptance under the request cap (PROFILE §1).
         let value = bpp_core::ijson::parse_request(line.as_bytes())
@@ -289,7 +305,8 @@ impl Daemon {
                     let req = ops::IdempotencyResultRequest::parse(body)
                         .map_err(|e| state::invalid(&e))?;
                     let store = self.lock_store()?;
-                    let actor = self.originating_actor(&store, surface, token, now)?;
+                    let actor =
+                        self.originating_actor(&store, surface, token, peer, &raw.op, now)?;
                     reads::idempotency_result(&store, &actor, &req)
                 }
                 "cursor_recover" => {
@@ -307,10 +324,10 @@ impl Daemon {
                 self.dispatch_governance(&raw, token.unwrap_or_default(), now, hooks)
             }
             SocketSurface::Candidate => {
-                self.dispatch_candidate(&raw, token.unwrap_or_default(), now, hooks)
+                self.dispatch_candidate(&raw, token.unwrap_or_default(), peer, now, hooks)
             }
             SocketSurface::Participant => {
-                self.dispatch_participant(&raw, token.unwrap_or_default(), now, hooks)
+                self.dispatch_participant(&raw, token.unwrap_or_default(), peer, now, hooks)
             }
             SocketSurface::Projection => {
                 self.dispatch_projection(&raw, token.unwrap_or_default(), now)
@@ -333,11 +350,14 @@ impl Daemon {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn originating_actor(
         &self,
         store: &Store,
         surface: SocketSurface,
         token: Option<&str>,
+        peer: Peer,
+        operation: &str,
         now: i64,
     ) -> Result<String, Problem> {
         match surface {
@@ -355,14 +375,26 @@ impl Daemon {
                 }
             }
             SocketSurface::Candidate => {
-                let channel = cand_ops::resolve_channel(store, token.unwrap_or_default())?;
+                let channel = cand_ops::resolve_channel(
+                    store,
+                    token.unwrap_or_default(),
+                    operation,
+                    peer,
+                    now,
+                )?;
                 if channel.state != "open" {
                     return Err(state::forbidden());
                 }
                 Ok(format!("candidate:{}", channel.channel_id))
             }
             SocketSurface::Participant => {
-                match part_common::resolve_caller(store, token.unwrap_or_default())? {
+                match part_common::resolve_caller(
+                    store,
+                    token.unwrap_or_default(),
+                    operation,
+                    peer,
+                    now,
+                )? {
                     Ok(caller) => Ok(caller.actor),
                     Err(_) => Err(state::forbidden()),
                 }
@@ -427,6 +459,11 @@ impl Daemon {
                 let req =
                     ops::MembershipOfferRequest::parse(body).map_err(|e| state::invalid(&e))?;
                 gov_ops::membership_offer(&mut store, &req, body, now, hooks)
+            }
+            "membership_offer_revoke" => {
+                let req = ops::MembershipOfferRevokeRequest::parse(body)
+                    .map_err(|e| state::invalid(&e))?;
+                gov_ops::membership_offer_revoke(&mut store, &req, body, now, hooks)
             }
             "participant_admit" => {
                 let req =
@@ -495,6 +532,7 @@ impl Daemon {
         &self,
         raw: &RawRequest,
         token: &str,
+        peer: Peer,
         now: i64,
         hooks: CrashHooks,
     ) -> Result<Vec<u8>, Problem> {
@@ -504,17 +542,19 @@ impl Daemon {
             "membership_accept" => {
                 let req =
                     ops::MembershipAcceptRequest::parse(body).map_err(|e| state::invalid(&e))?;
-                cand_ops::membership_accept(&mut store, token, &req, body, now, hooks)
+                cand_ops::membership_accept(&mut store, token, peer, &req, body, now, hooks)
             }
             "membership_refuse" => {
                 let req =
                     ops::MembershipRefuseRequest::parse(body).map_err(|e| state::invalid(&e))?;
-                cand_ops::membership_refuse(&mut store, token, &req, body, now, hooks)
+                cand_ops::membership_refuse(&mut store, token, peer, &req, body, now, hooks)
             }
             "candidate_self_policy_propose" => {
                 let req = ops::CandidateSelfPolicyProposeRequest::parse(body)
                     .map_err(|e| state::invalid(&e))?;
-                cand_ops::candidate_self_policy_propose(&mut store, token, &req, body, now, hooks)
+                cand_ops::candidate_self_policy_propose(
+                    &mut store, token, peer, &req, body, now, hooks,
+                )
             }
             _ => Err(feature_unavailable()),
         }
@@ -524,6 +564,7 @@ impl Daemon {
         &self,
         raw: &RawRequest,
         token: &str,
+        peer: Peer,
         now: i64,
         hooks: CrashHooks,
     ) -> Result<Vec<u8>, Problem> {
@@ -537,7 +578,7 @@ impl Daemon {
         // field. A CLOSED participant channel serves exactly one thing —
         // the byte-identical replay of a terminal receipt for the exact
         // same request (§7.4 discipline, reused by participation_cease).
-        let caller: Caller = match part_common::resolve_caller(&store, token)? {
+        let caller: Caller = match part_common::resolve_caller(&store, token, &raw.op, peer, now)? {
             Ok(caller) => caller,
             Err(channel) => {
                 let Some(meta) = &raw.meta else {

@@ -4,7 +4,7 @@
 //! byom hello [--surface governance|candidate|participant|projection]
 //! byom society bootstrap [--home-authority <ref>] [--charter-ref <ref>]
 //! byom society show --society <id>
-//! byom membership offer --participant <ref> [--standing <ref>]
+//! byom membership offer --participant <ref> --society <id> [--standing <ref>]
 //!     [--expires-at <rfc3339>] [--decision <ref>]
 //! byom participant admit --offer <id> --acceptance <id>
 //!     --expected-revision <n> [--decision <ref>]
@@ -174,7 +174,19 @@ fn run() -> Result<(), String> {
         ("membership", "offer") => {
             let participant = flag(&args, "--participant").ok_or("--participant required")?;
             let standing = flag(&args, "--standing").unwrap_or_else(|| rand_id("standing-p"));
-            let decision = flag(&args, "--decision").unwrap_or_else(|| rand_id("dec"));
+            // The offer is authorized by the Society's immutable genesis
+            // GovernanceDecision (BY-A1): an invented reference fails
+            // closed with decision_incomplete, so name it or the Society.
+            let decision = match flag(&args, "--decision") {
+                Some(decision) => decision,
+                None => format!(
+                    "dec-society-{}",
+                    flag(&args, "--society").ok_or(
+                        "--society (or --decision) required: membership_offer resolves the \
+                         Society's genesis GovernanceDecision dec-society-<society-id>"
+                    )?
+                ),
+            };
             let expires = flag(&args, "--expires-at").unwrap_or_else(|| {
                 bpp_core::time::rfc3339_utc(bpp_core::time::unix_now() + 86_400)
             });
@@ -195,7 +207,8 @@ fn run() -> Result<(), String> {
             print_reply(&reply)?;
             if let Some(offer_id) = reply["result"]["offer_id"].as_str() {
                 eprintln!(
-                    "candidate channel token file: <data-dir>/channels/candidate-{offer_id}.token"
+                    "candidate channel credential file (proof key, 0600): \
+                     <data-dir>/channels/candidate-{offer_id}.token"
                 );
             }
             Ok(())
@@ -207,7 +220,10 @@ fn run() -> Result<(), String> {
                 .ok_or("--expected-revision required")?
                 .parse()
                 .map_err(|_| "--expected-revision must be an integer")?;
-            let decision = flag(&args, "--decision").unwrap_or_else(|| rand_id("dec"));
+            // Admission resolves the immutable decision byom formed for
+            // THIS offer at membership_offer time (BY-A1).
+            let decision =
+                flag(&args, "--decision").unwrap_or_else(|| format!("dec-offer-{offer}"));
             let subject_digest = match flag(&args, "--subject-digest") {
                 Some(text) => serde_json::from_str(&text)
                     .map_err(|e| format!("--subject-digest parse: {e}"))?,

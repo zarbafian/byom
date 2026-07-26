@@ -39,7 +39,7 @@ impl Rig {
                 "meta": meta(&incarnation, &format!("{tag}-admit"), Some(2)),
                 "offer_ref": offer_id,
                 "membership_acceptance_ref": accepted["result"]["acceptance_id"],
-                "admitted_by_decision_ref": "dec-admit-1",
+                "admitted_by_decision_ref": offer_decision(&offer_id),
                 "admission_subject_digest": subject,
             }),
         );
@@ -170,7 +170,7 @@ fn exploration_with_a_held_mandate_is_refused() {
             "version": "0.2", "op": "mandate_hold",
             "meta": meta(&rig.incarnation, "mn-held-hold", Some(2)),
             "mandate_id": mandate_id,
-            "held_by_decision_ref": "dec-hold-1",
+            "held_by_decision_ref": mandate_decision(&mandate_id),
         }),
     );
     assert_eq!(held["outcome"], "ok", "{held}");
@@ -196,7 +196,7 @@ fn exploration_with_a_revoked_mandate_is_refused() {
             "version": "0.2", "op": "mandate_revoke",
             "meta": meta(&rig.incarnation, "mn-revoked-rev", Some(2)),
             "mandate_id": mandate_id,
-            "revoked_by_decision_ref": "dec-revoke-1",
+            "revoked_by_decision_ref": mandate_decision(&mandate_id),
         }),
     );
     assert_eq!(revoked["outcome"], "ok", "{revoked}");

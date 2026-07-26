@@ -48,7 +48,10 @@
 //! ```
 
 pub mod audit;
+pub mod checkpoint;
 pub mod effects;
+pub mod flock;
+pub mod object_secrets;
 pub mod privacy;
 pub mod rows;
 pub mod schema;
@@ -63,7 +66,9 @@ use bpp_core::envelope::{MutationMeta, Success};
 use bpp_core::idempotency::IdempotencyDomain;
 use bpp_core::problem::{Problem, ProblemKind};
 use bpp_core::time::rfc3339_utc;
+use checkpoint::{ChainHead, Checkpoints};
 use effects::{Effect, NewEvent};
+use flock::{open_lock_file, FileLock};
 use rusqlite::{params, Connection, OptionalExtension as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -73,6 +78,7 @@ const META_ENDPOINT_INCARNATION: &str = "endpoint_incarnation";
 const META_INDEX_ROOT_KEY: &str = "index_root_key";
 const META_CURSOR_SECRET: &str = "cursor_secret";
 const META_MIRROR_GEN: &str = "journal_mirror_gen";
+const META_MIRROR_DIGEST: &str = "journal_mirror_digest";
 const META_ENDPOINT_STATUS: &str = "endpoint_status";
 const META_SEAL_REASON: &str = "seal_reason";
 
@@ -101,6 +107,11 @@ pub enum StoreError {
     Entropy(std::io::Error),
     #[error("corrupt store state: {0}")]
     Corrupt(String),
+    /// Another process already owns this data directory (BY-J1): a
+    /// second daemon on one data directory could witness a competing
+    /// generation, so exclusive ownership is refused, never shared.
+    #[error("data directory {0} is already owned by another byom endpoint")]
+    DataDirLocked(String),
 }
 
 /// A mutation either fails with a §14.9 problem (nothing committed) or a
@@ -183,6 +194,41 @@ pub struct Prepared {
     pub events: Vec<NewEvent>,
 }
 
+/// One event, fully materialized at PREPARE time (BY-J2): sequence,
+/// timestamp, payload secret and payload digest are all fixed before the
+/// witness sees the transition, so finalize (live or at recovery) writes
+/// byte-identical rows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FinalEvent {
+    event_id: String,
+    society_id: String,
+    sequence: u64,
+    kind: String,
+    object_ref: String,
+    object_revision: u64,
+    participant_ref: Option<String>,
+    actor_ref: String,
+    causation_ref: String,
+    correlation_ref: String,
+    payload: Value,
+    payload_digest: Value,
+    payload_secret: String,
+    visibility_scope_ref: String,
+    occurred_at: String,
+}
+
+/// One outbox delivery, also fixed at prepare time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FinalOutbox {
+    delivery_id: String,
+    kind: String,
+    payload: String,
+    created_at: String,
+}
+
+/// The §15.3 "full transition": every final state, event, outbox and
+/// result byte, hashed into `transition_digest`/`result_digest` BEFORE
+/// witnessing.
 #[derive(Debug, Serialize, Deserialize)]
 struct PendingPayload {
     society_id: String,
@@ -190,16 +236,54 @@ struct PendingPayload {
     request_digest: String,
     result: Value,
     revision: Option<u64>,
-    cursor: CursorMint,
+    source_cursor: Option<String>,
     effects: Vec<Effect>,
-    events: Vec<NewEvent>,
+    events: Vec<FinalEvent>,
+    outbox: Vec<FinalOutbox>,
+    /// The final `next_event_sequence` per Society this transition sets.
+    society_sequence_heads: Vec<(String, u64)>,
+    occurred_at: String,
 }
 
-/// One personal-profile authoritative database plus its witness.
+impl PendingPayload {
+    /// The exact reply bytes this transition returns — recomputed
+    /// identically by the live path and by crash recovery.
+    fn result_bytes(&self) -> Result<Vec<u8>, StoreError> {
+        let success = Success {
+            outcome: "ok".to_owned(),
+            result: self.result.clone(),
+            revision: self.revision,
+            source_cursor: self.source_cursor.clone(),
+        };
+        Ok(serde_json::to_vec(&success)?)
+    }
+}
+
+/// The verified §15.3 receipt persisted with the finalized transaction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JournalReceipt {
+    pub transaction_id: String,
+    pub endpoint_incarnation: String,
+    pub prior_generation: u64,
+    pub prior_entry_digest: String,
+    pub generation: u64,
+    pub transition_digest: String,
+    pub result_digest: String,
+    pub entry_digest: String,
+    pub witness_key_id: String,
+    pub signature: String,
+}
+
+/// One personal-profile authoritative database plus its witness. Opening
+/// takes EXCLUSIVE ownership of the data directory for the process's
+/// life (BY-J1).
 pub struct Store {
     conn: Connection,
     witness: Witness,
+    checkpoints: Checkpoints,
     data_dir: PathBuf,
+    /// Held for the store's whole life; released by the kernel on exit.
+    _dir_lock: FileLock,
 }
 
 fn internal(detail: &str) -> Problem {
@@ -215,6 +299,13 @@ impl Store {
     /// comes up `sealed_diagnostic` and every authority surface refuses.
     pub fn open(data_dir: &Path) -> Result<Store, StoreError> {
         std::fs::create_dir_all(data_dir).map_err(StoreError::Entropy)?;
+        // §15.3 exclusive data-directory ownership (BY-J1): the witness
+        // CAS is only meaningful if exactly one endpoint writes this
+        // directory. A second daemon is refused here, before it can
+        // observe a generation.
+        let lock_file = open_lock_file(&data_dir.join("byom.lock")).map_err(StoreError::Entropy)?;
+        let dir_lock = FileLock::try_exclusive(lock_file)
+            .map_err(|_| StoreError::DataDirLocked(data_dir.display().to_string()))?;
         let mut conn = Connection::open(data_dir.join("byom.db"))?;
         // Prepare reads (heads, idempotency) then writes; IMMEDIATE takes
         // the write lock at BEGIN so check-and-act is a genuine CAS.
@@ -226,10 +317,13 @@ impl Store {
             )));
         }
         let witness = Witness::open(&data_dir.join("authority-witness.jsonl"))?;
+        let checkpoints = Checkpoints::open(&data_dir.join("authority-checkpoints.jsonl"))?;
         let store = Store {
             conn,
             witness,
+            checkpoints,
             data_dir: data_dir.to_owned(),
+            _dir_lock: dir_lock,
         };
         store.bootstrap_meta()?;
         store.startup_recover()?;
@@ -246,6 +340,7 @@ impl Store {
         schema::meta_set(&tx, META_INDEX_ROOT_KEY, &random_bytes::<32>()?)?;
         schema::meta_set(&tx, META_CURSOR_SECRET, &random_bytes::<32>()?)?;
         schema::meta_set(&tx, META_MIRROR_GEN, b"0")?;
+        schema::meta_set(&tx, META_MIRROR_DIGEST, b"")?;
         schema::meta_set(&tx, META_ENDPOINT_STATUS, b"active")?;
         audit::append(
             &tx,
@@ -257,6 +352,29 @@ impl Store {
             ),
         )?;
         tx.commit()?;
+        // The first terminal checkpoint: from now on a missing one is a
+        // seal condition, never a fresh store.
+        self.write_checkpoint()?;
+        Ok(())
+    }
+
+    /// Records the current audit/erasure chain heads as a terminal
+    /// checkpoint beside the witness (BY-J3).
+    fn write_checkpoint(&self) -> Result<(), StoreError> {
+        let (audit_seq, audit_hash) = audit::head_of(&self.conn, audit::AUDIT)?;
+        let (erasure_seq, erasure_hash) = audit::head_of(&self.conn, audit::ERASURE)?;
+        self.checkpoints.append(
+            &self.witness,
+            self.mirror_gen()?,
+            ChainHead {
+                seq: audit_seq,
+                hash_hex: hex(&audit_hash),
+            },
+            ChainHead {
+                seq: erasure_seq,
+                hash_hex: hex(&erasure_hash),
+            },
+        )?;
         Ok(())
     }
 
@@ -307,6 +425,13 @@ impl Store {
             .unwrap_or(0))
     }
 
+    /// The local mirror's head ENTRY DIGEST — the prior-digest half of
+    /// the §15.3 CAS (BY-J1/BY-J2): a generation number alone does not
+    /// identify a journal head.
+    fn mirror_digest(&self) -> Result<String, StoreError> {
+        Ok(schema::meta_get_text(&self.conn, META_MIRROR_DIGEST)?.unwrap_or_default())
+    }
+
     pub fn verify_audit(&self) -> Result<u64, StoreError> {
         Ok(audit::verify_chain(&self.conn)?)
     }
@@ -341,40 +466,63 @@ impl Store {
         self.scope_key(&format!("idempotency-index:{society_id}"))
     }
 
+    /// The per-Society key that WRAPS every per-object secret
+    /// (D-R1-2): the object secrets are random, and what the database
+    /// stores is each secret wrapped under this Society key.
+    pub fn society_wrap_key(&self, society_id: &str) -> Result<[u8; 32], StoreError> {
+        self.scope_key(&format!("object-secret-wrap:{society_id}"))
+    }
+
     /// The channel-derived actor binding digest (§14.2): a typed
     /// `local_erasure_safe` commitment over the authenticated actor
-    /// string; never accepted from a request body.
+    /// string under a RANDOM per-object secret (D-R1-2), never accepted
+    /// from a request body. The secret is minted once and retained, so
+    /// the idempotency domain stays stable while remaining individually
+    /// destroyable.
     pub fn actor_binding_digest(
         &self,
         society_id: &str,
         actor: &str,
     ) -> Result<DigestRef, StoreError> {
-        let root = self.index_root_key()?;
-        let object_key = hmac_sha256(
-            &root,
-            format!("actor-binding:{society_id}:{actor}").as_bytes(),
-        );
-        let preimage = tagged_canonical(
-            "bpp-actor-binding-v0",
-            &serde_json::json!({ "actor": actor }),
-        )?;
-        let mac = hmac_sha256(&object_key, &preimage);
         let key_ref = format!(
             "society-key:{society_id}/actor:{}",
             &sha256_hex(actor.as_bytes())[..16]
         );
-        Ok(DigestRef::local_erasure_safe(&key_ref, hex(&mac)))
+        let secret = object_secrets::ensure(
+            &self.conn,
+            &self.society_wrap_key(society_id)?,
+            &key_ref,
+            society_id,
+            "bpp-actor-binding-v0",
+        )?;
+        let preimage = tagged_canonical(
+            "bpp-actor-binding-v0",
+            &serde_json::json!({ "actor": actor }),
+        )?;
+        Ok(DigestRef::local_erasure_safe(
+            &key_ref,
+            hex(&hmac_sha256(&secret, &preimage)),
+        ))
     }
 
-    /// Mints a `local_erasure_safe` digest over an object under a fresh
-    /// per-object secret; returns (digest, secret_hex).
+    /// Mints a `local_erasure_safe` digest over an object under a FRESH
+    /// RANDOM per-object secret (D-R1-2), retained wrapped under the
+    /// Society key so the object stays verifiable until ITS secret is
+    /// destroyed; returns (digest, secret_hex).
     pub fn mint_object_digest(
         &self,
         key_ref: &str,
         tag: &str,
         object: &Value,
     ) -> Result<(DigestRef, String), StoreError> {
-        let secret = random_bytes::<32>()?;
+        let society_id = object_secrets::society_of(key_ref);
+        let secret = object_secrets::mint(
+            &self.conn,
+            &self.society_wrap_key(&society_id)?,
+            key_ref,
+            &society_id,
+            tag,
+        )?;
         let preimage = tagged_canonical(tag, object)?;
         let mac = hmac_sha256(&secret, &preimage);
         Ok((
@@ -383,11 +531,12 @@ impl Store {
         ))
     }
 
-    /// A deterministic `local_erasure_safe` record digest: the
-    /// per-object key is derived from the store root for the exact
-    /// object id (developer profile: derived per-object keys keep
-    /// digests recomputable without a secrets table; erasure is by root
-    /// destruction — honestly narrower than the hosted profile).
+    /// A `local_erasure_safe` record digest under a RANDOM per-object
+    /// secret (D-R1-2). The old root-derived per-object derivation was
+    /// the forbidden scope-key substitution: erasing one object could
+    /// not destroy that object's verification, and destroying the root
+    /// destroyed every object. Now each record carries its own secret,
+    /// individually destroyable through `destroy_object_secret`.
     pub fn record_digest(
         &self,
         society_id: &str,
@@ -395,13 +544,60 @@ impl Store {
         tag: &str,
         object: &Value,
     ) -> Result<DigestRef, StoreError> {
-        let root = self.index_root_key()?;
-        let object_key = hmac_sha256(&root, format!("record:{society_id}:{object_id}").as_bytes());
+        let key_ref = format!("society-key:{society_id}/object:{object_id}");
+        let secret = object_secrets::mint(
+            &self.conn,
+            &self.society_wrap_key(society_id)?,
+            &key_ref,
+            society_id,
+            tag,
+        )?;
         let preimage = tagged_canonical(tag, object)?;
         Ok(DigestRef::local_erasure_safe(
-            &format!("society-key:{society_id}/object:{object_id}"),
-            hex(&hmac_sha256(&object_key, &preimage)),
+            &key_ref,
+            hex(&hmac_sha256(&secret, &preimage)),
         ))
+    }
+
+    /// Destroys exactly ONE object's secret: that object stops being
+    /// verifiable, every other object keeps its own secret. The
+    /// destruction is appended to the erasure journal, whose head the
+    /// next terminal checkpoint pins.
+    pub fn destroy_object_secret(&self, key_ref: &str, now: i64) -> Result<bool, StoreError> {
+        let tx = self.conn.unchecked_transaction()?;
+        let changed = tx.execute(
+            "UPDATE object_secrets SET wrapped = '', state = 'destroyed', destroyed_at = ?2
+             WHERE key_ref = ?1 AND state = 'live'",
+            params![key_ref, rfc3339_utc(now)],
+        )?;
+        if changed == 0 {
+            tx.rollback()?;
+            return Ok(false);
+        }
+        audit::append_to(&tx, audit::ERASURE, now, "object-secret.destroyed", key_ref)?;
+        audit::append(&tx, now, "erasure.object_secret_destroyed", key_ref)?;
+        tx.commit()?;
+        self.write_checkpoint()?;
+        Ok(true)
+    }
+
+    /// Re-derives a `local_erasure_safe` digest from the retained
+    /// per-object secret. `None` once that object's secret is destroyed
+    /// — the point of the class.
+    pub fn verify_object_digest(
+        &self,
+        key_ref: &str,
+        tag: &str,
+        object: &Value,
+    ) -> Result<Option<String>, StoreError> {
+        let society_id = object_secrets::society_of(key_ref);
+        let Some(secret) =
+            object_secrets::load(&self.conn, &self.society_wrap_key(&society_id)?, key_ref)?
+        else {
+            return Ok(None);
+        };
+        let preimage = tagged_canonical(tag, object)?;
+        Ok(Some(hex(&hmac_sha256(&secret, &preimage))))
     }
 
     /// The Society recovery epoch (0 for the genesis scope).
@@ -516,8 +712,13 @@ impl Store {
                 )));
             }
 
-            // Step 1 — journal_sql_prepare: the full transition, invisible.
+            // Step 1 — journal_sql_prepare: the full transition,
+            // invisible AND fully materialized. Every final state,
+            // event, outbox and result byte is fixed here, so the
+            // witness commits to exactly what finalize (live or at
+            // recovery) will write (BY-J2).
             let observed_gen = self.mirror_gen()?;
+            let observed_digest = self.mirror_digest()?;
             let txn_id = format!("txn-{}", hex(&random_bytes::<12>()?));
             let tx = self.conn.unchecked_transaction()?;
             let prepared = match apply(&tx, scope) {
@@ -527,25 +728,23 @@ impl Store {
                     return Err(CommandError::Problem(problem));
                 }
             };
-            let payload = PendingPayload {
-                society_id: scope.society_id.clone(),
-                operation: scope.operation.clone(),
-                request_digest: request_digest.clone(),
-                result: prepared.result,
-                revision: prepared.revision,
-                cursor: prepared.cursor,
-                effects: prepared.effects,
-                events: prepared.events,
+            let payload = match self.materialize(&tx, scope, &request_digest, prepared, now) {
+                Ok(payload) => payload,
+                Err(e) => {
+                    tx.rollback()?;
+                    return Err(CommandError::Store(e));
+                }
             };
             let payload_json = serde_json::to_value(&payload).map_err(StoreError::from)?;
             let transition_digest = sha256_hex(&jcs(&payload_json).map_err(StoreError::from)?);
+            let result_digest = sha256_hex(&payload.result_bytes()?);
             tx.execute(
                 "INSERT INTO authority_pending
                     (transaction_id, endpoint_incarnation, society_id, operation,
                      actor_binding_digest, idempotency_domain_digest,
                      prior_journal_generation, proposed_generation, transition_digest,
-                     state, payload, created_at)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'prepared',?10,?11)",
+                     state, payload, created_at, prior_journal_digest, result_digest)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'prepared',?10,?11,?12,?13)",
                 params![
                     txn_id,
                     incarnation,
@@ -561,6 +760,8 @@ impl Store {
                     transition_digest,
                     payload_json.to_string(),
                     rfc3339_utc(now),
+                    observed_digest,
+                    result_digest,
                 ],
             )?;
             tx.commit()?;
@@ -571,12 +772,15 @@ impl Store {
                 std::process::abort();
             }
 
-            // Step 2 — journal_witness_cas.
+            // Step 2 — journal_witness_cas over (incarnation, prior
+            // generation, prior entry digest), inter-process atomic.
             let entry = match self.witness.cas(
                 &incarnation,
                 observed_gen,
+                &observed_digest,
                 &txn_id,
                 &transition_digest,
+                &result_digest,
                 hooks.witness_fault,
             ) {
                 Ok(CasOutcome::Witnessed(entry)) => entry,
@@ -610,10 +814,19 @@ impl Store {
                     return Err(CommandError::Store(StoreError::Witness(e)));
                 }
             };
-            if entry.transition_digest != transition_digest {
-                // Same transaction id, different digest: impossible under
-                // honest operation — refuse to finalize.
-                self.seal("witness entry digest mismatch for own transaction")?;
+            // The EXACT receipt is verified member by member before
+            // anything this transition wrote becomes visible.
+            if let Err(reason) = verify_receipt(
+                &entry,
+                &txn_id,
+                &incarnation,
+                observed_gen,
+                &observed_digest,
+                &transition_digest,
+                &result_digest,
+                self.witness.key_id(),
+            ) {
+                self.seal(&reason)?;
                 return Err(CommandError::Problem(
                     Problem::new(ProblemKind::EndpointSealed, "endpoint is sealed_diagnostic")
                         .with_status(503),
@@ -627,7 +840,7 @@ impl Store {
             }
 
             // Step 3 — journal_sql_finalize.
-            let bytes = self.finalize_pending(&txn_id, entry.generation, now, &hooks)?;
+            let bytes = self.finalize_pending(&txn_id, &entry, now, &hooks)?;
 
             if hooks.abort_after_finalize {
                 // Crash after commit, before the reply: the retry finds
@@ -636,6 +849,104 @@ impl Store {
             }
             return Ok(bytes);
         }
+    }
+
+    /// Turns a `Prepared` transition into the FULL §15.3 pending set:
+    /// dense per-Society event sequences, the transition timestamp, the
+    /// per-event `local_erasure_safe` secret and payload digest, the
+    /// outbox rows, the minted source cursor and the exact result bytes
+    /// — all fixed BEFORE witnessing so recovery reproduces them
+    /// byte-identically (BY-J2).
+    fn materialize(
+        &self,
+        tx: &Connection,
+        scope: &MutationScope,
+        request_digest: &str,
+        prepared: Prepared,
+        now: i64,
+    ) -> Result<PendingPayload, StoreError> {
+        let occurred_at = rfc3339_utc(now);
+        // Where each Society's sequence allocation starts: the value the
+        // effects will leave on the row, else the current row.
+        let mut heads: Vec<(String, u64)> = Vec::new();
+
+        let mut events = Vec::with_capacity(prepared.events.len());
+        let mut outbox = Vec::with_capacity(prepared.events.len());
+        let mut last_seq: Option<(String, u64)> = None;
+        for event in &prepared.events {
+            let seq = next_sequence(tx, &mut heads, &event.society_id, &prepared.effects)?;
+            if let Some(slot) = heads.iter_mut().find(|(s, _)| *s == event.society_id) {
+                slot.1 = seq + 1;
+            }
+            let key_ref = format!("society-key:{}/event:{}", event.society_id, event.event_id);
+            let secret = object_secrets::ensure(
+                tx,
+                &self.society_wrap_key(&event.society_id)?,
+                &key_ref,
+                &event.society_id,
+                "bpp-event-payload-v0",
+            )?;
+            let preimage = tagged_canonical("bpp-event-payload-v0", &event.payload)?;
+            let digest =
+                DigestRef::local_erasure_safe(&key_ref, hex(&hmac_sha256(&secret, &preimage)));
+            events.push(FinalEvent {
+                event_id: event.event_id.clone(),
+                society_id: event.society_id.clone(),
+                sequence: seq,
+                kind: event.kind.clone(),
+                object_ref: event.object_ref.clone(),
+                object_revision: event.object_revision,
+                participant_ref: event.participant_ref.clone(),
+                actor_ref: event.actor_ref.clone(),
+                causation_ref: event.causation_ref.clone(),
+                correlation_ref: event.correlation_ref.clone(),
+                payload: event.payload.clone(),
+                payload_digest: serde_json::to_value(&digest)?,
+                payload_secret: hex(&secret),
+                visibility_scope_ref: event.visibility_scope_ref.clone(),
+                occurred_at: occurred_at.clone(),
+            });
+            outbox.push(FinalOutbox {
+                delivery_id: event.event_id.clone(),
+                kind: "event".to_owned(),
+                payload: serde_json::json!({
+                    "event_id": event.event_id,
+                    "society_id": event.society_id,
+                    "sequence": seq,
+                    "kind": event.kind,
+                })
+                .to_string(),
+                created_at: occurred_at.clone(),
+            });
+            last_seq = Some((event.society_id.clone(), seq));
+        }
+
+        let source_cursor = match &prepared.cursor {
+            CursorMint::None => None,
+            CursorMint::FromStart { society_id } => Some(self.mint_events_cursor(society_id, 0)?),
+            CursorMint::AfterEvents { society_id } => {
+                let seq = match &last_seq {
+                    Some((sid, seq)) if sid == society_id => *seq,
+                    _ => next_sequence(tx, &mut heads, society_id, &prepared.effects)?
+                        .saturating_sub(1),
+                };
+                Some(self.mint_events_cursor(society_id, seq)?)
+            }
+        };
+
+        Ok(PendingPayload {
+            society_id: scope.society_id.clone(),
+            operation: scope.operation.clone(),
+            request_digest: request_digest.to_owned(),
+            result: prepared.result,
+            revision: prepared.revision,
+            source_cursor,
+            effects: prepared.effects,
+            events,
+            outbox,
+            society_sequence_heads: heads,
+            occurred_at,
+        })
     }
 
     fn abandon_pending(&self, txn_id: &str, now: i64) -> Result<(), StoreError> {
@@ -655,15 +966,35 @@ impl Store {
     fn finalize_pending(
         &self,
         txn_id: &str,
-        generation: u64,
+        entry: &witness::JournalEntry,
         now: i64,
         hooks: &CrashHooks,
     ) -> Result<Vec<u8>, StoreError> {
         let tx = self.conn.unchecked_transaction()?;
-        let (payload_text, state): (String, String) = tx.query_row(
-            "SELECT payload, state FROM authority_pending WHERE transaction_id = ?1",
+        let (
+            payload_text,
+            state,
+            prior_gen,
+            prior_digest,
+            stored_transition,
+            stored_result_digest,
+            incarnation,
+        ): (String, String, i64, String, String, String, String) = tx.query_row(
+            "SELECT payload, state, prior_journal_generation, prior_journal_digest,
+                    transition_digest, result_digest, endpoint_incarnation
+             FROM authority_pending WHERE transaction_id = ?1",
             [txn_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
+            },
         )?;
         if state == "finalized" {
             return Err(StoreError::Corrupt(format!(
@@ -671,27 +1002,42 @@ impl Store {
             )));
         }
         let payload: PendingPayload = serde_json::from_str(&payload_text)?;
+        // The exact reply bytes, recomputed from the witnessed
+        // transition — not re-derived from live state.
+        let bytes = payload.result_bytes()?;
+        // Finalization verifies the EXACT receipt (§15.3): witness key,
+        // signature, incarnation, prior head, generation, transaction,
+        // transition and result digests. A naked (transaction id,
+        // generation) pair is not a receipt.
+        if let Err(reason) = verify_receipt(
+            entry,
+            txn_id,
+            &incarnation,
+            prior_gen.max(0) as u64,
+            &prior_digest,
+            &stored_transition,
+            &stored_result_digest,
+            self.witness.key_id(),
+        ) {
+            tx.rollback()?;
+            self.seal(&reason)?;
+            return Err(StoreError::Corrupt(reason));
+        }
+        if sha256_hex(&bytes) != stored_result_digest {
+            tx.rollback()?;
+            let reason = format!("result bytes of {txn_id} do not match the witnessed digest");
+            self.seal(&reason)?;
+            return Err(StoreError::Corrupt(reason));
+        }
 
         // Materialize state effects.
         for effect in &payload.effects {
             effects::apply(&tx, effect)?;
         }
 
-        // Append events with dense per-Society sequences.
-        let occurred_at = rfc3339_utc(now);
-        let mut last_seq: Option<(String, u64)> = None;
+        // Append the exact witnessed events, outbox rows and sequence
+        // heads — all fixed at prepare time.
         for event in &payload.events {
-            let seq: i64 = tx.query_row(
-                "UPDATE societies SET next_event_sequence = next_event_sequence + 1
-                 WHERE society_id = ?1 RETURNING next_event_sequence - 1",
-                [&event.society_id],
-                |r| r.get(0),
-            )?;
-            let secret = random_bytes::<32>()?;
-            let key_ref = format!("society-key:{}/event:{}", event.society_id, event.event_id);
-            let preimage = tagged_canonical("bpp-event-payload-v0", &event.payload)?;
-            let digest =
-                DigestRef::local_erasure_safe(&key_ref, hex(&hmac_sha256(&secret, &preimage)));
             tx.execute(
                 "INSERT INTO events (event_id, society_id, sequence, kind, object_ref,
                      object_revision, participant_ref, actor_ref, causation_ref,
@@ -701,7 +1047,7 @@ impl Store {
                 params![
                     event.event_id,
                     event.society_id,
-                    seq,
+                    event.sequence as i64,
                     event.kind,
                     event.object_ref,
                     event.object_revision as i64,
@@ -710,62 +1056,33 @@ impl Store {
                     event.causation_ref,
                     event.correlation_ref,
                     event.payload.to_string(),
-                    serde_json::to_string(&digest)?,
-                    hex(&secret),
+                    serde_json::to_string(&event.payload_digest)?,
+                    event.payload_secret,
                     event.visibility_scope_ref,
-                    occurred_at,
+                    event.occurred_at,
                 ],
             )?;
+        }
+        for delivery in &payload.outbox {
             tx.execute(
                 "INSERT INTO outbox (delivery_id, kind, payload, created_at)
-                 VALUES (?1, 'event', ?2, ?3)",
+                 VALUES (?1,?2,?3,?4)",
                 params![
-                    event.event_id,
-                    serde_json::json!({
-                        "event_id": event.event_id,
-                        "society_id": event.society_id,
-                        "sequence": seq,
-                        "kind": event.kind,
-                    })
-                    .to_string(),
-                    occurred_at,
+                    delivery.delivery_id,
+                    delivery.kind,
+                    delivery.payload,
+                    delivery.created_at
                 ],
             )?;
-            last_seq = Some((event.society_id.clone(), seq as u64));
+        }
+        for (society_id, next_sequence) in &payload.society_sequence_heads {
+            tx.execute(
+                "UPDATE societies SET next_event_sequence = ?2 WHERE society_id = ?1",
+                params![society_id, *next_sequence as i64],
+            )?;
         }
 
-        // Mint the source cursor now that sequences exist.
-        let source_cursor = match &payload.cursor {
-            CursorMint::None => None,
-            CursorMint::FromStart { society_id } => {
-                Some(self.mint_events_cursor_with(&tx, society_id, 0)?)
-            }
-            CursorMint::AfterEvents { society_id } => {
-                let seq = match &last_seq {
-                    Some((sid, seq)) if sid == society_id => *seq,
-                    _ => {
-                        // No events appended for that society: cursor at
-                        // the current head.
-                        let head: i64 = tx.query_row(
-                            "SELECT next_event_sequence - 1 FROM societies WHERE society_id = ?1",
-                            [society_id],
-                            |r| r.get(0),
-                        )?;
-                        head.max(0) as u64
-                    }
-                };
-                Some(self.mint_events_cursor_with(&tx, society_id, seq)?)
-            }
-        };
-
         // Retain the exact result bytes for idempotent replay.
-        let success = Success {
-            outcome: "ok".to_owned(),
-            result: payload.result.clone(),
-            revision: payload.revision,
-            source_cursor,
-        };
-        let bytes = serde_json::to_vec(&success)?;
         let (domain_digest, society_id, operation): (String, String, String) = tx.query_row(
             "SELECT idempotency_domain_digest, society_id, operation
              FROM authority_pending WHERE transaction_id = ?1",
@@ -782,22 +1099,46 @@ impl Store {
                 operation,
                 payload.request_digest,
                 bytes,
-                occurred_at,
+                payload.occurred_at,
             ],
         )?;
 
-        // Mark the exact pending set finalized and advance the mirror.
+        // Mark the exact pending set finalized, persist the verified
+        // receipt, and advance the mirror generation AND head digest.
+        let receipt = JournalReceipt {
+            transaction_id: entry.transaction_id.clone(),
+            endpoint_incarnation: entry.endpoint_incarnation.clone(),
+            prior_generation: prior_gen.max(0) as u64,
+            prior_entry_digest: entry.prior_entry_digest.clone(),
+            generation: entry.generation,
+            transition_digest: entry.transition_digest.clone(),
+            result_digest: entry.result_digest.clone(),
+            entry_digest: entry.entry_digest.clone(),
+            witness_key_id: entry.witness_key_id.clone(),
+            signature: entry.signature.clone(),
+        };
         tx.execute(
-            "UPDATE authority_pending SET state = 'finalized' WHERE transaction_id = ?1",
-            [txn_id],
+            "UPDATE authority_pending SET state = 'finalized', receipt = ?2
+             WHERE transaction_id = ?1",
+            params![txn_id, serde_json::to_string(&receipt)?],
         )?;
-        let mirror = self.mirror_gen()?.max(generation);
-        schema::meta_set(&tx, META_MIRROR_GEN, mirror.to_string().as_bytes())?;
+        let mirror = self.mirror_gen()?;
+        if entry.generation >= mirror {
+            schema::meta_set(
+                &tx,
+                META_MIRROR_GEN,
+                entry.generation.to_string().as_bytes(),
+            )?;
+            schema::meta_set(&tx, META_MIRROR_DIGEST, entry.entry_digest.as_bytes())?;
+        }
         audit::append(
             &tx,
             now,
             "authority-journal.finalized",
-            &format!("{txn_id} generation {generation} op {operation}"),
+            &format!(
+                "{txn_id} generation {} op {operation} entry {}",
+                entry.generation, entry.entry_digest
+            ),
         )?;
 
         if hooks.abort_before_finalize {
@@ -807,6 +1148,9 @@ impl Store {
             std::process::abort();
         }
         tx.commit()?;
+        // The terminal checkpoint pins the audit and erasure heads this
+        // transition left behind (BY-J3).
+        self.write_checkpoint()?;
         Ok(bytes)
     }
 
@@ -896,15 +1240,89 @@ impl Store {
                         return Ok(());
                     }
                     // Witness success before SQL finalize: recovered by
-                    // the exact receipt and finalized once.
-                    self.finalize_pending(&txn_id, entry.generation, now, &CrashHooks::NONE)?;
+                    // the exact receipt and finalized once. A receipt
+                    // that does not verify seals instead of committing.
+                    match self.finalize_pending(&txn_id, entry, now, &CrashHooks::NONE) {
+                        Ok(_) => {}
+                        Err(StoreError::Corrupt(reason)) => {
+                            if !self.sealed() {
+                                self.seal(&reason)?;
+                            }
+                            return Ok(());
+                        }
+                        Err(e) => return Err(e),
+                    }
                     let tx = self.conn.unchecked_transaction()?;
                     audit::append(&tx, now, "authority-journal.recovered", &txn_id)?;
                     tx.commit()?;
+                    self.write_checkpoint()?;
                 }
                 None => {
                     // Proven no entry: abandoned, never guessed.
                     self.abandon_pending(&txn_id, now)?;
+                }
+            }
+        }
+
+        // The local mirror must name the exact witness head entry, not
+        // just its generation number.
+        let head_digest = entries
+            .last()
+            .map(|e| e.entry_digest.clone())
+            .unwrap_or_default();
+        let mirror_gen = self.mirror_gen()?;
+        if mirror_gen == entries.len() as u64 && self.mirror_digest()? != head_digest {
+            self.seal("local journal mirror names a different head entry than the witness")?;
+            return Ok(());
+        }
+
+        // §15.3: the complete audit and erasure chains are verified and
+        // compared against the terminal checkpoints BEFORE any
+        // non-diagnostic surface opens (BY-J3).
+        self.verify_chains_against_checkpoints()
+    }
+
+    /// Verifies both hash-chained ledgers completely and compares them
+    /// with the last terminal checkpoint. Seals on missing, older,
+    /// conflicting or unreadable state.
+    fn verify_chains_against_checkpoints(&self) -> Result<(), StoreError> {
+        let latest = match self.checkpoints.latest(&self.witness) {
+            Ok(latest) => latest,
+            Err(e) => {
+                self.seal(&format!("terminal checkpoints unreadable: {e}"))?;
+                return Ok(());
+            }
+        };
+        let Some(latest) = latest else {
+            self.seal("no terminal audit/erasure checkpoint beside the witness")?;
+            return Ok(());
+        };
+        for (table, head) in [
+            (audit::AUDIT, &latest.audit),
+            (audit::ERASURE, &latest.erasure),
+        ] {
+            let (count, _) = match audit::head_of(&self.conn, table) {
+                Ok(head) => head,
+                Err(e) => {
+                    self.seal(&format!("{table} chain does not verify: {e}"))?;
+                    return Ok(());
+                }
+            };
+            if count < head.seq {
+                self.seal(&format!(
+                    "{table} chain is at {count} records, behind the witnessed checkpoint {}",
+                    head.seq
+                ))?;
+                return Ok(());
+            }
+            if head.seq > 0 {
+                let at = audit::hash_at(&self.conn, table, head.seq)?;
+                if at.map(|h| hex(&h)).as_deref() != Some(head.hash_hex.as_str()) {
+                    self.seal(&format!(
+                        "{table} chain conflicts with the witnessed checkpoint at record {}",
+                        head.seq
+                    ))?;
+                    return Ok(());
                 }
             }
         }
@@ -916,15 +1334,6 @@ impl Store {
     fn cursor_secret(&self) -> Result<Vec<u8>, StoreError> {
         schema::meta_get(&self.conn, META_CURSOR_SECRET)?
             .ok_or_else(|| StoreError::Corrupt("store is not bootstrapped".to_owned()))
-    }
-
-    fn mint_events_cursor_with(
-        &self,
-        _conn: &Connection,
-        society_id: &str,
-        seq: u64,
-    ) -> Result<String, StoreError> {
-        self.mint_events_cursor(society_id, seq)
     }
 
     /// The SHORT authenticated events continuation: the same
@@ -1063,7 +1472,83 @@ impl Store {
     }
 }
 
-fn random_bytes<const N: usize>() -> Result<[u8; N], StoreError> {
+/// The next per-Society event sequence to allocate, memoized in `heads`:
+/// the value the transition's effects will leave on the Society row,
+/// else the row as it stands.
+fn next_sequence(
+    conn: &Connection,
+    heads: &mut Vec<(String, u64)>,
+    society_id: &str,
+    effects: &[Effect],
+) -> Result<u64, StoreError> {
+    if let Some((_, seq)) = heads.iter().find(|(s, _)| s == society_id) {
+        return Ok(*seq);
+    }
+    let staged = effects.iter().rev().find_map(|e| match e {
+        Effect::Upsert { table, row }
+            if table == "societies"
+                && row.get("society_id").and_then(Value::as_str) == Some(society_id) =>
+        {
+            row.get("next_event_sequence").and_then(Value::as_u64)
+        }
+        _ => None,
+    });
+    let seq = match staged {
+        Some(seq) => seq,
+        None => conn
+            .query_row(
+                "SELECT next_event_sequence FROM societies WHERE society_id = ?1",
+                [society_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()?
+            .unwrap_or(1) as u64,
+    };
+    heads.push((society_id.to_owned(), seq));
+    Ok(seq)
+}
+
+/// Verifies one witness receipt member by member (§15.3): witness key,
+/// signature, incarnation, prior head, generation, transaction id,
+/// transition digest and result digest. Returns the seal reason on the
+/// first mismatch.
+#[allow(clippy::too_many_arguments)]
+fn verify_receipt(
+    entry: &witness::JournalEntry,
+    txn_id: &str,
+    incarnation: &str,
+    prior_generation: u64,
+    prior_entry_digest: &str,
+    transition_digest: &str,
+    result_digest: &str,
+    witness_key_id: &str,
+) -> Result<(), String> {
+    let fail = |what: &str| Err(format!("witness receipt for {txn_id}: {what}"));
+    if entry.transaction_id != txn_id {
+        return fail("transaction id mismatch");
+    }
+    if entry.endpoint_incarnation != incarnation {
+        return fail("endpoint incarnation mismatch");
+    }
+    if entry.generation != prior_generation + 1 {
+        return fail("generation is not the proposed successor");
+    }
+    if entry.prior_entry_digest != prior_entry_digest {
+        return fail("prior journal entry digest mismatch");
+    }
+    if entry.transition_digest != transition_digest {
+        return fail("transition digest mismatch");
+    }
+    if entry.result_digest != result_digest {
+        return fail("result digest mismatch");
+    }
+    if entry.witness_key_id != witness_key_id {
+        return fail("signed under a foreign witness key");
+    }
+    Ok(())
+}
+
+pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], StoreError> {
     let mut out = [0u8; N];
     std::fs::File::open("/dev/urandom")
         .and_then(|mut f| f.read_exact(&mut out))

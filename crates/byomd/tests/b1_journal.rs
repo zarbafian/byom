@@ -12,14 +12,14 @@ mod common;
 use common::*;
 use serde_json::json;
 
-fn offer_request(incarnation: &str, key: &str) -> serde_json::Value {
+fn offer_request(daemon: &TestDaemon, incarnation: &str, key: &str) -> serde_json::Value {
     json!({
         "version": "0.2", "op": "membership_offer",
         "meta": meta(incarnation, key, None),
         "participant_ref": "part-agent-j",
         "proposed_standing_ref": "standing-proposal-1",
         "subject_digest": test_digest(0xc1),
-        "offered_by_decision_ref": "dec-offer-1",
+        "offered_by_decision_ref": society_decision(daemon),
         "expires_at": far_future(),
     })
 }
@@ -59,7 +59,10 @@ fn kill_before_witness_cas_leaves_no_authority_and_abandons_after_proof() {
     let head_before = daemon.witness_entries().len();
 
     // The daemon dies after SQL prepare, before the witness CAS.
-    daemon.call_expect_death("governance", &offer_request(&incarnation, "jb-offer"));
+    daemon.call_expect_death(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jb-offer"),
+    );
     // The witness never saw the transaction.
     assert_eq!(daemon.witness_entries().len(), head_before);
 
@@ -74,7 +77,10 @@ fn kill_before_witness_cas_leaves_no_authority_and_abandons_after_proof() {
 
     // The same request retries cleanly (nothing was journaled, nothing
     // replays: fresh execution).
-    let retry = daemon.call("governance", &offer_request(&incarnation, "jb-offer"));
+    let retry = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jb-offer"),
+    );
     assert_eq!(retry["outcome"], "ok", "{retry}");
     assert_eq!(offer_count(&daemon, &cursor), 1);
     generations_continuous(&daemon);
@@ -91,14 +97,20 @@ fn kill_after_witness_cas_recovers_by_the_exact_receipt_once() {
 
     // The daemon dies after the witness CAS, before SQL finalize: the
     // entry exists but nothing is visible yet.
-    daemon.call_expect_death("governance", &offer_request(&incarnation, "ja-offer"));
+    daemon.call_expect_death(
+        "governance",
+        &offer_request(&daemon, &incarnation, "ja-offer"),
+    );
     assert_eq!(daemon.witness_entries().len(), head_before + 1);
 
     // Restart: recovery finalizes the exact witnessed transaction ONCE.
     daemon.restart(&[]);
     assert_eq!(offer_count(&daemon, &cursor), 1, "recovered exactly once");
     // The retained result answers the byte-identical retry.
-    let retry = daemon.call("governance", &offer_request(&incarnation, "ja-offer"));
+    let retry = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "ja-offer"),
+    );
     assert_eq!(retry["outcome"], "ok", "{retry}");
     assert_eq!(
         offer_count(&daemon, &cursor),
@@ -119,14 +131,20 @@ fn kill_inside_finalize_before_commit_recovers_identically() {
         &[("BYOMD_ABORT", "before_finalize:membership_offer")],
     );
     let (_sid, cursor, incarnation) = bootstrap_society(&daemon, "jf");
-    daemon.call_expect_death("governance", &offer_request(&incarnation, "jf-offer"));
+    daemon.call_expect_death(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jf-offer"),
+    );
     daemon.restart(&[]);
     assert_eq!(
         offer_count(&daemon, &cursor),
         1,
         "finalized exactly once at recovery"
     );
-    let retry = daemon.call("governance", &offer_request(&incarnation, "jf-offer"));
+    let retry = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jf-offer"),
+    );
     assert_eq!(retry["outcome"], "ok");
     assert_eq!(offer_count(&daemon, &cursor), 1);
     generations_continuous(&daemon);
@@ -139,12 +157,18 @@ fn kill_after_finalize_before_reply_replays_the_retained_result() {
         &[("BYOMD_ABORT", "after_finalize:membership_offer")],
     );
     let (_sid, cursor, incarnation) = bootstrap_society(&daemon, "jr");
-    daemon.call_expect_death("governance", &offer_request(&incarnation, "jr-offer"));
+    daemon.call_expect_death(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jr-offer"),
+    );
     daemon.restart(&[]);
     // Committed before the crash: visible exactly once, and the retry
     // returns the retained result.
     assert_eq!(offer_count(&daemon, &cursor), 1);
-    let retry = daemon.call("governance", &offer_request(&incarnation, "jr-offer"));
+    let retry = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jr-offer"),
+    );
     assert_eq!(retry["outcome"], "ok");
     assert_eq!(offer_count(&daemon, &cursor), 1);
     generations_continuous(&daemon);
@@ -160,7 +184,10 @@ fn lost_witness_reply_is_queried_never_guessed() {
     // The receipt is lost in flight; the daemon queries by transaction
     // id, finds the exact entry, and finalizes once — the caller still
     // gets the result.
-    let reply = daemon.call("governance", &offer_request(&incarnation, "jl-offer"));
+    let reply = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jl-offer"),
+    );
     assert_eq!(reply["outcome"], "ok", "{reply}");
     assert_eq!(offer_count(&daemon, &cursor), 1);
     generations_continuous(&daemon);
@@ -174,7 +201,10 @@ fn lost_witness_request_abandons_after_proof_and_stays_retryable() {
     );
     let (_sid, cursor, incarnation) = bootstrap_society(&daemon, "jq");
     let head_before = daemon.witness_entries().len();
-    let reply = daemon.call("governance", &offer_request(&incarnation, "jq-offer"));
+    let reply = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jq-offer"),
+    );
     // Proven not committed: honestly unavailable, never a fake success.
     assert_eq!(kind_of(&reply), "unavailable", "{reply}");
     assert_eq!(daemon.witness_entries().len(), head_before);
@@ -182,7 +212,10 @@ fn lost_witness_request_abandons_after_proof_and_stays_retryable() {
 
     // Without the fault the same request commits.
     daemon.restart(&[]);
-    let retry = daemon.call("governance", &offer_request(&incarnation, "jq-offer"));
+    let retry = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "jq-offer"),
+    );
     assert_eq!(retry["outcome"], "ok", "{retry}");
     assert_eq!(offer_count(&daemon, &cursor), 1);
     generations_continuous(&daemon);
@@ -200,7 +233,10 @@ fn database_rollback_seals_every_non_diagnostic_surface() {
 
     // ...authority advances (a witnessed offer)...
     daemon.restart(&[]);
-    let reply = daemon.call("governance", &offer_request(&incarnation, "js-offer"));
+    let reply = daemon.call(
+        "governance",
+        &offer_request(&daemon, &incarnation, "js-offer"),
+    );
     assert_eq!(reply["outcome"], "ok");
     let head_after = daemon.witness_entries().len();
 
@@ -223,7 +259,10 @@ fn database_rollback_seals_every_non_diagnostic_surface() {
             "projection",
             json!({"version": "0.2", "op": "society_show", "society_id": society_id}),
         ),
-        ("governance", offer_request(&incarnation, "js-after-seal")),
+        (
+            "governance",
+            offer_request(&daemon, &incarnation, "js-after-seal"),
+        ),
         (
             "projection",
             json!({"version": "0.2", "op": "events_read",

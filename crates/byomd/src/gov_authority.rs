@@ -14,10 +14,11 @@ use serde_json::{json, Value};
 
 use crate::gov_ops::{check_meta_binding, db_err, mint, obj_pairs, run, ACTOR_GOVERNANCE};
 use crate::part_common::{
-    self, all_seats_assent, mint_position, record_position, seats_from_json, settle_holder,
+    self, all_seats_assent, digest_of, mint_position, record_position, seats_from_json,
+    settle_holder,
 };
 use crate::part_ops::{event, expire_mandate_if_due};
-use crate::state;
+use crate::{gov_decision, state};
 
 /// The sovereign human behind the governance surface (developer profile:
 /// the same-UID peer is the sovereign; §14.5).
@@ -88,7 +89,7 @@ pub fn governance_position(
             kind,
             &society_id,
             rows::u64_of(&proposal, "revision"),
-            subject["value_hex"].as_str().unwrap_or_default(),
+            &digest_of(&subject)?,
             &seats,
             &req,
             &sovereign_row.participant_id,
@@ -131,7 +132,9 @@ pub fn mandate_issue(
     let (society_id, sovereign_row) = sovereign(store)?;
     check_meta_binding(store, &req.meta, &society_id)?;
     expire_mandate_if_due(store, &req.mandate_id, now)?;
-    let decision_ref = mint(store, "dec-mandate")?;
+    // The mandate authority decision is IMMUTABLE and derived from the
+    // mandate it authorizes (BY-A1): hold and revoke resolve it.
+    let decision_ref = gov_decision::mandate_decision_ref(&req.mandate_id);
     let reservation_id = mint(store, "rsv")?;
     let issue_event = mint(store, "evt")?;
     let budget_event = mint(store, "evt")?;
@@ -155,13 +158,45 @@ pub fn mandate_issue(
             return Err(state::stale_binding("mandate is not in state prepared"));
         }
         let subject = rows::json_of(&mandate, "subject_digest");
-        if subject["value_hex"].as_str() != Some(req.subject_digest.value_hex.as_str()) {
+        if !req.subject_digest.same_ref_json(&subject) {
             return Err(state::invalid(
                 "subject_digest does not commit to the exact prepared subject",
             ));
         }
         let seats = seats_from_json(&rows::json_of(&mandate, "required_seat_refs"));
         all_seats_assent(conn, "mandate", &req.mandate_id, &seats)?;
+        let subject_ref: bpp_core::digest::DigestRef = digest_of(&subject)?;
+        let decision_seats: Vec<gov_decision::DecisionSeat> = seats
+            .iter()
+            .map(|s| {
+                let epoch = rows::get_participant(conn, &s.participant_ref)
+                    .ok()
+                    .flatten()
+                    .map(|p| p.binding_epoch)
+                    .unwrap_or(0);
+                gov_decision::DecisionSeat {
+                    seat_ref: s.seat_ref.clone(),
+                    participant_ref: s.participant_ref.clone(),
+                    actor_ref: ACTOR_GOVERNANCE.to_owned(),
+                    participant_binding_epoch: epoch,
+                }
+            })
+            .collect();
+        let mandate_decision = gov_decision::form(
+            conn,
+            &decision_ref,
+            &society_id,
+            gov_decision::KIND_MANDATE_AUTHORITY,
+            "mandate",
+            &req.mandate_id,
+            &subject_ref,
+            rows::str_of(&mandate, "dependency_set_ref"),
+            &decision_seats,
+            &[],
+            "mandate_issue",
+            ACTOR_GOVERNANCE,
+            now,
+        )?;
         let grantee =
             rows::get_participant(conn, rows::str_of(&mandate, "grantee_participant_ref"))
                 .map_err(db_err)?
@@ -172,7 +207,7 @@ pub fn mandate_issue(
         // BudgetConservation: issue reserves the mandate's ceiling in
         // the SAME transition (§10.1/§11.4) — never an unreserved grant.
         let account_ref = rows::str_of(&mandate, "budget_ceiling_set_ref").to_owned();
-        let mut effects = Vec::new();
+        let mut effects = vec![mandate_decision];
         part_common::reserve(
             conn,
             &mut effects,
@@ -274,6 +309,20 @@ pub fn mandate_hold(
         if rows::str_of(&mandate, "state") != "active" {
             return Err(state::stale_binding("mandate is not active"));
         }
+        // BY-A1: the hold resolves the immutable mandate-authority
+        // decision formed at issue.
+        gov_decision::resolve(
+            conn,
+            &req.held_by_decision_ref,
+            &gov_decision::Expect {
+                society_id: &society_id,
+                kind: gov_decision::KIND_MANDATE_AUTHORITY,
+                subject_kind: "mandate",
+                subject_ref: &req.mandate_id,
+                subject_digest: &digest_of(&rows::json_of(&mandate, "subject_digest"))?,
+                actor: ACTOR_GOVERNANCE,
+            },
+        )?;
         let revision = rows::u64_of(&mandate, "revision") + 1;
         let mut held = mandate.clone();
         held.insert("state".into(), json!("held"));
@@ -343,6 +392,19 @@ pub fn mandate_revoke(
         ) {
             return Err(state::stale_binding("mandate is already terminal"));
         }
+        // BY-A1: the revocation resolves the same immutable decision.
+        gov_decision::resolve(
+            conn,
+            &req.revoked_by_decision_ref,
+            &gov_decision::Expect {
+                society_id: &society_id,
+                kind: gov_decision::KIND_MANDATE_AUTHORITY,
+                subject_kind: "mandate",
+                subject_ref: &req.mandate_id,
+                subject_digest: &digest_of(&rows::json_of(&mandate, "subject_digest"))?,
+                actor: ACTOR_GOVERNANCE,
+            },
+        )?;
         // Revocation releases the reserved ceiling in the same
         // transition (conservation holds).
         let mut effects = Vec::new();
@@ -427,7 +489,7 @@ pub fn charter_finalize(
             return Err(state::stale_revision());
         }
         let subject = rows::json_of(&proposal, "subject_digest");
-        if subject["value_hex"].as_str() != Some(req.subject_digest.value_hex.as_str()) {
+        if !req.subject_digest.same_ref_json(&subject) {
             return Err(state::invalid(
                 "subject_digest does not commit to the exact proposed restatement",
             ));

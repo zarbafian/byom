@@ -619,7 +619,135 @@ CREATE TABLE authority_journal_receipts (
 ) STRICT;
 "#;
 
-const MIGRATIONS: [&str; 3] = [V1, V2, V3];
+/// Version 4: the R1 review corrections (reviews/2026-07-26-r1-tracer.md).
+///
+/// Recorded shape notes:
+/// - `authority_pending` gains the FULL §15.3 shapes (BY-J2): the prior
+///   journal entry digest the CAS compares, the digest of the exact
+///   reply bytes, and the verified witness receipt. Every final state,
+///   event, outbox and result byte is hashed BEFORE witnessing, so
+///   recovery reproduces byte-identical values.
+/// - `object_secrets` holds the RANDOM per-object `local_erasure_safe`
+///   secret (D-R1-2), wrapped under the Society key. Destroying ONE row
+///   destroys exactly that object's verifiability; every other object
+///   stays verifiable. Root-derived deterministic per-object keys were
+///   the forbidden scope substitution and are gone.
+/// - `erasure_journal` is the append-only hash-chained record of secret
+///   destruction; its head is checkpointed beside the witness (BY-J3)
+///   together with the audit head, so a rolled-back or altered chain
+///   seals the endpoint at startup.
+/// - `position_revisions` are IMMUTABLE (BY-P1): superseding appends a
+///   new revision and never rewrites the prior row. The current seat
+///   head is the separate `position_seat_heads` CAS row.
+/// - `channel_credentials` replaces the plaintext reusable bearer token
+///   (BY-C1): the store keeps a VERIFIER reference (`proof_key_id`) plus
+///   the binding a presented proof must commit to — audience, exact
+///   scope, allowed operations, Manifestation/control binding, fence
+///   epoch, expiry — and `channel_proof_nonces` fences replay.
+const V4: &str = r#"
+ALTER TABLE authority_pending ADD COLUMN prior_journal_digest TEXT NOT NULL DEFAULT '';
+ALTER TABLE authority_pending ADD COLUMN result_digest TEXT NOT NULL DEFAULT '';
+ALTER TABLE authority_pending ADD COLUMN receipt TEXT;
+
+ALTER TABLE governance_decisions ADD COLUMN actor_ref TEXT NOT NULL DEFAULT '';
+ALTER TABLE governance_decisions ADD COLUMN dependency_closure TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE object_secrets (
+    key_ref      TEXT PRIMARY KEY,
+    society_id   TEXT NOT NULL,
+    tag          TEXT NOT NULL,
+    wrapped      TEXT NOT NULL,
+    state        TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    destroyed_at TEXT
+) STRICT;
+
+CREATE TABLE erasure_journal (
+    seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        INTEGER NOT NULL,
+    event     TEXT NOT NULL,
+    detail    TEXT NOT NULL,
+    prev_hash BLOB NOT NULL,
+    hash      BLOB NOT NULL
+) STRICT;
+
+CREATE TABLE position_revisions (
+    position_id                TEXT PRIMARY KEY,
+    society_id                 TEXT NOT NULL,
+    proposal_kind              TEXT NOT NULL,
+    proposal_ref               TEXT NOT NULL,
+    proposal_revision          INTEGER NOT NULL,
+    seat_ref                   TEXT NOT NULL,
+    participant_ref            TEXT NOT NULL,
+    participant_binding_epoch  INTEGER NOT NULL,
+    actor_ref                  TEXT NOT NULL,
+    authentication_observation TEXT NOT NULL,
+    endpoint_incarnation       TEXT NOT NULL,
+    recovery_epoch             INTEGER NOT NULL,
+    value                      TEXT NOT NULL,
+    status                     TEXT NOT NULL,
+    revision                   INTEGER NOT NULL,
+    assent_mode                TEXT,
+    derived_assent_receipt_ref TEXT,
+    reason_ref                 TEXT,
+    subject_digest             TEXT NOT NULL,
+    prior_position_digest      TEXT,
+    digest                     TEXT NOT NULL,
+    created_at                 TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE position_seat_heads (
+    proposal_kind TEXT NOT NULL,
+    proposal_ref  TEXT NOT NULL,
+    seat_ref      TEXT NOT NULL,
+    society_id    TEXT NOT NULL,
+    position_ref  TEXT NOT NULL,
+    revision      INTEGER NOT NULL,
+    value         TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    digest        TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    PRIMARY KEY (proposal_kind, proposal_ref, seat_ref)
+) STRICT;
+
+CREATE TABLE channel_credentials (
+    channel_id      TEXT PRIMARY KEY,
+    society_id      TEXT NOT NULL,
+    audience        TEXT NOT NULL,
+    scope_ref       TEXT NOT NULL,
+    proof_key_id    TEXT NOT NULL,
+    key_path        TEXT NOT NULL,
+    operations      TEXT NOT NULL,
+    binding_ref     TEXT NOT NULL,
+    fence_epoch     INTEGER NOT NULL,
+    expires_at      TEXT NOT NULL,
+    state           TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    closed_at       TEXT
+) STRICT;
+
+CREATE TABLE channel_proof_nonces (
+    channel_id TEXT NOT NULL,
+    nonce      TEXT NOT NULL,
+    seen_at    INTEGER NOT NULL,
+    PRIMARY KEY (channel_id, nonce)
+) STRICT;
+"#;
+
+/// Version 5: the terminal closure record of a fenced channel (BY-C2).
+///
+/// A closed channel replays EXACTLY the refusal that closed it and
+/// nothing else: the closing operation and its retained idempotency
+/// domain digest are recorded on the channel, so a post-terminal
+/// acceptance or self-policy call cannot borrow the replay path.
+const V5: &str = r#"
+ALTER TABLE candidate_channels ADD COLUMN closed_by_operation TEXT;
+ALTER TABLE candidate_channels ADD COLUMN closed_by_domain_digest TEXT;
+ALTER TABLE participant_channels ADD COLUMN closed_by_operation TEXT;
+ALTER TABLE participant_channels ADD COLUMN closed_by_domain_digest TEXT;
+"#;
+
+const MIGRATIONS: [&str; 5] = [V1, V2, V3, V4, V5];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

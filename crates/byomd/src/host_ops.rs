@@ -1035,8 +1035,13 @@ pub fn kovee_endeavor_form(
                 ("created_at", json!(created_at)),
             ]),
         });
+        // The append-only PositionRevision plus its separate seat-head
+        // CAS row (BY-P1).
+        let bound_participant = rows::get_participant(conn, &cred.bound_participant_ref)
+            .map_err(db_err)?
+            .ok_or_else(state::not_found)?;
         effects.push(Effect::Upsert {
-            table: "positions".into(),
+            table: "position_revisions".into(),
             row: obj_pairs([
                 ("position_id", json!(position_id)),
                 ("society_id", json!(society_id)),
@@ -1045,7 +1050,17 @@ pub fn kovee_endeavor_form(
                 ("proposal_revision", json!(1)),
                 ("seat_ref", json!(seat_ref)),
                 ("participant_ref", json!(cred.bound_participant_ref)),
+                (
+                    "participant_binding_epoch",
+                    json!(bound_participant.binding_epoch),
+                ),
                 ("actor_ref", json!(actor)),
+                (
+                    "authentication_observation",
+                    json!("kovee-delegated-principal-credential"),
+                ),
+                ("endpoint_incarnation", json!(incarnation)),
+                ("recovery_epoch", json!(society.recovery_epoch)),
                 ("value", json!(position.value)),
                 ("status", json!("active")),
                 ("revision", json!(1)),
@@ -1060,8 +1075,24 @@ pub fn kovee_endeavor_form(
                         .unwrap_or(Value::Null),
                 ),
                 ("subject_digest", digest_json(&subject_digest)),
+                ("prior_position_digest", Value::Null),
                 ("digest", digest_json(&position_digest)),
                 ("created_at", json!(created_at)),
+            ]),
+        });
+        effects.push(Effect::Upsert {
+            table: "position_seat_heads".into(),
+            row: obj_pairs([
+                ("proposal_kind", json!("endeavor")),
+                ("proposal_ref", json!(endeavor_id)),
+                ("seat_ref", json!(seat_ref)),
+                ("society_id", json!(society_id)),
+                ("position_ref", json!(position_id)),
+                ("revision", json!(1)),
+                ("value", json!(position.value)),
+                ("status", json!("active")),
+                ("digest", digest_json(&position_digest)),
+                ("updated_at", json!(created_at)),
             ]),
         });
         effects.push(Effect::Upsert {
@@ -1079,6 +1110,11 @@ pub fn kovee_endeavor_form(
                 ("source", json!("kovee_endeavor_form")),
                 ("digest", digest_json(&decision_digest)),
                 ("created_at", json!(created_at)),
+                ("actor_ref", json!(actor)),
+                (
+                    "dependency_closure",
+                    json!(crate::gov_decision::dependency_closure(conn, &society_id)?.to_string()),
+                ),
             ]),
         });
 

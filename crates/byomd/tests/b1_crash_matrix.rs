@@ -97,7 +97,7 @@ fn run_flow(crash_op: &str, phase: &str) {
         "participant_ref": "part-agent-1",
         "proposed_standing_ref": "standing-proposal-1",
         "subject_digest": subject,
-        "offered_by_decision_ref": "dec-offer-1",
+        "offered_by_decision_ref": society_decision(&daemon),
         "expires_at": far_future(),
     });
     let offered = send(&mut daemon, "membership_offer", "governance", None, &offer);
@@ -129,7 +129,7 @@ fn run_flow(crash_op: &str, phase: &str) {
         "meta": meta(&incarnation, &format!("{tag}-admit"), Some(2)),
         "offer_ref": offer_id,
         "membership_acceptance_ref": acceptance_id,
-        "admitted_by_decision_ref": "dec-admit-1",
+        "admitted_by_decision_ref": offer_decision(&offer_id),
         "admission_subject_digest": subject,
     });
     send(&mut daemon, "participant_admit", "governance", None, &admit);
@@ -153,7 +153,7 @@ fn run_flow(crash_op: &str, phase: &str) {
         "version": "0.2", "op": "manifestation_admit",
         "meta": meta(&incarnation, &format!("{tag}-manif"), Some(1)),
         "manifestation_ref": manifestation_id,
-        "admitted_by_decision_ref": "dec-manif-1",
+        "admitted_by_decision_ref": manifestation_decision(&manifestation_id),
     });
     send(
         &mut daemon,

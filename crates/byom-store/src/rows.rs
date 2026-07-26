@@ -101,19 +101,18 @@ pub fn json_of(m: &Map<String, Value>, key: &str) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// The current seat head: the single active position on
-/// `(proposal_kind, proposal_ref, seat_ref)`.
-pub fn active_position(
+/// The current seat-head CAS row of `(proposal_kind, proposal_ref,
+/// seat_ref)` — the SEPARATE head record (BY-P1); the PositionRevision
+/// records themselves are append-only and never rewritten.
+pub fn position_seat_head(
     conn: &Connection,
     proposal_kind: &str,
     proposal_ref: &str,
     seat_ref: &str,
 ) -> rusqlite::Result<Option<Map<String, Value>>> {
     let mut stmt = conn.prepare(
-        "SELECT * FROM positions
-         WHERE proposal_kind = ?1 AND proposal_ref = ?2 AND seat_ref = ?3
-           AND status = 'active'
-         ORDER BY revision DESC LIMIT 1",
+        "SELECT * FROM position_seat_heads
+         WHERE proposal_kind = ?1 AND proposal_ref = ?2 AND seat_ref = ?3",
     )?;
     let names: Vec<String> = stmt
         .column_names()
@@ -125,6 +124,29 @@ pub fn active_position(
         Some(r) => Ok(Some(row_to_map(&names, r)?)),
         None => Ok(None),
     }
+}
+
+/// The CURRENT (non-withdrawn) position revision of a seat, resolved
+/// through the head CAS row. `None` when the seat has no head or the
+/// head is withdrawn.
+pub fn active_position(
+    conn: &Connection,
+    proposal_kind: &str,
+    proposal_ref: &str,
+    seat_ref: &str,
+) -> rusqlite::Result<Option<Map<String, Value>>> {
+    let Some(head) = position_seat_head(conn, proposal_kind, proposal_ref, seat_ref)? else {
+        return Ok(None);
+    };
+    if str_of(&head, "status") != "active" {
+        return Ok(None);
+    }
+    get_row(
+        conn,
+        "position_revisions",
+        "position_id",
+        str_of(&head, "position_ref"),
+    )
 }
 
 /// Open (non-terminal) activity streams citing a mandate ref in their
@@ -525,9 +547,31 @@ pub struct ChannelRow {
     pub channel_id: String,
     pub society_id: String,
     pub scope_ref: String,
+    /// The proof-key VERIFIER reference (BY-C1). NOT a bearer token: no
+    /// path resolves an actor from this value — a presented proof is
+    /// verified against the `channel_credentials` row instead.
     pub token: String,
+    /// Where the client's `0600` channel credential file lives.
     pub token_path: String,
     pub state: String,
+    /// The operation whose refusal closed this channel (BY-C2): the ONLY
+    /// call a closed channel replays.
+    pub closed_by_operation: Option<String>,
+    /// The idempotency domain digest of that exact retained refusal.
+    pub closed_by_domain_digest: Option<String>,
+}
+
+fn channel_from(r: &Row) -> rusqlite::Result<ChannelRow> {
+    Ok(ChannelRow {
+        channel_id: r.get(0)?,
+        society_id: r.get(1)?,
+        scope_ref: r.get(2)?,
+        token: r.get(3)?,
+        token_path: r.get(4)?,
+        state: r.get(5)?,
+        closed_by_operation: r.get(6)?,
+        closed_by_domain_digest: r.get(7)?,
+    })
 }
 
 /// The candidate channel for one offer.
@@ -536,66 +580,41 @@ pub fn candidate_channel_for_offer(
     offer_ref: &str,
 ) -> rusqlite::Result<Option<ChannelRow>> {
     conn.query_row(
-        "SELECT channel_id, society_id, offer_ref, token, token_path, state
+        "SELECT channel_id, society_id, offer_ref, token, token_path, state,
+                closed_by_operation, closed_by_domain_digest
          FROM candidate_channels WHERE offer_ref = ?1",
         [offer_ref],
-        |r| {
-            Ok(ChannelRow {
-                channel_id: r.get(0)?,
-                society_id: r.get(1)?,
-                scope_ref: r.get(2)?,
-                token: r.get(3)?,
-                token_path: r.get(4)?,
-                state: r.get(5)?,
-            })
-        },
+        channel_from,
     )
     .optional()
 }
 
-/// Resolves a presented candidate token to its channel (open or closed).
-pub fn candidate_channel_by_token(
+/// The candidate channel of a verified proof (open or closed).
+pub fn candidate_channel_by_id(
     conn: &Connection,
-    token: &str,
+    channel_id: &str,
 ) -> rusqlite::Result<Option<ChannelRow>> {
     conn.query_row(
-        "SELECT channel_id, society_id, offer_ref, token, token_path, state
-         FROM candidate_channels WHERE token = ?1",
-        [token],
-        |r| {
-            Ok(ChannelRow {
-                channel_id: r.get(0)?,
-                society_id: r.get(1)?,
-                scope_ref: r.get(2)?,
-                token: r.get(3)?,
-                token_path: r.get(4)?,
-                state: r.get(5)?,
-            })
-        },
+        "SELECT channel_id, society_id, offer_ref, token, token_path, state,
+                closed_by_operation, closed_by_domain_digest
+         FROM candidate_channels WHERE channel_id = ?1",
+        [channel_id],
+        channel_from,
     )
     .optional()
 }
 
-/// Resolves a presented participant token to its channel (open or
-/// closed).
-pub fn participant_channel_by_token(
+/// The participant channel of a verified proof (open or closed).
+pub fn participant_channel_by_id(
     conn: &Connection,
-    token: &str,
+    channel_id: &str,
 ) -> rusqlite::Result<Option<ChannelRow>> {
     conn.query_row(
-        "SELECT channel_id, society_id, participant_ref, token, token_path, state
-         FROM participant_channels WHERE token = ?1",
-        [token],
-        |r| {
-            Ok(ChannelRow {
-                channel_id: r.get(0)?,
-                society_id: r.get(1)?,
-                scope_ref: r.get(2)?,
-                token: r.get(3)?,
-                token_path: r.get(4)?,
-                state: r.get(5)?,
-            })
-        },
+        "SELECT channel_id, society_id, participant_ref, token, token_path, state,
+                closed_by_operation, closed_by_domain_digest
+         FROM participant_channels WHERE channel_id = ?1",
+        [channel_id],
+        channel_from,
     )
     .optional()
 }
@@ -605,19 +624,11 @@ pub fn participant_channel_for(
     participant_ref: &str,
 ) -> rusqlite::Result<Option<ChannelRow>> {
     conn.query_row(
-        "SELECT channel_id, society_id, participant_ref, token, token_path, state
+        "SELECT channel_id, society_id, participant_ref, token, token_path, state,
+                closed_by_operation, closed_by_domain_digest
          FROM participant_channels WHERE participant_ref = ?1",
         [participant_ref],
-        |r| {
-            Ok(ChannelRow {
-                channel_id: r.get(0)?,
-                society_id: r.get(1)?,
-                scope_ref: r.get(2)?,
-                token: r.get(3)?,
-                token_path: r.get(4)?,
-                state: r.get(5)?,
-            })
-        },
+        channel_from,
     )
     .optional()
 }

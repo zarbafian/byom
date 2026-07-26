@@ -16,8 +16,10 @@
 //! request line (the offer-scoped credential of §7.4).
 
 pub mod cand_ops;
+pub mod channel;
 pub mod dispatch;
 pub mod gov_authority;
+pub mod gov_decision;
 pub mod gov_ops;
 pub mod host_config;
 pub mod host_ops;

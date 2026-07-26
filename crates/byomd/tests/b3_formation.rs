@@ -580,7 +580,7 @@ fn the_kovee_gateway_is_never_the_genesis_actor() {
                     "participant_ref": "part-agent-1",
                     "proposed_standing_ref": "standing-proposal-1",
                     "subject_digest": test_digest(0xb1),
-                    "offered_by_decision_ref": "dec-offer-1",
+                    "offered_by_decision_ref": society_decision(&daemon),
                     "expires_at": far_future()})
             .to_string(),
         )

@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 bpp-core = { workspace = true }
+libc = { workspace = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -107,7 +107,7 @@ fn genesis_onboarding_admission_and_dense_events() {
             "meta": meta(&incarnation, "flow-admit", Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": acceptance_id,
-            "admitted_by_decision_ref": "dec-admit-1",
+            "admitted_by_decision_ref": offer_decision(&offer_id),
             "admission_subject_digest": subject_digest,
         }),
     );
@@ -158,7 +158,7 @@ fn genesis_onboarding_admission_and_dense_events() {
             "version": "0.2", "op": "manifestation_admit",
             "meta": meta(&incarnation, "flow-manif", Some(1)),
             "manifestation_ref": manifestation_id,
-            "admitted_by_decision_ref": "dec-manif-1",
+            "admitted_by_decision_ref": manifestation_decision(&manifestation_id),
         }),
     );
     assert_eq!(manifested["outcome"], "ok", "{manifested}");
@@ -237,7 +237,7 @@ fn genesis_onboarding_admission_and_dense_events() {
             "version": "0.2", "op": "manifestation_admit",
             "meta": meta(&incarnation, "flow-manif", Some(1)),
             "manifestation_ref": manifestation_id,
-            "admitted_by_decision_ref": "dec-manif-1",
+            "admitted_by_decision_ref": manifestation_decision(&manifestation_id),
         }),
     );
     assert_eq!(replay, manifested, "idempotent replay is byte-identical");

@@ -62,6 +62,7 @@ name = "byom-store"
 version = "0.0.1"
 dependencies = [
  "bpp-core",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

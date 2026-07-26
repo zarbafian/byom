@@ -555,7 +555,7 @@ def byom_scripted_flow(ev: Evidence, tag: str) -> dict:
         "participant_ref": AGENT,
         "proposed_standing_ref": "standing-proposal-1",
         "subject_digest": subject,
-        "offered_by_decision_ref": "dec-offer-1",
+        "offered_by_decision_ref": f"dec-society-{society}",
         "expires_at": FAR_FUTURE})
     offer_id = offered["result"]["offer_id"]
     manifestation = None
@@ -607,13 +607,13 @@ def byom_scripted_flow(ev: Evidence, tag: str) -> dict:
         "meta": meta(inc, f"{tag}-admit", 2),
         "offer_ref": offer_id,
         "membership_acceptance_ref": acceptance,
-        "admitted_by_decision_ref": "dec-admit-1",
+        "admitted_by_decision_ref": f"dec-offer-{offer_id}",
         "admission_subject_digest": subject})
     d.expect_ok("governance", {
         "version": "0.2", "op": "manifestation_admit",
         "meta": meta(inc, f"{tag}-manif", 1),
         "manifestation_ref": manifestation,
-        "admitted_by_decision_ref": "dec-manif-1"})
+        "admitted_by_decision_ref": f"dec-manif-{manifestation}"})
     text, is_error = cand.call("byom_membership_refuse", {
         "offer_ref": offer_id, "offer_subject_digest": subject,
         "superseded_acceptance_ref": acceptance})
@@ -1055,7 +1055,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "participant_ref": AGENT,
         "proposed_standing_ref": "standing-proposal-1",
         "subject_digest": subject,
-        "offered_by_decision_ref": "dec-offer-1",
+        "offered_by_decision_ref": f"dec-society-{society}",
         "expires_at": FAR_FUTURE})
     offer_id = offered["result"]["offer_id"]
     cand_token = d.read_token(f"candidate-{offer_id}.token")
@@ -1068,7 +1068,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "meta": meta(inc, f"{tag}-admit", 2),
         "offer_ref": offer_id,
         "membership_acceptance_ref": accepted["result"]["acceptance_id"],
-        "admitted_by_decision_ref": "dec-admit-1",
+        "admitted_by_decision_ref": f"dec-offer-{offer_id}",
         "admission_subject_digest": subject})
     manifestation = None
     for e in timeline(d, genesis):
@@ -1078,7 +1078,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "version": "0.2", "op": "manifestation_admit",
         "meta": meta(inc, f"{tag}-manif", 1),
         "manifestation_ref": manifestation,
-        "admitted_by_decision_ref": "dec-manif-1"})
+        "admitted_by_decision_ref": f"dec-manif-{manifestation}"})
     agent_token = d.read_token(f"participant-{AGENT}.token")
     sov = sovereign_id(d, society)
     mprep = send("mandate_prepare", "participant", {
@@ -1588,7 +1588,7 @@ def mode_harness(which: str) -> int:
             "participant_ref": AGENT,
             "proposed_standing_ref": "standing-proposal-1",
             "subject_digest": subject,
-            "offered_by_decision_ref": "dec-offer-1",
+            "offered_by_decision_ref": f"dec-society-{society}",
             "expires_at": FAR_FUTURE})
         offer_id = offered["result"]["offer_id"]
         token_file = d.token_file(f"candidate-{offer_id}.token")

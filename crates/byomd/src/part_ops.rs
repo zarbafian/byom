@@ -18,8 +18,8 @@ use crate::gov_ops::{
     mint, obj_pairs, run,
 };
 use crate::part_common::{
-    self, mint_position, prepare_trace, record_position, seats_from_json, seats_json, source_row,
-    Caller, Seat,
+    self, digest_of, mint_position, prepare_trace, record_position, seats_from_json, seats_json,
+    source_row, Caller, Seat,
 };
 use crate::state;
 
@@ -115,8 +115,10 @@ pub fn self_policy_adopt(
         let (revision, superseded_ref) = match &current {
             Some(head) => {
                 let head_digest = rows::json_of(head, "body_digest");
-                let cited = previous_digest.as_ref().map(|d| d.value_hex.as_str());
-                if cited != head_digest["value_hex"].as_str() {
+                let cited = previous_digest
+                    .as_ref()
+                    .is_some_and(|d| d.same_ref_json(&head_digest));
+                if !cited {
                     return Err(state::stale_binding(
                         "replacement adoption must cite the current policy digest in previous_digest",
                     ));
@@ -826,8 +828,7 @@ pub fn mandate_derive(
             return Err(state::stale_revision());
         }
         let parent_digest = rows::json_of(&parent, "subject_digest");
-        if parent_digest["value_hex"].as_str() != Some(req.parent_mandate_digest.value_hex.as_str())
-        {
+        if !req.parent_mandate_digest.same_ref_json(&parent_digest) {
             return Err(state::stale_binding(
                 "parent_mandate_digest does not pin the current parent",
             ));
@@ -912,7 +913,7 @@ pub fn mandate_position(
             "mandate",
             &caller.society_id,
             rows::u64_of(&mandate, "revision"),
-            subject["value_hex"].as_str().unwrap_or_default(),
+            &digest_of(&subject)?,
             &seats,
             &req,
             &caller.participant.participant_id,
@@ -1134,7 +1135,7 @@ pub fn activity_open(
                     return Err(state::stale_revision());
                 }
                 let terms = rows::json_of(&pledge, "terms_digest");
-                if terms["value_hex"].as_str() != Some(binding.terms_digest.value_hex.as_str()) {
+                if !binding.terms_digest.same_ref_json(&terms) {
                     return Err(state::invalid(
                         "pledge_binding.terms_digest does not pin the committed terms",
                     ));
@@ -1792,6 +1793,12 @@ pub fn participation_cease(
         meta: req.meta.clone(),
         body: body.clone(),
     };
+    // The idempotency domain of THIS cease: the one receipt the fenced
+    // participant channel replays afterwards (BY-C2).
+    let cease_domain = store
+        .domain_digest(&scope)
+        .map_err(|e| state::internal(&e.to_string()))?
+        .value_hex;
     let caller = caller.clone();
     let req = req.clone();
     let bytes = run(store, scope, now, hooks, move |conn, _| {
@@ -1876,16 +1883,22 @@ pub fn participation_cease(
         if let Some(channel) = &caller.channel {
             effects.push(Effect::Upsert {
                 table: "participant_channels".into(),
-                row: obj_pairs([
-                    ("channel_id", json!(channel.channel_id)),
-                    ("society_id", json!(channel.society_id)),
-                    ("participant_ref", json!(channel.scope_ref)),
-                    ("token", json!(channel.token)),
-                    ("token_path", json!(channel.token_path)),
-                    ("state", json!("closed")),
-                    ("created_at", json!(ceased_at)),
-                    ("closed_at", json!(ceased_at)),
-                ]),
+                row: crate::gov_ops::channel_row(
+                    "participant_channels",
+                    &channel.channel_id,
+                    &channel.society_id,
+                    &channel.scope_ref,
+                    &channel.token,
+                    &channel.token_path,
+                    "closed",
+                    &ceased_at,
+                    Some("participation_cease"),
+                    Some(&cease_domain),
+                ),
+            });
+            effects.push(Effect::Upsert {
+                table: "channel_credentials".into(),
+                row: crate::gov_ops::closed_credential(conn, &channel.channel_id, &ceased_at)?,
             });
             events.push(event(
                 &caller.society_id,

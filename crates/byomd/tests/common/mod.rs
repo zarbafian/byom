@@ -101,6 +101,14 @@ impl TestDaemon {
         }
     }
 
+    /// Stops the daemon and runs `f` against its data directory with the
+    /// daemon's exclusive ownership released (BY-J1) — the in-process
+    /// store inspection some R1 tests need.
+    pub fn stop_and_take(mut self, f: impl FnOnce(&Path)) {
+        self.stop();
+        f(&self.data_dir.clone());
+    }
+
     /// Waits for the daemon process to exit on its own (crash hooks).
     pub fn wait_exit(&mut self) {
         if let Some(mut child) = self.child.take() {
@@ -120,7 +128,9 @@ impl TestDaemon {
     }
 
     /// One request line, one reply line, over the named surface socket.
-    /// `token` is the candidate-channel preamble.
+    /// `token` is the channel CREDENTIAL (`bpk1.…`): the harness mints a
+    /// fresh sender-constrained proof for the exact operation on every
+    /// call, exactly as a real client does (BY-C1).
     pub fn call_raw(
         &self,
         surface: &str,
@@ -133,8 +143,9 @@ impl TestDaemon {
             .set_read_timeout(Some(Duration::from_secs(20)))
             .unwrap();
         if let Some(token) = token {
+            let preamble = mint_channel_proof(token, line);
             stream
-                .write_all(format!("{token}\n").as_bytes())
+                .write_all(format!("{preamble}\n").as_bytes())
                 .map_err(|e| format!("write token: {e}"))?;
         }
         stream
@@ -306,7 +317,7 @@ pub fn make_offer(
         "participant_ref": participant,
         "proposed_standing_ref": "standing-proposal-1",
         "subject_digest": subject_digest,
-        "offered_by_decision_ref": "dec-offer-1",
+        "offered_by_decision_ref": society_decision(daemon),
         "expires_at": expires_at,
     });
     let reply = daemon.call("governance", &offer);
@@ -325,6 +336,56 @@ pub fn read_candidate_token(daemon: &TestDaemon, offer_id: &str) -> String {
         .unwrap_or_else(|e| panic!("read token {}: {e}", path.display()))
         .trim()
         .to_owned()
+}
+
+/// Mints the per-call channel proof a real client presents. A raw
+/// (non-credential) preamble is passed through verbatim so negative
+/// tests can present garbage.
+pub fn mint_channel_proof(credential: &str, request_line: &str) -> String {
+    if !credential.starts_with("bpk1.") {
+        return credential.to_owned();
+    }
+    let op = serde_json::from_str::<Value>(request_line)
+        .ok()
+        .and_then(|v| v["op"].as_str().map(str::to_owned))
+        .unwrap_or_default();
+    byomd::channel::mint_proof(
+        credential,
+        &op,
+        byomd::channel::Peer::current(),
+        bpp_core::time::unix_now(),
+    )
+    .unwrap_or_else(|| panic!("mint proof for {op}"))
+}
+
+/// The sole Society of a test daemon, read from its database (the
+/// harness's adversary/inspection channel; the daemon owns the data
+/// directory, the SQLite file is readable beside it).
+pub fn sole_society_id(daemon: &TestDaemon) -> String {
+    let conn = rusqlite::Connection::open(daemon.data_dir.join("byom.db")).unwrap();
+    conn.query_row("SELECT society_id FROM societies LIMIT 1", [], |r| r.get(0))
+        .unwrap()
+}
+
+/// The Society's immutable genesis GovernanceDecision — the authority
+/// every membership offer resolves (BY-A1).
+pub fn society_decision(daemon: &TestDaemon) -> String {
+    format!("dec-society-{}", sole_society_id(daemon))
+}
+
+/// The immutable admission decision formed for one offer.
+pub fn offer_decision(offer_id: &str) -> String {
+    format!("dec-offer-{offer_id}")
+}
+
+/// The immutable admission decision formed for one Manifestation.
+pub fn manifestation_decision(manifestation_id: &str) -> String {
+    format!("dec-manif-{manifestation_id}")
+}
+
+/// The immutable authority decision formed for one Mandate at issue.
+pub fn mandate_decision(mandate_id: &str) -> String {
+    format!("dec-mandate-{mandate_id}")
 }
 
 pub fn far_future() -> String {
@@ -528,7 +589,7 @@ pub fn governed_flow(tag: &str, mode: FlowMode) -> FlowOutcome {
             "participant_ref": "part-agent-1",
             "proposed_standing_ref": "standing-proposal-1",
             "subject_digest": subject,
-            "offered_by_decision_ref": "dec-offer-1",
+            "offered_by_decision_ref": format!("dec-society-{society_id}"),
             "expires_at": far_future(),
         }),
     );
@@ -576,7 +637,7 @@ pub fn governed_flow(tag: &str, mode: FlowMode) -> FlowOutcome {
             "meta": meta(&incarnation, &format!("{tag}-admit"), Some(2)),
             "offer_ref": offer_id,
             "membership_acceptance_ref": accepted["result"]["acceptance_id"],
-            "admitted_by_decision_ref": "dec-admit-1",
+            "admitted_by_decision_ref": offer_decision(&offer_id),
             "admission_subject_digest": subject,
             "included_self_policy_proposal_refs": [policy_proposal_id],
         }),
@@ -611,7 +672,7 @@ pub fn governed_flow(tag: &str, mode: FlowMode) -> FlowOutcome {
             "version": "0.2", "op": "manifestation_admit",
             "meta": meta(&incarnation, &format!("{tag}-manif"), Some(1)),
             "manifestation_ref": manifestation_id,
-            "admitted_by_decision_ref": "dec-manif-1",
+            "admitted_by_decision_ref": manifestation_decision(&manifestation_id),
         }),
     );
     let agent_token = read_participant_token(&daemon, "part-agent-1");
