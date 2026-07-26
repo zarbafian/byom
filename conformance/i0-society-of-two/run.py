@@ -1626,10 +1626,35 @@ def mode_harness(which: str) -> int:
                 for ek, evv in spec.get("env", {}).items():
                     overrides += ["-c", f"mcp_servers.{key}.env.{ek}="
                                         f"{json.dumps(evv)}"]
+            # Codex 0.145.0 has no per-tool allowlist (no equivalent of
+            # Claude's --allowedTools; probing the shipped binary shows no
+            # mcp_servers.<n>.{enabled_tools,auto_approve,trust} key exists),
+            # so the grant is bounded structurally instead: with
+            # --ignore-user-config the session's ONLY MCP servers are the two
+            # configured here, so "every tool" IS exactly our tool set.
+            #
+            # Both settings below are required, and it took isolating them to
+            # see why: approval_policy="never" alone still fails, because an
+            # MCP tool call crosses a process boundary that read-only and
+            # workspace-write sandboxes deny — codex then reports the denial
+            # as "user cancelled MCP tool call". danger-full-access is the
+            # sandbox that permits the MCP transport; approval_policy covers
+            # the approval prompt. Stated as explicit config rather than
+            # --dangerously-bypass-approvals-and-sandbox (same effect, but
+            # auditable and narrower in intent).
+            #
+            # Interactively the harness prompt remains the human trust
+            # decision — that is the design (plan D7); this is only the
+            # non-interactive gate's bounded stand-in.
             argv = [harness_cli, "exec", "--skip-git-repo-check",
+                    "--ignore-user-config", "-s", "danger-full-access",
+                    "-c", 'approval_policy="never"',
                     *overrides, prompt]
+        # stdin MUST be closed: codex exec otherwise reads the inherited
+        # stdin and treats its EOF as an interactive cancel, aborting the
+        # in-flight MCP tool call ("user cancelled MCP tool call").
         session = subprocess.run(argv, capture_output=True, text=True,
-                                 timeout=600)
+                                 stdin=subprocess.DEVNULL, timeout=600)
         ev.blob("harness-session.txt",
                 f"$ {' '.join(argv)}\n--- exit {session.returncode}\n"
                 f"--- stdout\n{session.stdout}\n--- stderr\n"
