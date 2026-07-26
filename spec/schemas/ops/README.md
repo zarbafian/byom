@@ -297,18 +297,23 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   BPP.
 - **G37 — execution_permit_consume one-shot encoding.** The request carries
   §13.1 step 4 verbatim: the one-shot `stable_execution_key`, exact
-  intent/host-effect/subject/disclosure/budget/driver-audience bindings, and
+  intent/host-effect/subject/context/disclosure/budget/driver-audience
+  bindings, and
   both current fences — `byom_fence_epoch` + `host_fence_epoch` are the
   derived dual-fence names (R34; G24 precedent). The result is the verbatim
   ExecutionConsumptionReceipt with `max_uses` pinned const 1. Amended
   (RT-05): `meta.expected_revision` (the exact authorized intent
   revision) is REQUIRED — the one-shot decision consumes against a
-  pinned head; disclosure and Episode bindings are both-or-neither
-  pairs (closed oneOf). Same canonical request and key → same receipt;
+  pinned head; the CONTEXT, disclosure and Episode bindings are each
+  both-or-neither pairs (closed oneOf arms), and both manifest pairs are
+  compared — ref AND digest — against the pair the gate seat assented to,
+  so an act authorized under one ContextManifest is not consumable under
+  another and a consumption that presents no context for an act that pins
+  one is refused (R3-A01). Same canonical request and key → same receipt;
   a changed request → `idempotency_mismatch`; a different key cannot
   consume the spent one-shot decision (→ `stale_revision`); a stale
-  fence → `stale_revision`; a dangling disclosure ref fails the closed
-  schema — vectors for all four negative classes. Amended again (the
+  fence → `stale_revision`; a dangling disclosure or context ref fails the
+  closed schema — vectors for all four negative classes. Amended again (the
   receipt half of G48, below): EVERY member of the result is rendered —
   a digest returned as `null` is a conformance failure — and the two
   members the consumer cannot re-derive from its own state are

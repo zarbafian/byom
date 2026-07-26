@@ -52,6 +52,19 @@ pub fn act_disclosure_digest() -> Value {
     portable_digest(0xe2)
 }
 
+/// The CONTEXT manifest an act is prepared with — the second pair the gate
+/// seat assents to, and the one the consumption used to leave unbound
+/// entirely (R3-A01).
+pub fn act_context_ref(key: &str) -> String {
+    format!("context-{key}")
+}
+
+/// Its digest: the HOST's own object as well, so the same `portable_public`
+/// class and the same member-for-member comparison at consumption.
+pub fn act_context_digest() -> Value {
+    portable_digest(0xe1)
+}
+
 /// One prepared-and-authorized act, with the refs its consumption needs.
 #[derive(Debug, Clone)]
 pub struct Act {
@@ -62,6 +75,9 @@ pub struct Act {
     pub stable_execution_key: String,
     pub budget_reservation_set_ref: String,
     pub revision: u64,
+    /// The context pair the act was AUTHORIZED for.
+    pub context_manifest_ref: String,
+    pub context_digest: Value,
     /// The disclosure pair the act was AUTHORIZED for.
     pub disclosure_manifest_ref: String,
     pub disclosure_digest: Value,
@@ -557,8 +573,8 @@ impl Fixture {
             // ref-and-digest pairs that enter the assented subject and are
             // compared again at consumption (R3-A01). `portable_public`,
             // because the consuming host has to present the same value (A8).
-            "context_manifest_ref": "ctxman-1",
-            "context_manifest_digest": portable_digest(0xe1),
+            "context_manifest_ref": act_context_ref(key),
+            "context_manifest_digest": act_context_digest(),
             "disclosure_manifest_ref": act_disclosure_ref(key),
             "disclosure_manifest_digest": act_disclosure_digest(),
         });
@@ -608,6 +624,8 @@ impl Fixture {
                 .unwrap()
                 .to_owned(),
             revision: finalized["result"]["revision"].as_u64().unwrap(),
+            context_manifest_ref: act_context_ref(key),
+            context_digest: act_context_digest(),
             disclosure_manifest_ref: act_disclosure_ref(key),
             disclosure_digest: act_disclosure_digest(),
             intent_id,
@@ -644,9 +662,10 @@ impl Fixture {
     /// UNSIGNED: `sign_host_effect` mints the registration credential, and
     /// a probe may mutate any member before signing.
     ///
-    /// The disclosure pair carried is the act's OWN authorized pair — the
-    /// receipt publishes byom's committed value, so presenting anything
-    /// else is refused rather than copied (R3-A01).
+    /// The context and disclosure pairs carried are the act's OWN authorized
+    /// pairs — byom compares each, ref and digest, against the pair the gate
+    /// seat assented to, so presenting anything else is refused rather than
+    /// copied (R3-A01).
     ///
     /// byom's own digests (`intent_digest`, `subject_digest`,
     /// `episode_fence_digest`) are NOT members: byom recomputes each from
@@ -672,6 +691,8 @@ impl Fixture {
             "intent_ref": act.intent_id,
             "host_effect_ref": format!("kovee-effect-{effect_key}"),
             "host_effect_digest": host_effect_digest,
+            "context_manifest_ref": act.context_manifest_ref,
+            "context_digest": act.context_digest,
             "disclosure_manifest_ref": act.disclosure_manifest_ref,
             "disclosure_digest": act.disclosure_digest,
             "driver_audience": driver_audience,
@@ -817,6 +838,101 @@ impl Fixture {
     pub fn number(&self, sql: &str, key: &str) -> Option<i64> {
         let conn = rusqlite::Connection::open(self.daemon.data_dir.join("byom.db")).unwrap();
         conn.query_row(sql, [key], |r| r.get::<_, i64>(0)).ok()
+    }
+
+    /// A direct store mutation, for the state changes this slice has no
+    /// operation for — a principal REBOUND after its position was cast, and
+    /// a PositionRevision superseded after the act was authorized. Both are
+    /// facts byom must revalidate against; neither is reachable through the
+    /// act surface, which stops accepting positions once the act is
+    /// authorized (the r1_review suite probes decisions the same way).
+    pub fn execute(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> usize {
+        let conn = rusqlite::Connection::open(self.daemon.data_dir.join("byom.db")).unwrap();
+        conn.execute(sql, params)
+            .unwrap_or_else(|e| panic!("execute {sql}: {e}"))
+    }
+
+    /// Rebinds a Participant: the binding epoch moves while the Standing
+    /// stays active, which is exactly the case §1106 says invalidates a
+    /// pending position instead of silently recasting it.
+    pub fn rebind_participant(&self, participant_ref: &str) -> i64 {
+        self.execute(
+            "UPDATE participants SET binding_epoch = binding_epoch + 1 WHERE participant_id = ?1",
+            &[&participant_ref],
+        );
+        self.number(
+            "SELECT binding_epoch FROM participants WHERE participant_id = ?1",
+            participant_ref,
+        )
+        .expect("the rebound participant")
+    }
+
+    /// Supersedes a PositionRevision the honest way the position surface
+    /// would: the same seat, same value, same subject and same binding
+    /// epoch, appended as a NEW immutable revision, with the seat head moved
+    /// to it and the old revision retired. Every column is copied, so the
+    /// new row is a real position record rather than a hand-shaped one.
+    pub fn supersede_position(&self, position_ref: &str, new_ref: &str) {
+        let conn = rusqlite::Connection::open(self.daemon.data_dir.join("byom.db")).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT * FROM position_revisions WHERE position_id = ?1")
+            .unwrap();
+        let columns: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+        let mut values: Vec<rusqlite::types::Value> = stmt
+            .query_row([position_ref], |row| {
+                (0..columns.len()).map(|i| row.get(i)).collect()
+            })
+            .unwrap_or_else(|e| panic!("position {position_ref}: {e}"));
+        let mut revision = 0_i64;
+        let mut prior_digest = String::new();
+        for (index, name) in columns.iter().enumerate() {
+            match name.as_str() {
+                "position_id" => values[index] = rusqlite::types::Value::Text(new_ref.to_owned()),
+                "revision" => {
+                    if let rusqlite::types::Value::Integer(n) = values[index] {
+                        revision = n + 1;
+                    }
+                    values[index] = rusqlite::types::Value::Integer(revision);
+                }
+                "digest" => {
+                    if let rusqlite::types::Value::Text(text) = &values[index] {
+                        prior_digest = text.clone();
+                        let mut digest: Value = serde_json::from_str(text).unwrap();
+                        digest["value_hex"] = json!("5c".repeat(32));
+                        values[index] = rusqlite::types::Value::Text(digest.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (index, name) in columns.iter().enumerate() {
+            if name == "prior_position_digest" {
+                values[index] = rusqlite::types::Value::Text(prior_digest.clone());
+            }
+        }
+        let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("?{i}")).collect();
+        let params: Vec<&dyn rusqlite::ToSql> =
+            values.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        conn.execute(
+            &format!(
+                "INSERT INTO position_revisions ({}) VALUES ({})",
+                columns.join(", "),
+                placeholders.join(", ")
+            ),
+            params.as_slice(),
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE position_revisions SET status = 'superseded' WHERE position_id = ?1",
+            [position_ref],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE position_seat_heads SET position_ref = ?2, revision = ?3
+             WHERE position_ref = ?1",
+            rusqlite::params![position_ref, new_ref, revision],
+        )
+        .unwrap();
     }
 
     /// The §11.4 conservation ledger row of the parent account.

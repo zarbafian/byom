@@ -1341,7 +1341,27 @@ ALTER TABLE resource_allocations
     ADD COLUMN binding_digest TEXT NOT NULL DEFAULT '';
 "#;
 
-const MIGRATIONS: [&str; 9] = [V1, V2, V3, V4, V5, V6, V7, V8, V9];
+/// V10 (R3-A03/R3-A04): two commitments that used to be recomputed rather
+/// than held.
+///
+/// - `governance_decisions.position_locks` carries the EXACT PositionRevision
+///   refs, revisions and DIGESTS a decision locked. References alone named
+///   which rows existed; the digests are what tie the authority to the
+///   immutable revisions that carried it, and they enter the decision's own
+///   record digest.
+/// - `execution_consumption_receipts.semantic_request_digest` is the frozen
+///   digest over every substantive member of the consumption request the
+///   receipt was minted for. A replay compares the presented request against
+///   this STORED value; recomputing both sides only ever proved that today's
+///   rebuild equals today's rebuild.
+const V10: &str = r#"
+ALTER TABLE governance_decisions
+    ADD COLUMN position_locks TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE execution_consumption_receipts
+    ADD COLUMN semantic_request_digest TEXT;
+"#;
+
+const MIGRATIONS: [&str; 10] = [V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

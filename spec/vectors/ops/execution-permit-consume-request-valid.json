@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-request-valid",
-  "description": "one-shot consumption on the A8 member set: the stable execution key, the exact REGISTERED host effect (ref + portable_public digest + the registration credential the host mints under the permit token), the disclosure pair the act was authorized for, the budget set, the episode it runs inside, and both current fences (§13.1, R34, gap note G37). byom's own intent, subject and episode-fence digests are not members: byom recomputes them (R3-L01).",
+  "description": "one-shot consumption on the A8 member set: the stable execution key, the exact REGISTERED host effect (ref + portable_public digest + the registration credential the host mints under the permit token), BOTH host manifest pairs the act was authorized for — context and disclosure, each compared ref AND digest against the assented subject (R3-A01) — the budget set, the episode it runs inside, and both current fences (§13.1, R34, gap note G37). byom's own intent, subject and episode-fence digests are not members: byom recomputes them (R3-L01).",
   "input": {
     "schema": "execution-permit-consume-request",
     "value": {
@@ -22,6 +22,12 @@
         "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
       },
       "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "context_manifest_ref": "kovee-context-7",
+      "context_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e"
+      },
       "disclosure_manifest_ref": "disclosure-7",
       "disclosure_digest": {
         "class": "portable_public",

@@ -1107,6 +1107,15 @@ pub fn kovee_endeavor_form(
                 ("rule_set_ref", json!(proposal.governance_rule_set_ref)),
                 ("seat_snapshot", json!(snapshot.to_string())),
                 ("position_refs", json!(json!([position_id]).to_string())),
+                (
+                    "position_locks",
+                    json!(json!([{
+                        "position_ref": position_id,
+                        "position_revision": 1,
+                        "position_digest": digest_json(&position_digest),
+                    }])
+                    .to_string()),
+                ),
                 ("source", json!("kovee_endeavor_form")),
                 ("digest", digest_json(&decision_digest)),
                 ("created_at", json!(created_at)),

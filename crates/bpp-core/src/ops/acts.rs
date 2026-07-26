@@ -32,11 +32,14 @@
 //! echo.as_object_mut().unwrap()
 //!     .insert("subject_digest".into(), p(0x3b));
 //! assert!(ExecutionPermitConsumeRequest::parse(&echo).is_err());
-//! // The disclosure ref/digest pair is all-or-none (the frozen oneOf).
-//! let mut half = body.clone();
-//! half.as_object_mut().unwrap()
-//!     .insert("disclosure_manifest_ref".into(), serde_json::json!("d-1"));
-//! assert!(ExecutionPermitConsumeRequest::parse(&half).is_err());
+//! // BOTH host manifests travel as all-or-none ref/digest pairs (the
+//! // frozen oneOf arms): context, exactly like disclosure.
+//! for half in ["disclosure_manifest_ref", "context_manifest_ref"] {
+//!     let mut body = body.clone();
+//!     body.as_object_mut().unwrap()
+//!         .insert(half.into(), serde_json::json!("m-1"));
+//!     assert!(ExecutionPermitConsumeRequest::parse(&body).is_err());
+//! }
 //! ```
 
 use serde::Deserialize;
@@ -265,11 +268,16 @@ impl ActIntentFinalizeRequest {
 ///   the committed value on the receipt. Echoing them back proved nothing —
 ///   byom compared its own value against itself — while forcing the host to
 ///   store per-object keyed digests it can never verify.
-/// - **kovee's own** `host_effect_digest` and `disclosure_digest` are
-///   `portable_public` over frozen cross-boundary fragments, so byom holds
-///   the same bytes the host does. This is also the class
-///   `effect_outcome_admit` already demands for `host_effect_digest`, so the
-///   permit and the later outcome admission now name the SAME value.
+/// - **kovee's own** `host_effect_digest`, `context_digest` and
+///   `disclosure_digest` are `portable_public` over frozen cross-boundary
+///   fragments, so byom holds the same bytes the host does. This is also the
+///   class `effect_outcome_admit` already demands for `host_effect_digest`,
+///   so the permit and the later outcome admission now name the SAME value.
+///   BOTH host manifests the act subject pins — context AND disclosure —
+///   are presented here and compared, ref and digest, against the pair the
+///   seats assented to (R3-A01). A context the consumption never presents
+///   is a context nothing binds: the seat assented to "this act, under
+///   that context", and the permit is consumable only under it.
 /// - `host_effect_credential` binds the permit to one exact prepared host
 ///   Effect (R3-A02): the authenticator over
 ///   {intent_ref, stable_execution_key, host_effect_ref, host_effect_digest}
@@ -286,6 +294,10 @@ pub struct ExecutionPermitConsumeRequest {
     pub host_effect_ref: String,
     pub host_effect_digest: DigestRef,
     pub host_effect_credential: String,
+    #[serde(default)]
+    pub context_manifest_ref: Option<String>,
+    #[serde(default)]
+    pub context_digest: Option<DigestRef>,
     #[serde(default)]
     pub disclosure_manifest_ref: Option<String>,
     #[serde(default)]
@@ -309,6 +321,8 @@ impl ExecutionPermitConsumeRequest {
         check_identifier("host_effect_ref", &req.host_effect_ref)?;
         check_portable("host_effect_digest", &req.host_effect_digest)?;
         check_credential("host_effect_credential", &req.host_effect_credential)?;
+        check_opt_identifier("context_manifest_ref", &req.context_manifest_ref)?;
+        check_opt_portable("context_digest", &req.context_digest)?;
         check_opt_identifier("disclosure_manifest_ref", &req.disclosure_manifest_ref)?;
         check_opt_portable("disclosure_digest", &req.disclosure_digest)?;
         check_identifier("driver_audience", &req.driver_audience)?;
@@ -319,7 +333,12 @@ impl ExecutionPermitConsumeRequest {
         check_opt_identifier("episode_ref", &req.episode_ref)?;
         check_safe("byom_fence_epoch", req.byom_fence_epoch)?;
         check_safe("host_fence_epoch", req.host_fence_epoch)?;
-        // The frozen oneOf: the disclosure binding is an all-or-none pair.
+        // The frozen oneOf arms: each manifest binding is an all-or-none
+        // pair. A reference presented without its digest is exactly the
+        // substitution the pair exists to refuse (R3-A01).
+        if req.context_manifest_ref.is_some() != req.context_digest.is_some() {
+            return Err("context_manifest ref/digest is an all-or-none pair".to_owned());
+        }
         if req.disclosure_manifest_ref.is_some() != req.disclosure_digest.is_some() {
             return Err("disclosure_manifest ref/digest is an all-or-none pair".to_owned());
         }
@@ -398,6 +417,8 @@ mod tests {
             "host_effect_ref": "kovee-effect-1",
             "host_effect_digest": portable(0x2a),
             "host_effect_credential": "b".repeat(64),
+            "context_manifest_ref": "kovee-context-1",
+            "context_digest": portable(0x3e),
             "disclosure_manifest_ref": "kovee-disclosure-1",
             "disclosure_digest": portable(0x7d),
             "driver_audience": "kovee-model-broker",
@@ -425,7 +446,7 @@ mod tests {
         }
         // The demanded half: a host-owned digest byom must verify travels as
         // a frozen portable_public fragment, never a keyed blob.
-        for peer in ["host_effect_digest", "disclosure_digest"] {
+        for peer in ["host_effect_digest", "context_digest", "disclosure_digest"] {
             let mut body = consume_body();
             body.as_object_mut()
                 .unwrap()
@@ -457,6 +478,44 @@ mod tests {
         let mut body = consume_body();
         body.as_object_mut().unwrap().remove("episode_ref");
         assert!(ExecutionPermitConsumeRequest::parse(&body).is_ok());
+        // BOTH host manifests are all-or-none pairs, and BOTH are members:
+        // a consumption that names a context without pinning its content —
+        // or pins content without naming the manifest — is refused here,
+        // before any state is read (R3-A01).
+        for (present, absent) in [
+            ("context_manifest_ref", "context_digest"),
+            ("context_digest", "context_manifest_ref"),
+            ("disclosure_manifest_ref", "disclosure_digest"),
+            ("disclosure_digest", "disclosure_manifest_ref"),
+        ] {
+            let mut body = consume_body();
+            body.as_object_mut().unwrap().remove(absent);
+            assert!(
+                ExecutionPermitConsumeRequest::parse(&body).is_err(),
+                "{present} without {absent} must fail the closed pair"
+            );
+        }
+        // Both pairs dropped together is a shape the parser accepts — the
+        // ACT decides whether a consumption without them can proceed.
+        let mut body = consume_body();
+        let members = body.as_object_mut().unwrap();
+        for name in [
+            "context_manifest_ref",
+            "context_digest",
+            "disclosure_manifest_ref",
+            "disclosure_digest",
+        ] {
+            members.remove(name);
+        }
+        assert!(ExecutionPermitConsumeRequest::parse(&body).is_ok());
+        // The context pair is presented under the SAME names the act
+        // subject pins, so the two can be compared member for member.
+        let req = ExecutionPermitConsumeRequest::parse(&consume_body()).unwrap();
+        assert_eq!(req.context_manifest_ref.as_deref(), Some("kovee-context-1"));
+        assert_eq!(
+            req.context_digest.map(|d| d.value_hex),
+            Some("3e".repeat(32))
+        );
     }
 
     #[test]

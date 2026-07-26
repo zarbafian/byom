@@ -23,8 +23,8 @@
 mod common;
 
 use common::runtime::{
-    act_disclosure_digest, act_disclosure_ref, host_effect_credential, portable_digest, Act, Claim,
-    Fixture, Subordinate,
+    act_context_digest, act_context_ref, act_disclosure_digest, act_disclosure_ref,
+    host_effect_credential, portable_digest, Act, Claim, Fixture, Subordinate,
 };
 use common::{kind_of, test_digest};
 use serde_json::{json, Value};
@@ -277,6 +277,8 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
         stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
         budget_reservation_set_ref: r["budget_reservation_set_ref"].as_str().unwrap().to_owned(),
         revision: 1,
+        context_manifest_ref: act_context_ref("a1"),
+        context_digest: act_context_digest(),
         disclosure_manifest_ref: act_disclosure_ref("a1"),
         disclosure_digest: act_disclosure_digest(),
     };
@@ -431,6 +433,8 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
         budget_reservation_set_ref: r["budget_reservation_set_ref"].as_str().unwrap().to_owned(),
         revision: 1,
+        context_manifest_ref: act_context_ref("a1"),
+        context_digest: act_context_digest(),
         disclosure_manifest_ref: act_disclosure_ref("a1"),
         disclosure_digest: act_disclosure_digest(),
     };
@@ -770,14 +774,54 @@ fn probe_body(f: &Fixture, act: &Act, episode: &str, c: &Claim, key: &str) -> Va
     )
 }
 
-/// R3-A01: the FIRST consumption cannot substitute a disclosure. The
-/// review's probe consumed with a disclosure the act never carried and the
-/// receipt published the caller's digest, so the authorized manifest and
-/// the receipted one differed with nothing in the record showing it.
+/// The FROZEN membership of the act subject a gate seat assents to,
+/// written out HERE rather than imported: the daemon composes its subject
+/// against its own `ACT_SUBJECT_FIELDS` and fails closed on a missing
+/// member, so dropping a pair from the projection alone breaks every act;
+/// dropping it from the projection AND the frozen set breaks this list.
+/// One of those two is what the R3 confirmation's mutation did, and the
+/// disclosure test stayed green through it.
+const ASSENTED_SUBJECT_MEMBERS: [&str; 18] = [
+    "intent_id",
+    "kind",
+    "act_class_subject",
+    "execution_kind",
+    "subject_ref",
+    "subject_revision",
+    "requested_by_participant",
+    "mandate_ref",
+    "mandate_revision",
+    "mandate_digest",
+    "context_manifest_ref",
+    "context_manifest_digest",
+    "disclosure_manifest_ref",
+    "disclosure_manifest_digest",
+    "driver_audience",
+    "budget_reservation_set_ref",
+    "preconditions",
+    "stable_execution_key",
+];
+
+/// R3-A01: the FIRST consumption cannot substitute a CONTEXT or a
+/// DISCLOSURE. The review's probe consumed with a disclosure the act never
+/// carried and the receipt published the caller's digest, so the authorized
+/// manifest and the receipted one differed with nothing in the record
+/// showing it; the confirmation then found the context pair unbound
+/// altogether — never presented, never compared — and this test green even
+/// with all four manifest members deleted from the assented subject.
 #[test]
 fn a_substituted_disclosure_cannot_consume_the_permit() {
     let (f, episode, c, _binding) = running("b3-act-disclosure");
     let (act, token) = probe(&f, "a1");
+
+    // The lock the confirmation asked for: the authority a seat positions
+    // on carries BOTH manifest pairs, and its membership is pinned here.
+    assert_eq!(
+        byomd::act_ops::ACT_SUBJECT_FIELDS,
+        ASSENTED_SUBJECT_MEMBERS,
+        "the assented act subject must pin both manifest ref/digest pairs: \
+         a member that leaves this projection leaves the authority"
+    );
 
     // (a) the same reference, DIFFERENT content — R3's exact probe.
     let mut swapped = probe_body(&f, &act, &episode, &c, "d1");
@@ -814,8 +858,54 @@ fn a_substituted_disclosure_cannot_consume_the_permit() {
     let reply = f.consume_signed(&token, &dropped);
     assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
 
+    // The SAME three probes against the CONTEXT pair, which the permit used
+    // to carry no member for at all: an act authorized under one
+    // ContextManifest is not consumable under another, and one that pins a
+    // context is not consumable without presenting it.
+    let mut swapped = probe_body(&f, &act, &episode, &c, "x1");
+    swapped["context_digest"] = portable_digest(0xc9);
+    let reply = f.consume_signed(&token, &swapped);
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("context_digest"),
+        "{reply}"
+    );
+
+    let mut renamed = probe_body(&f, &act, &episode, &c, "x2");
+    renamed["context_manifest_ref"] = json!("context-somebody-elses");
+    let reply = f.consume_signed(&token, &renamed);
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("context_manifest_ref"),
+        "{reply}"
+    );
+
+    let mut dropped = probe_body(&f, &act, &episode, &c, "x3");
+    let body = dropped.as_object_mut().unwrap();
+    body.remove("context_manifest_ref");
+    body.remove("context_digest");
+    let reply = f.consume_signed(&token, &dropped);
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("context_manifest_ref"),
+        "a consumption that presents no context for an act that pins one is \
+         refused, not executed blind: {reply}"
+    );
+
     // Nothing was consumed by any of them, and the honest consumption
-    // publishes the COMMITTED digest.
+    // publishes the COMMITTED digests: the receipt renders the disclosure
+    // the act was authorized for, and byom's own ledger renders the
+    // committed context pair (the receipt shape is frozen with the
+    // consuming host, so the context binding is published there).
     assert_eq!(f.count("SELECT COUNT(*) FROM mandate_uses"), 0);
     let ok = f.consume_signed(&token, &probe_body(&f, &act, &episode, &c, "d4"));
     assert_eq!(ok["outcome"], "ok", "{ok}");
@@ -823,6 +913,25 @@ fn a_substituted_disclosure_cannot_consume_the_permit() {
         ok["result"]["disclosure_digest"],
         act_disclosure_digest(),
         "the receipt renders the committed disclosure, not the request's"
+    );
+    let consumed: Value = serde_json::from_str(
+        &f.row(
+            "SELECT payload FROM events WHERE kind = 'act-intent.consumed'
+               AND object_ref = ?1",
+            &act.intent_id,
+        )
+        .expect("the consumption event"),
+    )
+    .unwrap();
+    assert_eq!(
+        consumed["context_manifest_ref"],
+        json!(act.context_manifest_ref),
+        "the consumption renders the COMMITTED context binding: {consumed}"
+    );
+    assert_eq!(
+        consumed["context_digest"],
+        act_context_digest(),
+        "and its committed digest: {consumed}"
     );
 }
 
@@ -977,6 +1086,25 @@ fn act_finalization_locks_the_exact_active_position_revisions() {
         json!([position_ref]).to_string(),
         "the decision locks the exact active Position revision"
     );
+    // ... and it carries the position DIGESTS, not only the references: a
+    // reference names which row existed, the digest is what ties the
+    // authority to the immutable revision that carried it. The confirmation
+    // found these only in the separate slot snapshot.
+    let locks = f
+        .row(
+            "SELECT position_locks FROM governance_decisions WHERE decision_id = ?1",
+            &format!("dec-act-{intent_id}"),
+        )
+        .expect("the act authorization decision");
+    assert_eq!(
+        serde_json::from_str::<Value>(&locks).unwrap(),
+        json!([{
+            "position_ref": position_ref,
+            "position_revision": 1,
+            "position_digest": position_digest,
+        }]),
+        "the decision must carry the exact position ref, revision AND digest"
+    );
     let snapshot = f
         .row(
             "SELECT seat_snapshot FROM governance_decisions WHERE decision_id = ?1",
@@ -1000,11 +1128,106 @@ fn act_finalization_locks_the_exact_active_position_revisions() {
         stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
         budget_reservation_set_ref: r["budget_reservation_set_ref"].as_str().unwrap().to_owned(),
         revision: finalized["result"]["revision"].as_u64().unwrap(),
+        context_manifest_ref: act_context_ref("a1"),
+        context_digest: act_context_digest(),
         disclosure_manifest_ref: act_disclosure_ref("a1"),
         disclosure_digest: act_disclosure_digest(),
     };
     let ok = consume(&f, &act, &episode, &c, "p1");
     assert_eq!(ok["outcome"], "ok", "{ok}");
+
+    // -- the negatives the lock exists FOR ------------------------------
+    // Each of these is a state change this slice has no operation for
+    // (positions close at authorization, and nothing rebinds a principal
+    // here), so each is made in the store and then answered on the wire.
+
+    // (a) SUPERSESSION at consumption. The seat's assent is appended as a
+    // new immutable revision — same seat, same value, same subject, same
+    // binding epoch, so every check but the snapshot still passes. The act
+    // may not execute under slots its authorization never locked.
+    let superseded_act = f.authorized_act("a2", "model_egress", BROKER);
+    let superseded_position = f
+        .row(
+            "SELECT position_ref FROM position_seat_heads WHERE proposal_ref = ?1",
+            &superseded_act.intent_id,
+        )
+        .expect("the act's seat head");
+    f.supersede_position(&superseded_position, "pos-superseding-a2");
+    let reply = consume(&f, &superseded_act, &episode, &c, "p2");
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("no longer the ones this act's authorization locked"),
+        "a superseded position invalidates the permit: {reply}"
+    );
+
+    // (b) A REBOUND principal at consumption, and (c) at finalization. The
+    // pending act is positioned FIRST, so one rebinding fences both: a
+    // changed binding epoch invalidates the position instead of silently
+    // recasting it (DESIGN.md §1106).
+    let rebound_act = f.authorized_act("a3", "model_egress", BROKER);
+    let pending = f.prepare_act_raw("a4", "model_egress", Some(BROKER));
+    let pending_id = pending["result"]["intent_id"].as_str().unwrap().to_owned();
+    let pending_subject = pending["result"]["subject_digest"].clone();
+    let pending_positioned = f.governance(&json!({
+        "version": "0.2", "op": "act_intent_position",
+        "meta": f.meta("actpos-a4", None),
+        "proposal_ref": pending_id,
+        "proposal_revision": 1,
+        "subject_digest": pending_subject,
+        "seat_ref": pending["result"]["required_seat_refs"][0],
+        "value": "assent",
+    }));
+    assert_eq!(pending_positioned["outcome"], "ok", "{pending_positioned}");
+    let seat_participant = f
+        .row(
+            "SELECT participant_ref FROM position_seat_heads WHERE proposal_ref = ?1",
+            &pending_id,
+        )
+        .or_else(|| {
+            f.row(
+                "SELECT participant_ref FROM position_revisions WHERE proposal_ref = ?1",
+                &pending_id,
+            )
+        })
+        .expect("the seat's participant");
+    let epoch = f.rebind_participant(&seat_participant);
+
+    let reply = consume(&f, &rebound_act, &episode, &c, "p3");
+    assert_eq!(kind_of(&reply), "decision_incomplete", "{reply}");
+    let detail = reply["problem"]["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("binding epoch") && detail.contains(&epoch.to_string()),
+        "a rebound principal invalidates the permit it positioned, and the \
+         refusal names the epoch that moved: {reply}"
+    );
+    let refused = f.governance(&json!({
+        "version": "0.2", "op": "act_intent_finalize",
+        "meta": f.meta("actfin-a4", Some(1)),
+        "intent_id": pending_id,
+        "subject_digest": pending_subject,
+    }));
+    assert_eq!(kind_of(&refused), "decision_incomplete", "{refused}");
+    let detail = refused["problem"]["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("binding epoch") && detail.contains(&epoch.to_string()),
+        "finalization names the epoch that moved: {refused}"
+    );
+    assert!(
+        f.row(
+            "SELECT authorization_decision_ref FROM act_intents WHERE intent_id = ?1",
+            &pending_id
+        )
+        .is_none(),
+        "and no decision was formed over the invalidated position"
+    );
+    assert_eq!(
+        f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),
+        1,
+        "only the honest consumption minted a receipt"
+    );
 }
 
 /// R3-A04: a CHANGED consumed request never replays. The review changed
@@ -1028,10 +1251,50 @@ fn every_changed_member_of_a_consumed_request_conflicts() {
         first["result"]["receipt_id"]
     );
 
+    // The comparison is against a STORED commitment, not a second
+    // recomputation: the frozen semantic-request digest byom wrote when it
+    // consumed. Deleting that emission — from the receipt it is stored on,
+    // or from the consumption event that publishes it — is what this test
+    // has to notice, because a recomputed "committed" side only ever proves
+    // that today's rebuild equals today's rebuild.
+    let stored_digest: Value = serde_json::from_str(
+        &f.row(
+            "SELECT semantic_request_digest FROM execution_consumption_receipts
+               WHERE stable_execution_key = ?1",
+            &act.stable_execution_key,
+        )
+        .expect("the receipt stores the frozen semantic-request digest"),
+    )
+    .unwrap();
+    assert_eq!(
+        stored_digest["class"], "local_erasure_safe",
+        "byom's own commitment to the request it honored: {stored_digest}"
+    );
+    assert_eq!(
+        stored_digest["value_hex"].as_str().map(str::len),
+        Some(64),
+        "{stored_digest}"
+    );
+    let consumed: Value = serde_json::from_str(
+        &f.row(
+            "SELECT payload FROM events WHERE kind = 'act-intent.consumed'
+               AND object_ref = ?1",
+            &act.intent_id,
+        )
+        .expect("the consumption event"),
+    )
+    .unwrap();
+    assert_eq!(
+        consumed["semantic_request_digest"], stored_digest,
+        "the event publishes the SAME frozen digest the receipt stores: {consumed}"
+    );
+
     // The mutation matrix: EVERY substantive member, one at a time.
     let mutations: Vec<(&str, Value)> = vec![
         ("host_effect_ref", json!("kovee-effect-other")),
         ("host_effect_digest", portable_digest(0x0f)),
+        ("context_manifest_ref", json!("context-other")),
+        ("context_digest", portable_digest(0xc9)),
         ("disclosure_manifest_ref", json!("disclosure-other")),
         ("disclosure_digest", portable_digest(0xd9)),
         ("driver_audience", json!("kovee-other-broker")),
@@ -1058,14 +1321,23 @@ fn every_changed_member_of_a_consumed_request_conflicts() {
             "the refusal names the member that changed: {reply}"
         );
     }
-    // Dropping the optional disclosure pair is a change too.
-    let mut dropped = probe_body(&f, &act, &episode, &c, "r-drop");
-    dropped["meta"]["expected_revision"] = json!(act.revision + 1);
-    let body = dropped.as_object_mut().unwrap();
-    body.remove("disclosure_manifest_ref");
-    body.remove("disclosure_digest");
-    let reply = f.consume_signed(&token, &dropped);
-    assert_eq!(kind_of(&reply), "idempotency_mismatch", "{reply}");
+    // Dropping either optional manifest pair is a change too.
+    for (name, pair) in [
+        (
+            "r-drop-disclosure",
+            ["disclosure_manifest_ref", "disclosure_digest"],
+        ),
+        ("r-drop-context", ["context_manifest_ref", "context_digest"]),
+    ] {
+        let mut dropped = probe_body(&f, &act, &episode, &c, name);
+        dropped["meta"]["expected_revision"] = json!(act.revision + 1);
+        let body = dropped.as_object_mut().unwrap();
+        for member in pair {
+            body.remove(member);
+        }
+        let reply = f.consume_signed(&token, &dropped);
+        assert_eq!(kind_of(&reply), "idempotency_mismatch", "{name}: {reply}");
+    }
 
     assert_eq!(
         f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),

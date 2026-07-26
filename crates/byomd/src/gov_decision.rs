@@ -99,6 +99,42 @@ pub struct DecisionSeat {
     pub participant_binding_epoch: u64,
 }
 
+/// The EXACT PositionRevision a decision locks (R3-A03): its reference,
+/// its immutable revision, and its record DIGEST. A decision that carried
+/// only references named which rows once existed; the digest is what makes
+/// the row it names the row that carried the authority, so an altered or
+/// superseded position cannot pass for the one that was decided under.
+#[derive(Debug, Clone)]
+pub struct DecisionPosition {
+    pub position_ref: String,
+    pub position_revision: u64,
+    pub position_digest: Value,
+}
+
+fn position_refs_json(positions: &[DecisionPosition]) -> Value {
+    Value::Array(
+        positions
+            .iter()
+            .map(|p| json!(p.position_ref))
+            .collect::<Vec<Value>>(),
+    )
+}
+
+fn position_locks_json(positions: &[DecisionPosition]) -> Value {
+    Value::Array(
+        positions
+            .iter()
+            .map(|p| {
+                json!({
+                    "position_ref": p.position_ref,
+                    "position_revision": p.position_revision,
+                    "position_digest": p.position_digest,
+                })
+            })
+            .collect(),
+    )
+}
+
 fn seats_json(seats: &[DecisionSeat]) -> Value {
     Value::Array(
         seats
@@ -152,7 +188,7 @@ pub fn form(
     subject_digest: &DigestRef,
     rule_set_ref: &str,
     seats: &[DecisionSeat],
-    position_refs: &[String],
+    positions: &[DecisionPosition],
     source: &str,
     actor_ref: &str,
     now: i64,
@@ -170,6 +206,8 @@ pub fn form(
     let created_at = rfc3339_utc(now);
     let snapshot = seats_json(seats);
     let closure = dependency_closure(conn, society_id)?;
+    let refs = position_refs_json(positions);
+    let locks = position_locks_json(positions);
     let record = record_value(
         decision_id,
         society_id,
@@ -179,7 +217,8 @@ pub fn form(
         subject_digest,
         rule_set_ref,
         &snapshot,
-        position_refs,
+        &refs,
+        &locks,
         source,
         actor_ref,
         &closure,
@@ -206,10 +245,8 @@ pub fn form(
             ),
             ("rule_set_ref", json!(rule_set_ref)),
             ("seat_snapshot", json!(snapshot.to_string())),
-            (
-                "position_refs",
-                json!(json!(position_refs.to_vec()).to_string()),
-            ),
+            ("position_refs", json!(refs.to_string())),
+            ("position_locks", json!(locks.to_string())),
             ("source", json!(source)),
             (
                 "digest",
@@ -232,7 +269,8 @@ fn record_value(
     subject_digest: &DigestRef,
     rule_set_ref: &str,
     snapshot: &Value,
-    position_refs: &[String],
+    position_refs: &Value,
+    position_locks: &Value,
     source: &str,
     actor_ref: &str,
     closure: &Value,
@@ -247,7 +285,11 @@ fn record_value(
         "subject_digest": serde_json::to_value(subject_digest).unwrap_or(Value::Null),
         "rule_set_ref": rule_set_ref,
         "seat_snapshot": snapshot,
-        "position_refs": position_refs.to_vec(),
+        "position_refs": position_refs,
+        // The exact locked PositionRevisions, digests included (R3-A03):
+        // covered by the decision's own immutable record digest, so a
+        // stored row whose locks were edited cannot resolve.
+        "position_locks": position_locks,
         "source": source,
         "actor_ref": actor_ref,
         "dependency_closure": closure,
@@ -346,8 +388,10 @@ pub fn resolve(
             .map_err(|_| decision_incomplete("decision subject digest is not canonical"))?,
         rows::str_of(&row, "rule_set_ref"),
         &snapshot,
-        &serde_json::from_str::<Vec<String>>(rows::str_of(&row, "position_refs"))
-            .unwrap_or_default(),
+        &serde_json::from_str::<Value>(rows::str_of(&row, "position_refs"))
+            .unwrap_or(Value::Array(Vec::new())),
+        &serde_json::from_str::<Value>(rows::str_of(&row, "position_locks"))
+            .unwrap_or(Value::Array(Vec::new())),
         rows::str_of(&row, "source"),
         rows::str_of(&row, "actor_ref"),
         &recorded,
