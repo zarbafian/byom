@@ -19,17 +19,28 @@ records, kovee events over kovee records — never merged.
                                      # suites wired as i0-negative /
                                      # i0-privacy / i0-classification
 
+The harness modes run the SAME flow as --scripted with the agent's own
+steps performed by a real Claude Code / Codex session over the real
+byom-mcp and kovee-mcp servers (successive sessions, because a governed
+flow interleaves with the human's steps). Every claim they make is
+verified afterwards from byomd's and koveed's own event ledgers — never
+from what the harness says.
+
 Who speaks on which channel (the attribution the trails verify):
   - governance ops (genesis, offer, admissions, mandate seat+issue):
     the direct human channel — the governance socket under the
     operator's uid (actor `governance:sovereign`);
   - candidate ops (membership_accept): the byom-mcp CANDIDATE profile
-    as a subprocess, offer token via BYOM_CANDIDATE_TOKEN_FILE
-    (actor `candidate:<channel>`); the channel closes at admission;
+    as a subprocess, the offer's channel credential via
+    BYOM_CANDIDATE_TOKEN_FILE — a sender-constrained proof key, not a
+    bearer token: every call carries a fresh proof bound to the
+    connecting process (actor `candidate:<channel>`); the channel
+    closes at admission;
   - agent participant ops (mandate_prepare, activity_open,
     wake_intent_submit, pledge_propose, pledgor pledge_position,
     pledge_finalize, delivery_submit): the byom-mcp PARTICIPANT profile
-    with the minted participant token (actor `participant:part-agent-1`);
+    with the minted participant credential (actor
+    `participant:part-agent-1`);
   - human participant ops (endeavor propose/position/finalize,
     call_open, beneficiary pledge_position, review_record): the direct
     human channel — the participant socket with no channel credential,
@@ -46,11 +57,13 @@ Exit codes: 0 green, 1 failure, 2 honest skip (ungated harness mode).
 """
 
 import hashlib
+import hmac
 import json
 import os
 import re
 import shutil
 import socket as socketlib
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -154,6 +167,86 @@ class Evidence:
         self._steps.close()
 
 
+# ----------------------------------------------- channel proofs (BY-C1) ----
+
+# The candidate/participant credential is NOT a bearer token any more.
+# What byomd mints in `<data-dir>/channels/*.token` is
+#
+#     bpk1.<hex JSON {channel_id, audience, scope_ref, binding_ref,
+#                     fence_epoch, key}>
+#
+# and what a client presents on every call is a FRESH per-call proof
+#
+#     bpx1.<channel_id>.<nonce>.<issued_at>.<mac>
+#
+# MAC'd under the channel proof key over the exact (audience, channel,
+# scope, operation, binding, fence, PEER pid + kernel start time, nonce,
+# issued_at) — crates/byomd/src/channel.rs. This is the client half of
+# that construction, ported so the scenario's direct-socket calls speak
+# exactly what byom-mcp and byom-cli speak. Because the preimage commits
+# to the CONNECTING process, a proof minted here would not verify from
+# any other process, and a proof for one operation does not authorize
+# another.
+
+CHANNEL_PROOF_TAG = "bpp-channel-proof-v0"
+
+
+def jcs(value) -> bytes:
+    """JCS (RFC 8785) for the shapes used here: objects with ASCII keys,
+    string and integer values — byte-identical to bpp-core's `jcs`."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode()
+
+
+def tagged_canonical(tag: str, obj: dict) -> bytes:
+    return jcs({**obj, "$domain": tag})
+
+
+def peer_process_start(pid: int) -> int:
+    """`/proc/<pid>/stat` field 22 — the kernel start time byomd reads
+    through SO_PEERCRED to pin the exact process, not a recycled pid."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    fields = stat.rsplit(")", 1)[-1].split()
+    try:
+        return int(fields[19])
+    except (IndexError, ValueError):
+        return 0
+
+
+def parse_credential(line: str) -> dict:
+    body = line.strip()
+    need(body.startswith("bpk1."),
+         f"not a byom channel credential: {body[:12]!r}")
+    return json.loads(bytes.fromhex(body[len("bpk1."):]))
+
+
+def mint_proof(credential_line: str, operation: str) -> str:
+    """One sender-constrained proof for exactly this call."""
+    cred = parse_credential(credential_line)
+    nonce = os.urandom(16).hex()
+    issued_at = int(time.time())
+    pid = os.getpid()
+    mac = hmac.new(
+        bytes.fromhex(cred["key"]),
+        tagged_canonical(CHANNEL_PROOF_TAG, {
+            "audience": cred["audience"],
+            "channel_id": cred["channel_id"],
+            "scope_ref": cred["scope_ref"],
+            "operation": operation,
+            "binding_ref": cred["binding_ref"],
+            "fence_epoch": cred["fence_epoch"],
+            "peer_pid": pid,
+            "peer_process_start": peer_process_start(pid),
+            "nonce": nonce,
+            "issued_at": issued_at,
+        }),
+        hashlib.sha256).hexdigest()
+    return f"bpx1.{cred['channel_id']}.{nonce}.{issued_at}.{mac}"
+
+
 # ------------------------------------------------------------- daemons ----
 
 def _unix_call(path: Path, line: str, preamble: str | None) -> str | None:
@@ -242,6 +335,30 @@ class ByomDaemon:
 
     def read_token(self, name: str) -> str:
         return self.token_file(name).read_text(encoding="utf-8").strip()
+
+    def proof(self, name: str, operation: str) -> str:
+        """A fresh channel proof for one call, minted from the current
+        credential file (re-read every time: a restart or a fence
+        advance rewrites it)."""
+        return mint_proof(self.read_token(name), operation)
+
+    def store_row(self, table: str, key_col: str, key: str) -> dict:
+        """One row of byomd's OWN database, opened read-only beside the
+        running daemon — the same inspection channel the Rust suites
+        use. Only ever used to recover daemon-DERIVED values the driver
+        must echo back (subject digests, seat refs, revisions); every
+        ASSERTION in this scenario is made against the event ledger."""
+        conn = sqlite3.connect(f"file:{self.data_dir / 'byom.db'}?mode=ro",
+                               uri=True)
+        try:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                f"SELECT * FROM {table} WHERE {key_col} = ?",  # noqa: S608
+                (key,)).fetchone()
+        finally:
+            conn.close()
+        need(row is not None, f"{table}: no row {key_col}={key}")
+        return dict(row)
 
     def kill(self):
         if self.proc is not None:
@@ -995,37 +1112,91 @@ def mode_scripted() -> int:
 
 # -------------------------------------------------------- crash matrix ----
 
+# The record each armed operation must produce EXACTLY once — the
+# absence probe of a pre-witness crash and the presence probe after the
+# retry read this map, so no cell can pass by checking nothing.
+CRASH_EFFECT_KIND = {
+    "membership_offer": "membership.offered",
+    "membership_accept": "membership.accepted",
+    "participant_admit": "membership.admitted",
+    "pledge_finalize": "pledge.committed",
+    "delivery_submit": "delivery.submitted",
+}
+
+
+def count_kind(d: ByomDaemon, cursor: str, kind: str) -> int:
+    return sum(1 for e in timeline(d, cursor) if e["kind"] == kind)
+
+
 # The byom direct-socket flow used by the crash matrix: pinned
 # idempotency keys so the exact retry after a kill is the SAME command
-# (the b1_crash_matrix discipline). Yields (op, surface, token_kind,
-# request) steps; token_kind in {None, "candidate", "agent"}.
+# (the b1_crash_matrix discipline). Candidate/participant calls present
+# a FRESH sender-constrained proof per transmission (the request line
+# itself is byte-identical across retry and replay — the proof rides the
+# preamble, so idempotency and byte-identical replies still hold).
 def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
-                    ev: Evidence) -> dict:
+                    crash_phase: str, ev: Evidence) -> dict:
     inc = d.incarnation()
-    state = {"crashed": False}
+    state = {"crashed": False, "genesis": None}
 
-    def send(op, surface, request, token=None):
+    def send(op, surface, request, cred=None):
         line = json.dumps(request)
+
+        def proof():
+            return None if cred is None else d.proof(cred, op)
+
         if op == crash_op and not state["crashed"]:
-            raw = d.call_raw(surface, line, token)
+            kind = CRASH_EFFECT_KIND[op]
+            probe = crash_phase == "before_witness" and state["genesis"]
+            baseline = count_kind(d, state["genesis"], kind) if probe else None
+            raw = d.call_raw(surface, line, proof())
             need(raw is None,
                  f"{cell}: {op} must die at the armed point, got {raw}")
             d.wait_exit()
             d.restart()
             state["crashed"] = True
-            first = d.call_raw(surface, line, token)
+            if probe:
+                # The daemon died AFTER the SQL prepare and BEFORE the
+                # witness CAS: the journal never saw the transaction, so
+                # startup must abandon the inert pending state. Asserted
+                # BEFORE any retry — otherwise a replayed result would
+                # mask a record that had leaked out early.
+                leaked = count_kind(d, state["genesis"], kind)
+                need(leaked == baseline,
+                     f"{cell}: a pre-witness crash must leave no {kind} "
+                     f"record: {leaked} (baseline {baseline})")
+                minted = sorted(p.name for p in
+                                (d.data_dir / "channels").glob("*"))
+                need(not minted,
+                     f"{cell}: a pre-witness crash must mint no channel "
+                     f"credential, found {minted}")
+                ev.step(f"{cell}: killed byomd BEFORE the witness CAS; "
+                        f"after restart the record is ABSENT — no {kind} "
+                        "event and no credential file — checked BEFORE "
+                        "any retry",
+                        absent_kind=kind, count_before_retry=leaked,
+                        credentials_on_disk=minted)
+            first = d.call_raw(surface, line, proof())
             need(first is not None, f"{cell}: {op} retry got no reply")
             reply = json.loads(first)
             need(reply.get("outcome") == "ok",
                  f"{cell}: {op} retry: {first}")
-            second = d.call_raw(surface, line, token)
+            if probe:
+                after = count_kind(d, state["genesis"], kind)
+                need(after == baseline + 1,
+                     f"{cell}: the retry must produce exactly one {kind}: "
+                     f"{after}")
+            second = d.call_raw(surface, line, proof())
             need(first == second,
                  f"{cell}: {op} replay must be byte-identical")
+            if probe:
+                need(count_kind(d, state["genesis"], kind) == baseline + 1,
+                     f"{cell}: a replay must commit nothing new")
             ev.step(f"{cell}: killed byomd mid-{op}, restarted; exact "
                     "retry ok; second replay byte-identical",
                     op=op)
             return reply
-        raw = d.call_raw(surface, line, token)
+        raw = d.call_raw(surface, line, proof())
         need(raw is not None, f"{cell}: {op} died unexpectedly")
         reply = json.loads(raw)
         need(reply.get("outcome") == "ok", f"{cell}: {op}: {raw}")
@@ -1048,6 +1219,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "preparation_ref": prepared["result"]["preparation_ref"],
         "subject_digest": prepared["result"]["subject_digest"]})
     genesis = booted["source_cursor"]
+    state["genesis"] = genesis
     subject = digest(0xB1)
     offered = send("membership_offer", "governance", {
         "version": "0.2", "op": "membership_offer",
@@ -1058,11 +1230,11 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "offered_by_decision_ref": f"dec-society-{society}",
         "expires_at": FAR_FUTURE})
     offer_id = offered["result"]["offer_id"]
-    cand_token = d.read_token(f"candidate-{offer_id}.token")
+    cand_cred = f"candidate-{offer_id}.token"
     accepted = send("membership_accept", "candidate", {
         "version": "0.2", "op": "membership_accept",
         "meta": meta(inc, f"{tag}-accept", 1),
-        "offer_ref": offer_id, "subject_digest": subject}, cand_token)
+        "offer_ref": offer_id, "subject_digest": subject}, cand_cred)
     send("participant_admit", "governance", {
         "version": "0.2", "op": "participant_admit",
         "meta": meta(inc, f"{tag}-admit", 2),
@@ -1079,7 +1251,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "meta": meta(inc, f"{tag}-manif", 1),
         "manifestation_ref": manifestation,
         "admitted_by_decision_ref": f"dec-manif-{manifestation}"})
-    agent_token = d.read_token(f"participant-{AGENT}.token")
+    agent_cred = f"participant-{AGENT}.token"
     sov = sovereign_id(d, society)
     mprep = send("mandate_prepare", "participant", {
         "version": "0.2", "op": "mandate_prepare",
@@ -1095,7 +1267,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "concurrency_ceiling": 2,
         "delegation": {"allowed": False, "max_depth": 0,
                        "max_children": 0, "grantee_selectors": []},
-        "expires_at": FAR_FUTURE}, agent_token)
+        "expires_at": FAR_FUTURE}, agent_cred)
     mandate = mprep["result"]["mandate_id"]
     send("mandate_position", "governance", {
         "version": "0.2", "op": "mandate_position",
@@ -1114,7 +1286,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "meta": meta(inc, f"{tag}-explore"),
         "kind": "exploration", "purpose_ref": "purpose-explore-1",
         "purpose_digest": digest(0xC0), "mandate_refs": [mandate],
-        "budget_account_set_ref": "budget-mandate-1"}, agent_token)
+        "budget_account_set_ref": "budget-mandate-1"}, agent_cred)
     send("wake_intent_submit", "participant", {
         "version": "0.2", "op": "wake_intent_submit",
         "meta": meta(inc, f"{tag}-wake"),
@@ -1124,7 +1296,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "exact_cause_digest": digest(0xC2),
         "purpose_ref": "purpose-explore-1",
         "stable_wake_key": f"wake-{tag}",
-        "expires_at": FAR_FUTURE}, agent_token)
+        "expires_at": FAR_FUTURE}, agent_cred)
     eprop = send("endeavor_propose", "participant", {
         "version": "0.2", "op": "endeavor_propose",
         "meta": meta(inc, f"{tag}-eprop"),
@@ -1178,7 +1350,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "deadline": FAR_FUTURE,
         "cancellation_terms": {"terms_ref": "terms-cancel-1",
                                "terms_digest": digest(0xD3)},
-        "dependency_refs": []}, agent_token)
+        "dependency_refs": []}, agent_cred)
     proposal = pprop["result"]["proposal_id"]
     terms = pprop["result"]["terms_digest"]
     slots = {s["kind"]: s["seat_refs"][0]
@@ -1189,7 +1361,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "proposal_ref": proposal, "proposal_revision": 1,
         "subject_digest": terms, "seat_ref": slots["pledgor_assent"],
         "value": "assent", "assent_mode": "direct_participant"},
-        agent_token)
+        agent_cred)
     send("pledge_position", "participant", {
         "version": "0.2", "op": "pledge_position",
         "meta": meta(inc, f"{tag}-ppos-sov"),
@@ -1200,7 +1372,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "version": "0.2", "op": "pledge_finalize",
         "meta": meta(inc, f"{tag}-pfin", 1),
         "proposal_ref": proposal, "proposal_revision": 1,
-        "subject_digest": terms}, agent_token)
+        "subject_digest": terms}, agent_cred)
     pledge = finalized["result"]["pledge_id"]
     work = send("activity_open", "participant", {
         "version": "0.2", "op": "activity_open",
@@ -1210,7 +1382,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "pledge_binding": {"pledge_id": pledge, "pledge_revision": 1,
                            "terms_digest": terms},
         "mandate_refs": [],
-        "budget_account_set_ref": f"budget-endeavor-{tag}"}, agent_token)
+        "budget_account_set_ref": f"budget-endeavor-{tag}"}, agent_cred)
     delivered = send("delivery_submit", "participant", {
         "version": "0.2", "op": "delivery_submit",
         "meta": meta(inc, f"{tag}-deliver"),
@@ -1218,7 +1390,7 @@ def byom_crash_flow(cell: str, d: ByomDaemon, crash_op: str,
         "terms_digest": terms, "output_refs": ["change-set-1"],
         "evidence_refs": ["attest-complete-readable-source-1"],
         "activity_stream_ref": work["result"]["activity_stream_id"]},
-        agent_token)
+        agent_cred)
     reviewed = send("review_record", "participant", {
         "version": "0.2", "op": "review_record",
         "meta": meta(inc, f"{tag}-review"),
@@ -1246,7 +1418,12 @@ UNIQUE_BYOM_KINDS = [
     "review.recorded",         # review
 ]
 
+# Every §15.3 byom journal commit point is armed at least once:
+# before_witness (nothing journaled), after_witness (entry without
+# finalize), before_finalize (inside the finalize transaction),
+# after_finalize (committed, reply lost).
 BYOM_CRASH_CELLS = [
+    ("membership_offer", "before_witness"),
     ("membership_accept", "after_witness"),
     ("participant_admit", "after_finalize"),
     ("pledge_finalize", "before_finalize"),
@@ -1340,7 +1517,7 @@ def mode_crash_matrix() -> int:
             d = ByomDaemon(f"cm-{op}-{phase}",
                            {"BYOMD_ABORT": f"{phase}:{op}"})
             try:
-                ctx = byom_crash_flow(cell, d, op, ev)
+                ctx = byom_crash_flow(cell, d, op, phase, ev)
                 counts = {}
                 for e in timeline(d, ctx["genesis"]):
                     counts[e["kind"]] = counts.get(e["kind"], 0) + 1
@@ -1375,38 +1552,130 @@ def mode_crash_matrix() -> int:
 
 # ------------------------------------------------------- trail checking ----
 
-# Which actor authors each byom event kind in this scenario (the
-# attribution the sheet's i0-trails verifies): the value is a callable
-# on (actor_ref, ctx) -> bool.
+# Which actor authors each byom event kind in this scenario — the
+# attribution the sheet's i0-trails verifies. The map is EXHAUSTIVE over
+# the flow: --verify-trails FAILS on any event kind it does not list, so
+# a record can never pass unchecked (I0-2). Each value is
+# (label, predicate(actor_ref, payload) -> bool); the label lands in the
+# evidence table beside the observed actor.
 def byom_attribution_rules(sov: str) -> dict:
-    governance = lambda a: a == GOV_ACTOR                    # noqa: E731
-    candidate = lambda a: a.startswith("candidate:")         # noqa: E731
-    agent = lambda a: a == f"participant:{AGENT}"            # noqa: E731
-    human = lambda a: a == f"participant:{sov}"              # noqa: E731
+    gov_actor = GOV_ACTOR
+    agent_actor = f"participant:{AGENT}"
+    human_actor = f"participant:{sov}"
+
+    def governance(a, _p):
+        return a == gov_actor
+
+    def candidate(a, _p):
+        return a.startswith("candidate:")
+
+    def agent(a, _p):
+        return a == agent_actor
+
+    def human(a, _p):
+        return a == human_actor
+
+    def budget_holder(a, p):
+        """A reservation is authored by whoever caused it: the mandate
+        reservation rides mandate_issue (governance), the pledge
+        reservation rides pledge_finalize (the agent)."""
+        holder = p.get("holder", "")
+        if holder.startswith("mnd-"):
+            return governance(a, p)
+        if holder.startswith("plg-"):
+            return agent(a, p)
+        return False
+
+    def pledge_seat(a, p):
+        """The two pledge seats are two different actors on two
+        different channels."""
+        seat = p.get("seat_ref", "")
+        if seat.startswith("seat-pledgor-"):
+            return agent(a, p)
+        if seat.startswith("seat-beneficiary-"):
+            return human(a, p)
+        return False
+
+    g = (gov_actor, governance)
+    c = ("candidate:<channel>", candidate)
+    a_ = (agent_actor, agent)
+    h = (human_actor, human)
     return {
-        "society.prepared": governance, "society.genesis": governance,
-        "charter.adopted": governance,
-        "membership.offered": governance,
-        "participant.proposed": governance,
-        "manifestation.proposed": governance,
-        "channel.candidate_minted": governance,
-        "membership.accepted": candidate,
-        "membership.admitted": governance,
-        "channel.converted": governance,
-        "manifestation.admitted": governance,
-        "mandate.prepared": agent,
-        "mandate.position_recorded": governance,
-        "mandate.issued": governance,
-        "activity.opened": agent,
-        "wake-intent.submitted": agent,
-        "endeavor.proposed": human,
-        "endeavor.position_recorded": human,
-        "endeavor.finalized": human,
-        "call.opened": human,
-        "pledge.proposed": agent,
-        "delivery.submitted": agent,
-        "review.recorded": human,
+        # genesis, charter and the sovereign's own Standing
+        "society.prepared": g,
+        "society.genesis": g,
+        "charter.adopted": g,
+        "participant.admitted": g,
+        "standing.activated": g,
+        "budget.roots_established": g,
+        # onboarding
+        "membership.offered": g,
+        "participant.proposed": g,
+        "manifestation.proposed": g,
+        "channel.candidate_minted": g,
+        "membership.accepted": c,
+        "membership.admitted": g,
+        "channel.converted": g,
+        "manifestation.admitted": g,
+        # mandate chain
+        "mandate.prepared": a_,
+        "mandate.position_recorded": g,
+        "mandate.issued": g,
+        "budget.reserved": (f"{gov_actor} (mandate holder) / "
+                            f"{agent_actor} (pledge holder)", budget_holder),
+        # the agent's activity
+        "activity.opened": a_,
+        "wake-intent.submitted": a_,
+        # the human sovereign's endeavor
+        "endeavor.proposed": h,
+        "endeavor.position_recorded": h,
+        "endeavor.finalized": h,
+        "budget.delegated": h,
+        "call.opened": h,
+        # the pledge
+        "pledge.proposed": a_,
+        "pledge.position_recorded": (f"{agent_actor} (pledgor seat) / "
+                                     f"{human_actor} (beneficiary seat)",
+                                     pledge_seat),
+        "pledge.committed": a_,
+        "pledge.underway": a_,
+        # delivery, review, settlement
+        "delivery.submitted": a_,
+        "review.recorded": h,
+        "budget.settled": h,
     }
+
+
+def verify_byom_attribution(d: ByomDaemon, events: list, sov: str) -> list:
+    """Every byom record, checked against the exhaustive actor map. An
+    unmapped kind is a FAILURE, never a skip; payloads are fetched so
+    the kinds authored by two different seats are pinned exactly."""
+    rules = byom_attribution_rules(sov)
+    table = []
+    for e in events:
+        actor = e.get("actor_ref") or ""
+        need(actor, f"byom event without actor_ref: {e}")
+        need(e.get("causation_ref") and e.get("correlation_ref"),
+             f"byom event without causal attribution: {e}")
+        rule = rules.get(e["kind"])
+        need(rule is not None,
+             f"byom event kind {e['kind']!r} is absent from the trail "
+             "actor map — the map must be exhaustive, an unmapped kind "
+             "is never skipped")
+        label, predicate = rule
+        payload = d.expect_ok("projection", {
+            "version": "0.2", "op": "event_payload",
+            "event_id": e["event_id"]})["result"]["payload"]
+        need(predicate(actor, payload),
+             f"byom {e['kind']} attributed to {actor!r} — expected "
+             f"{label}")
+        table.append({"kind": e["kind"], "actor_ref": actor,
+                      "expected": label, "checked": True})
+    unused = sorted(set(rules) - {e["kind"] for e in events})
+    need(not unused,
+         f"the trail actor map lists kinds this flow never produced: "
+         f"{unused} — the map tracks the flow exactly")
+    return table
 
 
 def mode_verify_trails() -> int:
@@ -1421,19 +1690,8 @@ def mode_verify_trails() -> int:
         # -- byom: every event names its authoring actor; the flow's
         #    kinds attribute to exactly the channel that authored them.
         sov = byom_ctx["sovereign"]
-        rules = byom_attribution_rules(sov)
-        table = []
-        for e in byom_ctx["events"]:
-            actor = e.get("actor_ref") or ""
-            need(actor, f"byom event without actor_ref: {e}")
-            need(e.get("causation_ref") and e.get("correlation_ref"),
-                 f"byom event without causal attribution: {e}")
-            table.append({"kind": e["kind"], "actor_ref": actor})
-            rule = rules.get(e["kind"])
-            if rule is not None:
-                need(rule(actor),
-                     f"byom {e['kind']} attributed to {actor!r} — not "
-                     "its authoring surface/actor")
+        table = verify_byom_attribution(byom_ctx["daemon"],
+                                        byom_ctx["events"], sov)
         positions = [e["actor_ref"] for e in byom_ctx["events"]
                      if e["kind"] == "pledge.position_recorded"]
         need(sorted(positions) == sorted([f"participant:{AGENT}",
@@ -1441,12 +1699,32 @@ def mode_verify_trails() -> int:
              f"pledge positions must come from both seats: {positions}")
         ev.blob("byom-attribution.json", json.dumps(table, indent=2))
         ev.step("byom: every event carries actor_ref + causation/"
-                "correlation; flow kinds attribute to their authoring "
-                "channel (governance:sovereign / candidate:<chan> / "
-                f"participant:{AGENT} / participant:<sovereign>); the "
-                "two pledge seats are distinct actors",
+                "correlation; EVERY kind is checked against the "
+                "exhaustive actor map (governance:sovereign / "
+                f"candidate:<chan> / participant:{AGENT} / "
+                "participant:<sovereign>) — an unmapped kind fails; the "
+                "two pledge seats and the two budget reservations are "
+                "distinct actors",
                 events=len(byom_ctx["events"]),
+                kinds_checked=len(table),
+                distinct_kinds=len({r["kind"] for r in table}),
+                unchecked=0,
                 pledge_position_actors=sorted(positions))
+
+        # The map's own negative: a kind the map does not list must FAIL
+        # the check — the silent skip I0-2 found is gone.
+        try:
+            verify_byom_attribution(byom_ctx["daemon"], [{
+                "kind": "not.a.mapped.kind", "actor_ref": GOV_ACTOR,
+                "event_id": "evt-synthetic", "causation_ref": "cause",
+                "correlation_ref": "corr"}], sov)
+        except Fail as refusal:
+            ev.step("byom: the actor map is exhaustive by construction — "
+                    "a synthetic event of an unmapped kind FAILS the "
+                    "check instead of being skipped",
+                    refusal=str(refusal))
+        else:
+            raise Fail("an unmapped event kind must fail --verify-trails")
 
         # -- kovee: its OWN events, its OWN provenance — never joined
         #    with the byom timeline.
@@ -1480,19 +1758,181 @@ def mode_verify_trails() -> int:
 
 # ------------------------------------------------------- harness modes ----
 
+# The real-harness modes drive the SAME complete I0 flow as --scripted,
+# with every participant-side step performed by a REAL Claude Code /
+# Codex session over the real byom-mcp and kovee-mcp stdio servers.
+#
+# The split is the sheet's, not a convenience:
+#   - the AGENT's own steps are the harness's — membership_accept (the
+#     candidate profile), then mandate_prepare, activity_open
+#     (exploration), wake_intent_submit, pledge_propose, the PLEDGOR
+#     seat's pledge_position, pledge_finalize, activity_open
+#     (pledge_work), delivery_submit, and the kovee calls;
+#   - the GOVERNANCE and HUMAN-SEAT steps stay with this driver on the
+#     direct human channel, because they are the human's — the two
+#     admissions, the mandate seat position and mandate_issue, the
+#     endeavor chain and call_open, the BENEFICIARY seat's
+#     pledge_position, and review_record.
+#
+# A governed flow interleaves by construction (the agent cannot proceed
+# past an admission or a seat position it does not author), so the
+# harness runs as successive invocations with the driver's steps in
+# between. Every argument is fixed by the driver — the exact values
+# --scripted sends — and every CLAIM is verified afterwards from byomd's
+# and koveed's OWN event ledgers. Nothing the harness says is evidence.
+
+
+def byom_candidate_server(d: ByomDaemon, offer_id: str) -> dict:
+    return {"command": byom_mcp_bin(),
+            "args": ["--profile", "candidate"],
+            "env": {"BYOM_RUNTIME_DIR": str(d.run_dir),
+                    "BYOM_CANDIDATE_TOKEN_FILE":
+                        str(d.token_file(f"candidate-{offer_id}.token"))}}
+
+
+def byom_participant_server(d: ByomDaemon, society: str) -> dict:
+    return {"command": byom_mcp_bin(),
+            "args": ["--profile", "participant"],
+            "env": {"BYOM_RUNTIME_DIR": str(d.run_dir),
+                    "BYOM_PARTICIPANT_TOKEN_FILE":
+                        str(d.token_file(f"participant-{AGENT}.token")),
+                    "BYOM_SOCIETY": society}}
+
+
+def kovee_server(k: Koveed, project: str) -> dict:
+    return {"command": kovee_mcp_bin(),
+            "env": {"KOVEE_RUNTIME_DIR": str(k.run_dir),
+                    "KOVEE_PROJECT": project}}
+
+
+def harness_prompt(calls: list) -> str:
+    """One session's instruction: the exact tool calls, in order, with
+    the exact arguments. The harness is the ACTOR, not the author of the
+    request bodies — the same bodies --scripted sends."""
+    body = [
+        "You are the agent participant of a byom Society. The MCP tools "
+        "you have been given are your only surface onto it.",
+        "",
+        "Make the following tool calls, in this exact order. Copy every "
+        "argument value VERBATIM — do not reformat, rename, shorten, "
+        "invent or omit any field. Make no other tool call, and do not "
+        "ask for confirmation.",
+    ]
+    for i, (_server, tool, args) in enumerate(calls, 1):
+        body += ["", f"{i}. Call `{tool}` with exactly these arguments:",
+                 json.dumps(args, indent=2)]
+    body += ["", "When every call has returned, reply with the word DONE "
+                 "followed by the identifiers the calls returned."]
+    return "\n".join(body)
+
+
+def harness_session(which: str, cli_path: str, ev: Evidence, n: int,
+                    slug: str, calls: list, servers: dict,
+                    workdir: Path) -> subprocess.CompletedProcess:
+    """One REAL harness invocation. Identical tool schemas and zero
+    server-side changes versus --scripted: only the caller differs."""
+    prompt = harness_prompt(calls)
+    allowed = sorted({f"mcp__{server}__{tool}" for server, tool, _ in calls})
+    if which == "claude":
+        config = ev.dir / f"session-{n:02d}-{slug}.mcp.json"
+        config.write_text(json.dumps({"mcpServers": servers}, indent=1),
+                          encoding="utf-8")
+        argv = [cli_path, "-p", prompt,
+                "--mcp-config", str(config), "--strict-mcp-config",
+                "--allowedTools", ",".join(allowed)]
+    else:
+        overrides = []
+        for name, spec in servers.items():
+            key = name.replace("-", "_")
+            overrides += ["-c", f"mcp_servers.{key}.command="
+                                f"{json.dumps(spec['command'])}"]
+            if spec.get("args"):
+                overrides += ["-c", f"mcp_servers.{key}.args="
+                                    f"{json.dumps(spec['args'])}"]
+            for ek, evv in spec.get("env", {}).items():
+                overrides += ["-c", f"mcp_servers.{key}.env.{ek}="
+                                    f"{json.dumps(evv)}"]
+        # Codex 0.145.0 has no per-tool allowlist (no equivalent of
+        # Claude's --allowedTools; probing the shipped binary shows no
+        # mcp_servers.<n>.{enabled_tools,auto_approve,trust} key exists),
+        # so the grant is bounded structurally instead: with
+        # --ignore-user-config the session's ONLY MCP servers are the ones
+        # configured here, so "every tool" IS exactly our tool set.
+        #
+        # Both settings below are required, and it took isolating them to
+        # see why: approval_policy="never" alone still fails, because an
+        # MCP tool call crosses a process boundary that read-only and
+        # workspace-write sandboxes deny — codex then reports the denial
+        # as "user cancelled MCP tool call". danger-full-access is the
+        # sandbox that permits the MCP transport; approval_policy covers
+        # the approval prompt. Stated as explicit config rather than
+        # --dangerously-bypass-approvals-and-sandbox (same effect, but
+        # auditable and narrower in intent).
+        #
+        # Interactively the harness prompt remains the human trust
+        # decision — that is the design (plan D7); this is only the
+        # non-interactive gate's bounded stand-in.
+        argv = [cli_path, "exec", "--skip-git-repo-check",
+                "--ignore-user-config", "-s", "danger-full-access",
+                "-c", 'approval_policy="never"', *overrides, prompt]
+    started = time.time()
+    # stdin MUST be closed: codex exec otherwise reads the inherited
+    # stdin and treats its EOF as an interactive cancel, aborting the
+    # in-flight MCP tool call ("user cancelled MCP tool call").
+    session = subprocess.run(argv, capture_output=True, text=True,
+                             stdin=subprocess.DEVNULL, cwd=str(workdir),
+                             timeout=900)
+    ev.blob(f"session-{n:02d}-{slug}.txt",
+            f"$ {' '.join(argv)}\n--- exit {session.returncode} after "
+            f"{time.time() - started:.1f}s\n--- allowed tools\n"
+            f"{chr(10).join(allowed)}\n--- stdout\n{session.stdout}\n"
+            f"--- stderr\n{session.stderr}")
+    need(session.returncode == 0,
+         f"{which} session {n:02d} ({slug}) failed "
+         f"({session.returncode}): {session.stderr[-600:]}")
+    return session
+
+
+def kovee_branch_head(k: Koveed, project: str, branch: str) -> str:
+    """The §10.3 head any authorized reader folds from kovee's events."""
+    reply = k.expect_ok(kv_read("events_read", project,
+                                {"source": project, "limit": 512}))
+    entries = []
+    for e in reply["result"]["events"]:
+        if e["type"] != "dev.kovee.space.contribution-appended.v1":
+            continue
+        p = e.get("payload") or {}
+        if p.get("origin_branch_id") == branch:
+            entries.append((p["origin_branch_sequence"], p["content_digest"]))
+    head = kovee_genesis_head(branch)
+    for seq, cdigest in sorted(entries):
+        head = kovee_next_head(head, seq, cdigest)
+    return head
+
+
 def harness_instructions(which: str) -> str:
     byom_mcp = byom_mcp_bin()
     kovee_mcp = kovee_mcp_bin()
     common = f"""\
 Spawn the daemons first (isolated dirs), mint the offer, then register
-the two MCP servers with the harness. <run-dir>/<data-dir> are the
-byomd dirs, <kovee-run-dir> the koveed runtime dir, <offer-id> the
-minted MembershipOffer:
+the MCP servers with the harness. <run-dir>/<data-dir> are the byomd
+dirs, <kovee-run-dir> the koveed runtime dir, <offer-id> the minted
+MembershipOffer:
 
   byomd:  BYOM_DATA_DIR=<data-dir> BYOM_RUNTIME_DIR=<run-dir> {byomd_bin()}
   koveed: KOVEE_RUNTIME_DIR=<kovee-run-dir> {koveed_bin()} --data-dir <kovee-data-dir>
   # genesis + offer over the governance socket (the direct human channel),
   # e.g. via this scenario: python3 {HERE / 'run.py'} --scripted
+
+The harness then drives the AGENT half of the I0 flow — membership_accept
+(candidate profile), mandate_prepare, activity_open kind=exploration,
+wake_intent_submit, pledge_propose, the pledgor seat's pledge_position,
+pledge_finalize, activity_open kind=pledge_work, delivery_submit, and the
+kovee calls — while the governance/human-seat steps (both admissions,
+mandate_position + mandate_issue, the endeavor chain, call_open, the
+beneficiary seat's pledge_position, review_record) stay on the direct
+human channel. Every step is verified afterwards from byomd's and
+koveed's own event ledgers.
 """
     if which == "claude":
         return common + f"""
@@ -1508,14 +1948,15 @@ minted MembershipOffer:
     -- {byom_mcp} --profile participant
   claude mcp add kovee \\
     --env KOVEE_RUNTIME_DIR=<kovee-run-dir> \\
+    --env KOVEE_PROJECT=<project-id> \\
     -- {kovee_mcp}
 
-Then drive the session (identical tool schemas, zero server-side
-changes vs --scripted):
+Then drive each step (identical tool schemas, zero server-side changes
+vs --scripted):
 
-  claude -p "Accept your byom membership offer <offer-id> with \\
-byom_membership_accept, then show the kovee space with kovee_space_show." \\
-    --allowedTools "mcp__byom-candidate__byom_membership_accept,mcp__kovee__kovee_space_show"
+  claude -p "<the step's tool call and its exact arguments>" \\
+    --mcp-config <session-config>.json --strict-mcp-config \\
+    --allowedTools "mcp__byom__byom_activity_open"
 """
     return common + f"""
   # ~/.codex/config.toml (or `codex mcp add ...` where available):
@@ -1531,12 +1972,13 @@ byom_membership_accept, then show the kovee space with kovee_space_show." \\
 
   [mcp_servers.kovee]
   command = "{kovee_mcp}"
-  env = {{ KOVEE_RUNTIME_DIR = "<kovee-run-dir>" }}
+  env = {{ KOVEE_RUNTIME_DIR = "<kovee-run-dir>", KOVEE_PROJECT = "<project-id>" }}
 
-Then drive the session:
+Then drive each step:
 
-  codex exec "Accept your byom membership offer <offer-id> with \\
-byom_membership_accept, then show the kovee space with kovee_space_show."
+  codex exec --skip-git-repo-check --ignore-user-config \\
+    -s danger-full-access -c approval_policy="never" \\
+    "<the step's tool call and its exact arguments>"
 """
 
 
@@ -1555,20 +1997,56 @@ def mode_harness(which: str) -> int:
         print(instructions)
         return 2
 
-    # A minimal REAL session: spawn both daemons, mint the offer, hand
-    # the harness the candidate server + kovee server via a session-local
-    # config (no global config mutation), and verify the acceptance
-    # landed from the daemon's own records.
     ev = Evidence(test_id)
-    print(f"{test_id}: real {which} session (pinned local binaries)")
+    print(f"{test_id}: a real {which} session drives the COMPLETE I0 "
+          "agent half on both daemons; every claim is verified from "
+          "byomd's and koveed's own event ledgers")
     ev.blob("setup-instructions.txt", instructions)
+    workdir = Path(tempfile.mkdtemp(prefix=f"i0-harness-{which}-cwd-"))
     d = ByomDaemon(f"h-{which}")
     k = Koveed(f"h-{which}")
+    tag = f"h{which}"
+    sessions = {"n": 0}
+    genesis = ""
+    agent_actor = f"participant:{AGENT}"
+    sov = ""
+
+    def drive(slug: str, calls: list, servers: dict):
+        sessions["n"] += 1
+        return harness_session(which, harness_cli, ev, sessions["n"], slug,
+                               calls, servers, workdir)
+
+    def events(kind: str | None = None) -> list:
+        rows = timeline(d, genesis)
+        return [e for e in rows if kind is None or e["kind"] == kind]
+
+    def payload_of(e: dict) -> dict:
+        return d.expect_ok("projection", {
+            "version": "0.2", "op": "event_payload",
+            "event_id": e["event_id"]})["result"]["payload"]
+
+    def authored(kind: str, expect: str, count: int = 1) -> dict:
+        """Exactly `count` events of `kind` in byomd's OWN ledger, each
+        authored by `expect`; the last one is returned."""
+        rows = events(kind)
+        need(len(rows) == count,
+             f"byomd's ledger must hold exactly {count} {kind} "
+             f"event(s), it holds {len(rows)}")
+        for r in rows:
+            need(r["actor_ref"] == expect,
+                 f"{kind} authored by {r['actor_ref']!r}, expected "
+                 f"{expect!r}")
+        return rows[-1]
+
     try:
         inc = d.incarnation()
+
+        # -- driver [governance, direct human channel]: atomic genesis
+        #    and the membership offer naming the proposed
+        #    attached_harness ManifestationRevision.
         prepared = d.expect_ok("governance", {
             "version": "0.2", "op": "society_prepare",
-            "meta": meta(inc, f"h{which}-prep"),
+            "meta": meta(inc, f"{tag}-prep"),
             "home_authority_ref": "auth-home-1",
             "proposed_charter_ref": "charter-draft-1",
             "proposed_charter_digest": digest(0xA1),
@@ -1577,107 +2055,464 @@ def mode_harness(which: str) -> int:
         society = prepared["result"]["society_id"]
         booted = d.expect_ok("governance", {
             "version": "0.2", "op": "society_bootstrap",
-            "meta": meta(inc, f"h{which}-boot", 1),
+            "meta": meta(inc, f"{tag}-boot", 1),
             "society_id": society,
             "preparation_ref": prepared["result"]["preparation_ref"],
             "subject_digest": prepared["result"]["subject_digest"]})
+        genesis = booted["source_cursor"]
         subject = digest(0xB1)
         offered = d.expect_ok("governance", {
             "version": "0.2", "op": "membership_offer",
-            "meta": meta(inc, f"h{which}-offer"),
+            "meta": meta(inc, f"{tag}-offer"),
             "participant_ref": AGENT,
             "proposed_standing_ref": "standing-proposal-1",
             "subject_digest": subject,
             "offered_by_decision_ref": f"dec-society-{society}",
             "expires_at": FAR_FUTURE})
         offer_id = offered["result"]["offer_id"]
-        token_file = d.token_file(f"candidate-{offer_id}.token")
-        ev.step("daemons live; society bootstrapped; offer minted",
-                society_id=society, offer_id=offer_id)
+        manifestation = authored("manifestation.proposed", GOV_ACTOR)
+        need(payload_of(manifestation).get("kind") == "attached_harness",
+             "the offer must propose an attached_harness Manifestation")
+        manifestation_ref = manifestation["object_ref"]
+        ev.step("driver [governance, direct human channel]: atomic "
+                "genesis + membership_offer — the proposed "
+                "attached_harness ManifestationRevision and the "
+                "candidate channel credential exist",
+                society_id=society, offer_id=offer_id,
+                manifestation_ref=manifestation_ref)
 
-        prompt = (f"Call the byom_membership_accept tool with offer_ref "
-                  f"{json.dumps(offer_id)} and subject_digest exactly "
-                  f"{json.dumps(subject)}. Report the acceptance_id.")
-        servers = {
-            "byom-candidate": {
-                "command": byom_mcp_bin(),
-                "args": ["--profile", "candidate"],
-                "env": {"BYOM_RUNTIME_DIR": str(d.run_dir),
-                        "BYOM_CANDIDATE_TOKEN_FILE": str(token_file)}},
-            "kovee": {"command": kovee_mcp_bin(),
-                      "env": {"KOVEE_RUNTIME_DIR": str(k.run_dir)}},
-        }
-        if which == "claude":
-            config = ev.dir / "mcp-config.json"
-            config.write_text(json.dumps({"mcpServers": servers}))
-            argv = [harness_cli, "-p", prompt,
-                    "--mcp-config", str(config), "--strict-mcp-config",
-                    "--allowedTools",
-                    "mcp__byom-candidate__byom_membership_accept"]
-        else:
-            overrides = []
-            for name, spec in servers.items():
-                key = name.replace("-", "_")
-                overrides += ["-c", f"mcp_servers.{key}.command="
-                                    f"{json.dumps(spec['command'])}"]
-                if spec.get("args"):
-                    overrides += ["-c", f"mcp_servers.{key}.args="
-                                        f"{json.dumps(spec['args'])}"]
-                for ek, evv in spec.get("env", {}).items():
-                    overrides += ["-c", f"mcp_servers.{key}.env.{ek}="
-                                        f"{json.dumps(evv)}"]
-            # Codex 0.145.0 has no per-tool allowlist (no equivalent of
-            # Claude's --allowedTools; probing the shipped binary shows no
-            # mcp_servers.<n>.{enabled_tools,auto_approve,trust} key exists),
-            # so the grant is bounded structurally instead: with
-            # --ignore-user-config the session's ONLY MCP servers are the two
-            # configured here, so "every tool" IS exactly our tool set.
-            #
-            # Both settings below are required, and it took isolating them to
-            # see why: approval_policy="never" alone still fails, because an
-            # MCP tool call crosses a process boundary that read-only and
-            # workspace-write sandboxes deny — codex then reports the denial
-            # as "user cancelled MCP tool call". danger-full-access is the
-            # sandbox that permits the MCP transport; approval_policy covers
-            # the approval prompt. Stated as explicit config rather than
-            # --dangerously-bypass-approvals-and-sandbox (same effect, but
-            # auditable and narrower in intent).
-            #
-            # Interactively the harness prompt remains the human trust
-            # decision — that is the design (plan D7); this is only the
-            # non-interactive gate's bounded stand-in.
-            argv = [harness_cli, "exec", "--skip-git-repo-check",
-                    "--ignore-user-config", "-s", "danger-full-access",
-                    "-c", 'approval_policy="never"',
-                    *overrides, prompt]
-        # stdin MUST be closed: codex exec otherwise reads the inherited
-        # stdin and treats its EOF as an interactive cancel, aborting the
-        # in-flight MCP tool call ("user cancelled MCP tool call").
-        session = subprocess.run(argv, capture_output=True, text=True,
-                                 stdin=subprocess.DEVNULL, timeout=600)
-        ev.blob("harness-session.txt",
-                f"$ {' '.join(argv)}\n--- exit {session.returncode}\n"
-                f"--- stdout\n{session.stdout}\n--- stderr\n"
-                f"{session.stderr}")
-        need(session.returncode == 0,
-             f"{which} session failed ({session.returncode})")
-        events = timeline(d, booted["source_cursor"])
-        accepted = [e for e in events if e["kind"] == "membership.accepted"]
+        # -- driver [kovee CLI]: the space and the human's question, so
+        #    the agent's later append CASes a non-genesis branch head.
+        env_cli = {"KOVEE_RUNTIME_DIR": str(k.run_dir)}
+        init = cli([kovee_cli_bin(), "init"], env_cli, ev,
+                   "kovee-cli-init.txt")
+        match = re.search(r"project:\s+(\S+)", init.stdout)
+        need(match, f"kovee init printed no project: {init.stdout}")
+        project = match.group(1)
+        created = cli([kovee_cli_bin(), "space", "create", "--project",
+                       project, "--title", f"I0 harness ({which})"],
+                      env_cli, ev, "kovee-cli-space-create.txt")
+        space_result = json.loads(created.stdout)
+        space = space_result["space_id"]
+        branch = space_result["main_branch_id"]
+        cli([kovee_cli_bin(), "space", "contribute", "--project", project,
+             "--space", space, "--kind", "question", "--text",
+             "What does the attached harness owe the Society?"],
+            env_cli, ev, "kovee-cli-question.txt")
+        ev.step("driver [kovee CLI]: init, space create, the human's "
+                "question contribution (branch sequence 1)",
+                project_id=project, space_id=space, main_branch_id=branch)
+
+        # == 1. THE AGENT accepts its own offer [candidate profile].
+        cand_servers = {"byom-candidate": byom_candidate_server(d, offer_id)}
+        drive("membership-accept", [
+            ("byom-candidate", "byom_membership_accept",
+             {"offer_ref": offer_id, "subject_digest": subject})],
+            cand_servers)
+        accepted = events("membership.accepted")
         need(len(accepted) == 1,
-             f"the real {which} session must accept exactly once")
+             f"the real {which} session must accept exactly once, "
+             f"byomd's ledger holds {len(accepted)}")
         need(accepted[0]["actor_ref"].startswith("candidate:"),
              f"acceptance actor: {accepted[0]}")
-        ev.step(f"real {which} session accepted the offer over the "
-                "candidate MCP profile (verified from byomd's events)",
-                actor_ref=accepted[0]["actor_ref"])
-        print(f"{test_id}: PASS (evidence {ev.dir.relative_to(REPO)})")
+        acceptance = payload_of(accepted[0])["acceptance_id"]
+        ev.step(f"{which} session 01 drove byom_membership_accept over "
+                "the byom-mcp CANDIDATE profile — VERIFIED from byomd's "
+                "events_read: exactly one membership.accepted, authored "
+                "by the candidate channel",
+                actor_ref=accepted[0]["actor_ref"],
+                acceptance_id=acceptance)
+
+        # -- driver [governance]: the two admissions -> active Standing.
+        d.expect_ok("governance", {
+            "version": "0.2", "op": "participant_admit",
+            "meta": meta(inc, f"{tag}-admit", 2),
+            "offer_ref": offer_id,
+            "membership_acceptance_ref": acceptance,
+            "admitted_by_decision_ref": f"dec-offer-{offer_id}",
+            "admission_subject_digest": subject})
+        d.expect_ok("governance", {
+            "version": "0.2", "op": "manifestation_admit",
+            "meta": meta(inc, f"{tag}-manif", 1),
+            "manifestation_ref": manifestation_ref,
+            "admitted_by_decision_ref": f"dec-manif-{manifestation_ref}"})
+        authored("membership.admitted", GOV_ACTOR)
+        authored("manifestation.admitted", GOV_ACTOR)
+        authored("channel.converted", GOV_ACTOR)
+        need(d.token_file(f"participant-{AGENT}.token").exists(),
+             "the participant channel credential must be minted at "
+             "admission")
+        sov = sovereign_id(d, society)
+        part_servers = {"byom": byom_participant_server(d, society)}
+        ev.step("driver [governance, direct human channel]: "
+                "participant_admit + manifestation_admit — Standing "
+                "active, candidate channel closed, participant channel "
+                "minted (verified from byomd's events)",
+                participant=AGENT, sovereign=sov)
+
+        # == 2. THE AGENT prepares its own mandate.
+        drive("mandate-prepare", [
+            ("byom", "byom_mandate_prepare", {
+                "grantee_participant_ref": AGENT,
+                "purpose_ref": "purpose-explore-1",
+                "allowed_operations": ["activity_open",
+                                       "continuation_write",
+                                       "wake_intent_submit"],
+                "resource_selectors": ["res-repo-1"],
+                "data_class_selectors": ["class-public"],
+                "destination_selectors": [],
+                "budget_ceiling_set_ref": "budget-mandate-1",
+                "concurrency_ceiling": 2,
+                "delegation": {"allowed": False, "max_depth": 0,
+                               "max_children": 0, "grantee_selectors": []},
+                "expires_at": FAR_FUTURE})],
+            part_servers)
+        mandate = authored("mandate.prepared", agent_actor)["object_ref"]
+        mandate_row = d.store_row("mandates", "mandate_id", mandate)
+        mandate_subject = json.loads(mandate_row["subject_digest"])
+        seat = json.loads(mandate_row["required_seat_refs"])[0]["seat_ref"]
+        ev.step(f"{which} session 02 drove byom_mandate_prepare over the "
+                "byom-mcp PARTICIPANT profile — VERIFIED from byomd's "
+                f"events_read: mandate.prepared authored by {agent_actor}",
+                mandate_id=mandate, required_seat_ref=seat)
+
+        # -- driver [governance]: the human seat's position + issue.
+        d.expect_ok("governance", {
+            "version": "0.2", "op": "mandate_position",
+            "meta": meta(inc, f"{tag}-mpos"),
+            "proposal_ref": mandate, "proposal_revision": 1,
+            "subject_digest": mandate_subject,
+            "seat_ref": seat, "value": "assent"})
+        d.expect_ok("governance", {
+            "version": "0.2", "op": "mandate_issue",
+            "meta": meta(inc, f"{tag}-missue", 1),
+            "mandate_id": mandate, "subject_digest": mandate_subject})
+        authored("mandate.position_recorded", GOV_ACTOR)
+        authored("mandate.issued", GOV_ACTOR)
+        authored("budget.reserved", GOV_ACTOR)
+        ev.step("driver [governance, direct human channel]: "
+                "mandate_position (human seat, fresh challenge) + "
+                "mandate_issue with budget reservation",
+                mandate_id=mandate)
+
+        # == 3. THE AGENT opens the exploration activity under it.
+        drive("activity-open-exploration", [
+            ("byom", "byom_activity_open", {
+                "kind": "exploration", "purpose_ref": "purpose-explore-1",
+                "purpose_digest": digest(0xC0),
+                "mandate_refs": [mandate],
+                "budget_account_set_ref": "budget-mandate-1"})],
+            part_servers)
+        opened = authored("activity.opened", agent_actor)
+        exploration = opened["object_ref"]
+        opened_payload = payload_of(opened)
+        need(opened_payload.get("kind") == "exploration"
+             and opened_payload.get("mandate_refs") == [mandate]
+             and opened_payload.get("state") == "ready",
+             f"exploration activity: {opened_payload}")
+        ev.step(f"{which} session 03 drove byom_activity_open "
+                "kind=exploration UNDER THE MANDATE — VERIFIED from "
+                "byomd's events_read: activity.opened authored by "
+                f"{agent_actor}, kind=exploration, mandate_refs=[{mandate}]",
+                activity_stream=exploration)
+
+        # == 4. THE AGENT submits the wake intent (left pending in I0).
+        drive("wake-intent-submit", [
+            ("byom", "byom_wake_intent_submit", {
+                "activity_stream_ref": exploration, "generation": 1,
+                "origin": "direct_participant",
+                "exact_cause_ref": "cause-followup-1",
+                "exact_cause_digest": digest(0xC2),
+                "purpose_ref": "purpose-explore-1",
+                "stable_wake_key": f"wake-{tag}",
+                "expires_at": FAR_FUTURE})],
+            part_servers)
+        wake = authored("wake-intent.submitted", agent_actor)
+        need(payload_of(wake).get("state") == "submitted",
+             "the wake intent must be recorded submitted")
+        need(not [e for e in events()
+                  if e["kind"].startswith("wake-intent.")
+                  and e["kind"] != "wake-intent.submitted"],
+             "the wake intent must stay pending — no activation in I0")
+        ev.step(f"{which} session 04 drove byom_wake_intent_submit — "
+                "VERIFIED from byomd's events_read: exactly one "
+                "wake-intent.submitted authored by the agent, still "
+                "pending (no activation event of any kind)",
+                wake_intent=wake["object_ref"])
+
+        # -- driver [human sovereign, direct human channel]: the
+        #    endeavor chain and the call the agent will pledge into.
+        eprop = d.expect_ok("participant", {
+            "version": "0.2", "op": "endeavor_propose",
+            "meta": meta(inc, f"{tag}-eprop"),
+            "purpose_ref": "purpose-improve-1",
+            "purpose_digest": digest(0xD0),
+            "sponsor_participant_refs": [sov],
+            "governance_rule_set_ref": "rules-endeavor-1",
+            "outcome_schema_refs": ["schema-change-set-1"],
+            "acceptance_rule_ref": "rule-accept-1",
+            "classification_join_ref": "class-join-1",
+            "budget_account_set_ref": f"budget-endeavor-{tag}"})
+        endeavor = eprop["result"]["endeavor_id"]
+        d.expect_ok("participant", {
+            "version": "0.2", "op": "endeavor_position",
+            "meta": meta(inc, f"{tag}-epos"),
+            "proposal_ref": endeavor, "proposal_revision": 1,
+            "subject_digest": eprop["result"]["subject_digest"],
+            "seat_ref": eprop["result"]["required_seat_refs"][0],
+            "value": "assent"})
+        d.expect_ok("participant", {
+            "version": "0.2", "op": "endeavor_finalize",
+            "meta": meta(inc, f"{tag}-efin", 1),
+            "endeavor_id": endeavor,
+            "subject_digest": eprop["result"]["subject_digest"]})
+        call_opened = d.expect_ok("participant", {
+            "version": "0.2", "op": "call_open",
+            "meta": meta(inc, f"{tag}-call"),
+            "endeavor_id": endeavor,
+            "requested_outcome_schema_refs": ["schema-change-set-1"],
+            "acceptance_criteria_refs": ["criteria-review-1"],
+            "evidence_requirements": []})
+        call_id = call_opened["result"]["call_id"]
+        human_actor = f"participant:{sov}"
+        authored("endeavor.proposed", human_actor)
+        authored("endeavor.finalized", human_actor)
+        authored("call.opened", human_actor)
+        ev.step("driver [human sovereign, direct human channel]: "
+                "endeavor_propose/position/finalize + call_open",
+                endeavor_id=endeavor, call_id=call_id)
+
+        # == 5. THE AGENT proposes the pledge into that call.
+        drive("pledge-propose", [
+            ("byom", "byom_pledge_propose", {
+                "endeavor_id": endeavor, "call_ref": call_id,
+                "proposed_pledgor_ref": AGENT, "beneficiary_ref": sov,
+                "exact_outcome_schema_refs": ["schema-change-set-1"],
+                "acceptance_criteria_refs": ["criteria-review-1"],
+                "evidence_requirements": [],
+                "reviewer_rule_ref": "rule-beneficiary-reviews",
+                "input_context_ref": "context-input-1",
+                "input_context_digest": digest(0xD2),
+                "budget_request_set": {"items": [
+                    {"dimension": "unit", "canonical_unit": "unit",
+                     "scale": 0, "max": 16}]},
+                "allowed_manifestation_selector": {
+                    "rules": [{"effect": "allow", "atoms": {}}]},
+                "delegation_ceiling": {"allowed": False, "max_depth": 0,
+                                       "max_children": 0},
+                "deadline": FAR_FUTURE,
+                "cancellation_terms": {"terms_ref": "terms-cancel-1",
+                                       "terms_digest": digest(0xD3)},
+                "dependency_refs": []})],
+            part_servers)
+        proposal = authored("pledge.proposed", agent_actor)["object_ref"]
+        prop_row = d.store_row("pledge_proposals", "proposal_id", proposal)
+        terms = json.loads(prop_row["terms_digest"])
+        slots = {s["kind"]: s["seat_ref"]
+                 for s in json.loads(prop_row["required_slots"])["seats"]}
+        ev.step(f"{which} session 05 drove byom_pledge_propose — "
+                "VERIFIED from byomd's events_read: pledge.proposed "
+                f"authored by {agent_actor}; the pledgor and beneficiary "
+                "seats were minted",
+                proposal_id=proposal, required_slots=sorted(slots))
+
+        # -- driver [human sovereign]: the BENEFICIARY seat's position.
+        d.expect_ok("participant", {
+            "version": "0.2", "op": "pledge_position",
+            "meta": meta(inc, f"{tag}-ppos-sov"),
+            "proposal_ref": proposal, "proposal_revision": 1,
+            "subject_digest": terms,
+            "seat_ref": slots["beneficiary_assent"],
+            "value": "assent", "assent_mode": "direct_participant"})
+        ev.step("driver [human sovereign, direct human channel]: "
+                "pledge_position for the BENEFICIARY seat",
+                seat_ref=slots["beneficiary_assent"])
+
+        # == 6. THE AGENT positions its own seat and finalizes.
+        drive("pledge-position-finalize", [
+            ("byom", "byom_pledge_position", {
+                "proposal_ref": proposal, "proposal_revision": 1,
+                "subject_digest": terms,
+                "seat_ref": slots["pledgor_assent"],
+                "value": "assent", "assent_mode": "direct_participant"}),
+            ("byom", "byom_pledge_finalize", {
+                "proposal_ref": proposal, "proposal_revision": 1,
+                "subject_digest": terms})],
+            part_servers)
+        position_events = events("pledge.position_recorded")
+        need(len(position_events) == 2,
+             f"exactly two pledge positions (one per required seat), "
+             f"byomd's ledger holds {len(position_events)}")
+        positions = {e["actor_ref"]: payload_of(e)["seat_ref"]
+                     for e in position_events}
+        need(positions.get(agent_actor) == slots["pledgor_assent"],
+             f"the pledgor seat must be authored by the agent: {positions}")
+        need(positions.get(human_actor) == slots["beneficiary_assent"],
+             f"the beneficiary seat must be the human's: {positions}")
+        pledge = authored("pledge.committed", agent_actor)["object_ref"]
+        ev.step(f"{which} session 06 drove byom_pledge_position (PLEDGOR "
+                "seat) + byom_pledge_finalize — VERIFIED from byomd's "
+                "events_read: the two seats are two distinct actors and "
+                f"pledge.committed is authored by {agent_actor}",
+                pledge_id=pledge, seat_actors=positions)
+
+        # == 7. THE AGENT opens the bound pledge_work stream.
+        drive("activity-open-pledge-work", [
+            ("byom", "byom_activity_open", {
+                "kind": "pledge_work", "purpose_ref": "purpose-improve-1",
+                "purpose_digest": digest(0xD4),
+                "pledge_binding": {"pledge_id": pledge,
+                                   "pledge_revision": 1,
+                                   "terms_digest": terms},
+                "mandate_refs": [],
+                "budget_account_set_ref": f"budget-endeavor-{tag}"})],
+            part_servers)
+        work_stream = authored("activity.opened", agent_actor,
+                               count=2)["object_ref"]
+        authored("pledge.underway", agent_actor)
+        ev.step(f"{which} session 07 drove byom_activity_open "
+                "kind=pledge_work bound to the pledge — VERIFIED from "
+                "byomd's events_read: the second activity.opened and "
+                f"pledge.underway are authored by {agent_actor}",
+                work_stream=work_stream)
+
+        # == 8. THE AGENT submits the deterministic delivery.
+        drive("delivery-submit", [
+            ("byom", "byom_delivery_submit", {
+                "pledge_id": pledge, "pledge_revision": 2,
+                "terms_digest": terms,
+                "output_refs": ["change-set-1"],
+                "evidence_refs": ["attest-complete-readable-source-1"],
+                "activity_stream_ref": work_stream})],
+            part_servers)
+        delivered = authored("delivery.submitted", agent_actor)
+        delivery = delivered["object_ref"]
+        delivery_row = d.store_row("deliveries", "delivery_id", delivery)
+        ev.step(f"{which} session 08 drove byom_delivery_submit — "
+                "VERIFIED from byomd's events_read: delivery.submitted "
+                f"authored by {agent_actor} against the pledge",
+                delivery_id=delivery,
+                classification=payload_of(delivered).get("classification"))
+
+        # -- driver [human sovereign]: review_record closes the pledge.
+        #    The review CASes the pledge's CURRENT revision (the one the
+        #    delivery advanced it to), read from byomd's own store.
+        pledge_row = d.store_row("pledges", "pledge_id", pledge)
+        reviewed = d.expect_ok("participant", {
+            "version": "0.2", "op": "review_record",
+            "meta": meta(inc, f"{tag}-review"),
+            "pledge_id": pledge,
+            "pledge_revision": int(pledge_row["revision"]),
+            "delivery_id": delivery,
+            "reviewed_subject_digest":
+                json.loads(delivery_row["subject_digest"]),
+            "outcome": "fulfilled",
+            "decision_or_mandate_use_ref": "dec-review-1"})
+        need(reviewed["result"]["pledge_state"] == "fulfilled",
+             f"review: {reviewed}")
+        authored("review.recorded", human_actor)
+        snap = d.expect_ok("projection", {
+            "version": "0.2", "op": "snapshot_get",
+            "society_id": society, "kinds": ["pledges"]})
+        pledges = snap["result"]["pledges"]
+        need(len(pledges) == 1 and pledges[0]["state"] == "fulfilled",
+             f"exactly one fulfilled pledge: {pledges}")
+        ev.step("driver [human sovereign, direct human channel]: "
+                "review_record — the single pledge is fulfilled "
+                "(verified from byomd's snapshot + events)",
+                review_id=reviewed["result"]["review_id"])
+
+        # == 9. THE AGENT touches kovee through kovee-mcp: read the
+        #       space, then append a contribution CASed against the head
+        #       this driver folded from koveed's own events.
+        head = kovee_branch_head(k, project, branch)
+        agent_text = (f"The {which} harness session appended this through "
+                      "kovee-mcp: in I0 the two stacks stay separate.")
+        drive("kovee-contribution", [
+            ("kovee", "kovee_space_show", {"space_id": space}),
+            ("kovee", "kovee_contribution_append", {
+                "space_id": space, "branch_id": branch,
+                "expected_head_digest": head, "kind": "utterance",
+                "body_parts": [{"media_type": "text/plain",
+                                "text": agent_text}]})],
+            {"kovee": kovee_server(k, project)})
+        kev = k.expect_ok(kv_read("events_read", project,
+                                  {"source": project,
+                                   "limit": 512}))["result"]["events"]
+        appends = [e for e in kev
+                   if e["type"] == "dev.kovee.space.contribution-appended.v1"]
+        need(len(appends) == 2,
+             f"koveed's ledger must hold the human's question and the "
+             f"harness's contribution, it holds {len(appends)}")
+        agent_append = appends[-1]
+        agent_payload = agent_append.get("payload") or {}
+        need(agent_payload.get("origin_branch_id") == branch
+             and agent_payload.get("origin_branch_sequence") == 2,
+             f"the harness contribution must extend the branch: "
+             f"{agent_payload}")
+        need(agent_append.get("actor_ref") == KOVEE_ACTOR,
+             f"kovee actor: {agent_append}")
+        contribution_id = agent_payload.get("contribution_id")
+        need(contribution_id, f"no contribution id in {agent_payload}")
+        shown = k.expect_ok(kv_read("contribution_show", project,
+                                    {"contribution_id": contribution_id}))
+        body = json.dumps(shown["result"])
+        need(agent_text in body,
+             "koveed's own record of the contribution must carry the "
+             "exact body the session was told to append")
+        need(kovee_next_head(head, 2, agent_payload["content_digest"])
+             == kovee_branch_head(k, project, branch),
+             "the §10.3 head chain must fold to the same head")
+        ev.step(f"{which} session 09 drove kovee_space_show + "
+                "kovee_contribution_append through kovee-mcp — VERIFIED "
+                "from koveed's own events_read and contribution_show: "
+                "branch sequence 2, exact body, head chain folds — the "
+                "SECOND daemon is genuinely exercised",
+                contribution_id=contribution_id,
+                expected_head_digest=head)
+
+        # -- the whole flow, per source. byom: order, exclusions, and
+        #    the EXHAUSTIVE actor map (the same check --verify-trails
+        #    applies to the scripted run).
+        rows = events()
+        kinds = [e["kind"] for e in rows]
+        assert_ordered(kinds, BYOM_EXPECTED_ORDER, f"byom/{which}")
+        forbidden = [kk for kk in kinds
+                     if kk.startswith(("episode.", "placement.",
+                                       "activation."))
+                     or kk == "wake-intent.activated"]
+        need(not forbidden,
+             f"I0 excludes activation/placement/episodes, saw {forbidden}")
+        table = verify_byom_attribution(d, rows, sov)
+        ev.blob("byom-attribution.json", json.dumps(table, indent=2))
+        ev.blob("byom-timeline.json", json.dumps(kinds, indent=1))
+        types = [e["type"] for e in kev]
+        assert_ordered(types, ["dev.kovee.project.created.v1",
+                               "dev.kovee.space.created.v1",
+                               "dev.kovee.space.contribution-appended.v1",
+                               "dev.kovee.space.contribution-appended.v1"],
+                       f"kovee/{which}")
+        for i, e in enumerate(kev):
+            need(e.get("project_sequence") == i + 1,
+                 f"kovee project sequences not dense at {i}: {e}")
+            need(e.get("actor_ref"), f"kovee event without actor: {e}")
+        ev.blob("kovee-timeline.json", json.dumps(types, indent=1))
+        ev.step(f"per-source trails for the {which} run: byom "
+                "events_read in the sheet's order with EVERY kind "
+                "checked against the exhaustive actor map, no "
+                "activation/placement/episode; kovee's own events dense "
+                "and attributed — asserted separately, never merged",
+                byom_events=len(rows), byom_kinds=len(set(kinds)),
+                kovee_events=len(kev),
+                harness_sessions=sessions["n"])
+        print(f"{test_id}: PASS ({sessions['n']} real {which} sessions, "
+              f"{ev.n} steps; evidence {ev.dir.relative_to(REPO)})")
         return 0
     finally:
         ev.close()
         d.cleanup()
         k.cleanup()
-
-
+        shutil.rmtree(workdir, ignore_errors=True)
 # --------------------------------------------------------- cargo suites ----
 
 CARGO_SUITES = [
