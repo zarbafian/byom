@@ -47,4 +47,10 @@ echo "== i0 society-of-two tracer (scripted flow: byomd + koveed live,"
 echo "   byom-mcp/kovee-mcp driven over scripted MCP stdio, per-source trails)"
 python3 conformance/i0-society-of-two/run.py --scripted
 
+echo "== i1 governed loop (scripted gate: byomd + koveed live, the greenfield"
+echo "   binding, notification-is-not-a-wake, the four-stage activation, the"
+echo "   formation saga, and the model_egress act chain through kovee's"
+echo "   disclosed metered broker with a STUB provider — no network, no model)"
+python3 conformance/i1-governed-loop/run.py --scripted
+
 echo "run-checks: OK"

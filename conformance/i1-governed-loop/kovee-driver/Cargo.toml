@@ -1,0 +1,41 @@
+# The I1 gate's kovee-side driver.
+#
+# Kovee exposes the hosted-episode pipeline and the model broker as LIBRARY
+# API only (`koveed::episode`, `koveed::model_broker`) — there is no socket
+# operation for `episode_request`/`placement_admit`/`episode_claim`, and the
+# broker's one egress transport is chosen by the daemon, so a stub provider
+# cannot be selected over the wire. This binary is therefore the scenario's
+# kovee-side caller: it links kovee's own crates and calls exactly the
+# functions kovee's K2 suites call, against the SAME store the running
+# koveed serves and the SAME byomd the scenario spawned.
+#
+# It adds no authority: every record it writes is written by kovee's own
+# code, and every byom call it makes rides byomd's own published workload
+# tokens. `--transport recording` selects kovee's own `RecordingTransport`
+# test double (which stamps `transport_profile: recording-test-double` on
+# the effect, so no receipt can claim a provider call it did not make);
+# `--transport https` is the daemon's real TLS 1.3 transport.
+#
+# Its own workspace on purpose: it is not a byom crate and must not enter
+# byom's workspace lints/lockfile.
+[workspace]
+
+[package]
+name = "i1-kovee-driver"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Kovee-side driver for the byom I1 governed-loop conformance gate"
+
+[[bin]]
+name = "i1-kovee-driver"
+path = "src/main.rs"
+
+[dependencies]
+koveed = { path = "../../../../kovee/crates/koveed" }
+kovee-byom = { path = "../../../../kovee/crates/kovee-byom" }
+kovee-core = { path = "../../../../kovee/crates/kovee-core" }
+kovee-effects = { path = "../../../../kovee/crates/kovee-effects" }
+kovee-store = { path = "../../../../kovee/crates/kovee-store" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1.0"
