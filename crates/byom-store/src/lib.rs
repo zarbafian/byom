@@ -1401,7 +1401,10 @@ impl Store {
     ///
     /// Exactly ONE checkpoint may be skipped: the latest, when its
     /// transaction never committed (the checkpoint is appended just
-    /// before the commit). Anything further back is a rollback.
+    /// before the commit) AND it is strictly ahead of the database in
+    /// the audit ledger, which every such transaction advanced. A
+    /// checkpoint level with the database advanced nothing, so it cannot
+    /// be a lost commit. Anything further back is a rollback.
     fn verify_chains_against_checkpoints(&self) -> Result<bool, StoreError> {
         let records = match self.checkpoints.records(&self.witness) {
             Ok(records) => records,
@@ -1431,13 +1434,24 @@ impl Store {
                 && heads[1] == (c.erasure.seq, c.erasure.hash_hex.clone())
         };
         // A LOST COMMIT is the only reason the database may sit one
-        // checkpoint back: the skipped record must then be strictly
-        // ahead of the database in both ledgers and name this generation
-        // or its immediate successor. Anything else — an older
-        // checkpoint reinstated, a generation the endpoint never reached
-        // — is not a crash window.
+        // checkpoint back, and it has a SHAPE. Every checkpoint is
+        // written inside a transaction that has already appended its
+        // audit record (`write_checkpoint` is called last, just before
+        // the commit), so the checkpoint of a transaction whose commit
+        // was lost is STRICTLY AHEAD of the database in the audit
+        // ledger — never level with it. The erasure ledger only moves
+        // when the lost transaction destroyed a secret, so it may be
+        // level, but it can never be behind. The generation is this one
+        // or its immediate successor.
+        //
+        // The `>=` this replaces was the confirmation's finding: it let
+        // a validly signed checkpoint with UNCHANGED heads claiming
+        // `mirror + 1` pass as a crash window, and the endpoint reopened
+        // active. A checkpoint that advanced nothing certifies nothing
+        // the database does not already hold — there was no lost commit,
+        // so the ledgers simply do not match a checkpoint: seal.
         let provisional = |c: &checkpoint::Checkpoint| {
-            c.audit.seq >= heads[0].0
+            c.audit.seq > heads[0].0
                 && c.erasure.seq >= heads[1].0
                 && (c.journal_generation == mirror || c.journal_generation == mirror + 1)
         };

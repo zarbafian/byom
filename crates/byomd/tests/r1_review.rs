@@ -556,6 +556,79 @@ fn audit_record_hash(seq: i64, ts: i64, event: &str, detail: &str, prev: &[u8]) 
         .collect()
 }
 
+/// THE R1-CONFIRMATION PROBE (BY-J3, c): a genuinely signed checkpoint
+/// whose chain heads are UNCHANGED while it claims the NEXT journal
+/// generation. The R1 fix admitted exactly this as the one provisional
+/// (lost-commit) checkpoint it may skip, and the endpoint reopened
+/// ACTIVE. It cannot be a lost commit: every checkpointed transaction
+/// appends its audit record BEFORE the checkpoint, so a real lost
+/// commit always leaves a checkpoint STRICTLY ahead of the database in
+/// the audit ledger. A checkpoint that advanced nothing must seal.
+#[test]
+fn a_checkpoint_whose_chain_heads_did_not_advance_seals() {
+    let mut daemon = TestDaemon::start("r1-j3-skip");
+    let (_sid, _cursor, _inc) = bootstrap_society(&daemon, "j3s");
+    daemon.stop();
+    {
+        let witness =
+            byom_store::witness::Witness::open(&daemon.data_dir.join("authority-witness.jsonl"))
+                .unwrap();
+        let checkpoints = byom_store::checkpoint::Checkpoints::open(
+            &daemon.data_dir.join("authority-checkpoints.jsonl"),
+        )
+        .unwrap();
+        let conn = db(&daemon);
+        let (audit_seq, audit_hash) =
+            byom_store::audit::head_of(&conn, byom_store::audit::AUDIT).unwrap();
+        let (erasure_seq, erasure_hash) =
+            byom_store::audit::head_of(&conn, byom_store::audit::ERASURE).unwrap();
+        let mirror: u64 = byom_store::schema::meta_get_text(&conn, "journal_mirror_gen")
+            .unwrap()
+            .unwrap()
+            .parse()
+            .unwrap();
+        // The probe's precondition: the committed database sits EXACTLY
+        // at the last real checkpoint, so the record appended below is
+        // the only candidate for the skip window.
+        let last = checkpoints.latest(&witness).unwrap().unwrap();
+        assert_eq!(
+            (last.audit.seq, last.erasure.seq, last.journal_generation),
+            (audit_seq, erasure_seq, mirror),
+            "the shut-down database must sit exactly at its last checkpoint"
+        );
+        // The forged "provisional" checkpoint: the untouched heads, one
+        // generation ahead. Appended through the real API under the real
+        // witness key, so it chains, digests and signs perfectly.
+        checkpoints
+            .append(
+                &witness,
+                mirror + 1,
+                byom_store::checkpoint::ChainHead {
+                    seq: audit_seq,
+                    hash_hex: bpp_core::canonical::hex(&audit_hash),
+                },
+                byom_store::checkpoint::ChainHead {
+                    seq: erasure_seq,
+                    hash_hex: bpp_core::canonical::hex(&erasure_hash),
+                },
+            )
+            .unwrap();
+    }
+    daemon.restart(&[]);
+    let reply = daemon.call(
+        "projection",
+        &json!({"version": "0.2", "op": "society_show", "society_id": "soc-anything"}),
+    );
+    assert_eq!(
+        kind_of(&reply),
+        "endpoint_sealed",
+        "a checkpoint that advanced neither ledger cannot be a lost commit: {reply}"
+    );
+    // The diagnostic remainder still answers (§15.3).
+    let hello = daemon.call("projection", &json!({"version": "0.2", "op": "hello"}));
+    assert_eq!(hello["outcome"], "ok", "{hello}");
+}
+
 /// A rolled-back audit chain (fewer records than the witnessed
 /// checkpoint) seals too.
 #[test]

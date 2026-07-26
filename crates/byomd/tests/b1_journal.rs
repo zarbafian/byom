@@ -135,6 +135,40 @@ fn kill_inside_finalize_before_commit_recovers_identically() {
         "governance",
         &offer_request(&daemon, &incarnation, "jf-offer"),
     );
+    // THE LOST COMMIT, in the shape startup is allowed to skip (BY-J3):
+    // the checkpoint of the transaction whose commit was lost is
+    // STRICTLY ahead of the rolled-back database in the audit ledger
+    // (the transaction appended its audit record before checkpointing),
+    // level in the erasure ledger, and names the next generation. This
+    // is the only window `verify_chains_against_checkpoints` admits, so
+    // the recovery below is a genuine skip and not an exact match.
+    {
+        let conn = rusqlite::Connection::open(daemon.data_dir.join("byom.db")).unwrap();
+        let witness =
+            byom_store::witness::Witness::open(&daemon.data_dir.join("authority-witness.jsonl"))
+                .unwrap();
+        let checkpoints = byom_store::checkpoint::Checkpoints::open(
+            &daemon.data_dir.join("authority-checkpoints.jsonl"),
+        )
+        .unwrap();
+        let (audit_seq, _) = byom_store::audit::head_of(&conn, byom_store::audit::AUDIT).unwrap();
+        let (erasure_seq, _) =
+            byom_store::audit::head_of(&conn, byom_store::audit::ERASURE).unwrap();
+        let mirror: u64 = byom_store::schema::meta_get_text(&conn, "journal_mirror_gen")
+            .unwrap()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let last = checkpoints.latest(&witness).unwrap().unwrap();
+        assert!(
+            last.audit.seq > audit_seq,
+            "a lost commit leaves its checkpoint strictly ahead in the audit ledger: \
+             checkpoint {} vs database {audit_seq}",
+            last.audit.seq
+        );
+        assert_eq!(last.erasure.seq, erasure_seq);
+        assert_eq!(last.journal_generation, mirror + 1);
+    }
     daemon.restart(&[]);
     assert_eq!(
         offer_count(&daemon, &cursor),
