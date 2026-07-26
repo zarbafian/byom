@@ -1,0 +1,24 @@
+{
+  "name": "ops/episode-request-result-valid",
+  "description": "seam finding S-1: the episode_request result PUBLISHES the stage-3 ResourceAllocation it created together with the portable_public binding digest placement_admit compares byte-for-byte — the allocation pin is obtainable over a published surface, never out of band (§11.1/§11.2, gap note G48, R29)",
+  "input": {
+    "schema": "episode-request-result",
+    "value": {
+      "episode_id": "ep-0001",
+      "activity_stream_id": "stream-21",
+      "generation": 1,
+      "revision": 1,
+      "state": "eligible",
+      "resource_allocation_id": "alloc-wake-0001-r1",
+      "resource_allocation_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "created_at": "2026-07-26T09:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

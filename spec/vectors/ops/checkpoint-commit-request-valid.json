@@ -20,9 +20,8 @@
       "expected_lease_revision": 2,
       "checkpoint_ref": "ckpt-1",
       "checkpoint_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "key-2",
+        "class": "portable_public",
+        "algorithm": "sha-256",
         "value_hex": "2222222222222222222222222222222222222222222222222222222222222222"
       }
     }

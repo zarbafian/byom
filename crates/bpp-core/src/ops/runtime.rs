@@ -34,6 +34,14 @@ use crate::canonical::SAFE_MAX;
 use crate::digest::{DigestClass, DigestRef};
 use crate::envelope::MutationMeta;
 
+/// The CROSS-BOUNDARY class rule (family contract, PROFILE.md §6.2): a
+/// digest one protocol demands from the other MUST be `portable_public`,
+/// because the counterparty has to derive the same value from the same
+/// bytes. A `local_erasure_safe` value is an HMAC under the OWNER's
+/// per-object secret: a counterparty could only echo an opaque blob it can
+/// never check, and D-R1-2 forbids re-deriving it from a shared key. Every
+/// field here that byom recomputes from its OWN committed state keeps
+/// `local_erasure_safe` — and is therefore never asked for on the wire.
 fn check_portable(name: &str, d: &DigestRef) -> Result<(), String> {
     d.require_class(DigestClass::PortablePublic)
         .map_err(|e| format!("{name}: {e}"))
@@ -219,7 +227,11 @@ impl PlacementAdmitRequest {
         check_op(&req.op, "placement_admit")?;
         check_create_meta(&req.meta)?;
         check_identifier("resource_allocation_ref", &req.resource_allocation_ref)?;
-        check_local_erasure_safe(
+        // Cross-boundary: Kovee pins the allocation `episode_request`
+        // created, so the digest is `portable_public` over the published
+        // `bpp-resource-allocation-binding-v0` fragment — the value byom
+        // RETURNS from `episode_request`, derivable by both sides (S-1/S-2).
+        check_portable(
             "resource_allocation_digest",
             &req.resource_allocation_digest,
         )?;
@@ -244,6 +256,11 @@ impl PlacementAdmitRequest {
 /// EpisodeLeaseHead. The claimer supplies its workload identity, its
 /// proposed lease TTL, and the exact Kovee invocation binding the
 /// committed `ByomEpisodeBinding` row carries (C2, field-verbatim).
+///
+/// There is NO `claim_subject_digest` member: the claim subject is byom's
+/// own authority subject over byom's own staged attempt, so byom computes
+/// it (`local_erasure_safe`, per-object — PROFILE.md §6.2) and never asks
+/// a counterparty for a value that counterparty cannot derive (S-2).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EpisodeClaimRequest {
@@ -253,7 +270,6 @@ pub struct EpisodeClaimRequest {
     pub episode_ref: String,
     pub generation: u64,
     pub holder_runtime_binding: String,
-    pub claim_subject_digest: DigestRef,
     pub lease_ttl_seconds: u64,
     pub kovee_invocation_ref: String,
     pub kovee_invocation_fence: u64,
@@ -287,7 +303,6 @@ impl EpisodeClaimRequest {
         check_identifier("episode_ref", &req.episode_ref)?;
         check_safe("generation", req.generation)?;
         check_identifier("holder_runtime_binding", &req.holder_runtime_binding)?;
-        check_local_erasure_safe("claim_subject_digest", &req.claim_subject_digest)?;
         if !(LEASE_TTL_MIN_SECONDS..=LEASE_TTL_MAX_SECONDS).contains(&req.lease_ttl_seconds) {
             return Err("lease_ttl_seconds is outside the negotiated lease window".to_owned());
         }
@@ -295,7 +310,12 @@ impl EpisodeClaimRequest {
         check_safe("kovee_invocation_fence", req.kovee_invocation_fence)?;
         check_identifier("stable_binding_key", &req.stable_binding_key)?;
         check_identifier("context_manifest_ref", &req.context_manifest_ref)?;
-        check_local_erasure_safe("context_manifest_digest", &req.context_manifest_digest)?;
+        // Cross-boundary: the ContextManifest is KOVEE's object — byom holds
+        // only the ref, so it cannot re-derive a keyed digest over content it
+        // does not have. It is also preimage material for the
+        // `portable_public` `context_source_digest`, and D-R1-2 forbids a
+        // keyed value inside a class both sides must derive (S-2).
+        check_portable("context_manifest_digest", &req.context_manifest_digest)?;
         check_portable("context_source_digest", &req.context_source_digest)?;
         check_id_array("mandate_use_refs", &req.mandate_use_refs, 0, 256)?;
         check_id_array(
@@ -400,7 +420,11 @@ impl CheckpointCommitRequest {
         )?;
         check_safe("expected_lease_revision", req.expected_lease_revision)?;
         check_identifier("checkpoint_ref", &req.checkpoint_ref)?;
-        check_local_erasure_safe("checkpoint_digest", &req.checkpoint_digest)?;
+        // Cross-boundary: the checkpoint is the WORKLOAD's content. byom
+        // records the commitment and holds no bytes to re-derive it from, so
+        // the class has to be one the worker and every later reader can
+        // derive (S-2).
+        check_portable("checkpoint_digest", &req.checkpoint_digest)?;
         Ok(req)
     }
 }

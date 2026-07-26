@@ -1,0 +1,18 @@
+{
+  "name": "ops/episode-request-result-missing-allocation-pin-invalid",
+  "description": "seam finding S-1: publishing the allocation pin is STRUCTURAL. A result that names the Episode but omits resource_allocation_id/resource_allocation_digest would leave stage 4 with no published source for the digest placement_admit requires, so the closed result shape refuses it.",
+  "input": {
+    "schema": "episode-request-result",
+    "value": {
+      "episode_id": "ep-0001",
+      "activity_stream_id": "stream-21",
+      "generation": 1,
+      "revision": 1,
+      "state": "eligible",
+      "created_at": "2026-07-26T09:00:00Z"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

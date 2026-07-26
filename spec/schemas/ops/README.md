@@ -547,3 +547,95 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
     The deny/cancel/expire branches remain unimplemented and honestly
     answer `feature_unavailable` (`act_intent_cancel`) — recorded, not
     silently absent.
+- **G48 — the cross-boundary digest classes and the published allocation
+  pin (live-seam findings S-1/S-2/S-3, `reviews/2026-07-26-seam-findings.md`).**
+  Wiring Kovee's episode pipeline to byomd's real runtime surface found that
+  `placement_admit` required a digest byom published nowhere, and that four
+  runtime fields carried a class the counterparty could not derive. The
+  ratified rule, applied per field:
+
+  > A digest one protocol DEMANDS from the other MUST be `portable_public`
+  > (unkeyed SHA-256 over bytes both sides hold), because the counterparty
+  > has to derive the same value. A digest the owner recomputes from its OWN
+  > committed state keeps `local_erasure_safe` (per-object secret) — and is
+  > therefore never asked for on the wire at all.
+
+  Per-field outcome:
+  - **`resource_allocation_digest` (`placement_admit`) → `portable_public`,
+    and now PUBLISHED.** It is a genuine cross-boundary pin: Kovee asserts
+    which allocation revision it placed, so it must stay a request member.
+    But `resource_allocations.digest` is byom's own keyed record commitment
+    under a per-object secret — Kovee could only echo an opaque blob (which
+    is why the live test read it out of `byom.db`). byom therefore computes
+    a SECOND, cross-boundary digest at `resource_allocate`:
+    `portable_public` SHA-256 over the `$domain`-tagged canonical
+    `bpp-resource-allocation-binding-v0` fragment, whose frozen member set
+    is `{allocation_id, activation_admission_ref, activity_stream_ref,
+    generation, byom_budget_reservation_set_ref,
+    byom_budget_reservation_set_revision, external_budget_bridge_ref,
+    stable_allocation_key, stable_external_reservation_key,
+    reservation_items}` — every member kernel-derived from names the caller
+    already supplied, or fixed by §11.4, so a holder of the activation
+    notice derives the same bytes. Mutable members (`revision`, `state`) and
+    byom-minted internal ids (`mandate_use_refs`) are deliberately out: the
+    pin names the allocation's cross-boundary identity, which never changes
+    under it. `episode_request`'s result carries it as
+    `resource_allocation_digest` beside `resource_allocation_id`, and
+    `placement_admit` compares exactly those bytes. byom's own
+    `local_erasure_safe` record digest stays where it was and is now
+    demanded from nobody. The construction mirrors `context_source_digest`
+    (§12.1, gap note G47) exactly.
+  - **`claim_subject_digest` (`episode_claim`) → stays
+    `local_erasure_safe`, REMOVED from the request.** The claim subject is
+    byom's own authority subject over byom's own staged EpisodeAttempt, and
+    PROFILE.md §6.2 requires the per-object class for an authority subject.
+    byom recomputes it, so under the rule it must not be an input: byom
+    derives it inside the claim transaction, tag
+    `bpp-episode-claim-subject-v0` over `{episode_ref, generation,
+    claim_ordinal, holder_runtime_binding, byom_attempt_ref,
+    byom_fence_epoch, kovee_invocation_ref, kovee_invocation_fence,
+    stable_binding_key}`, under the attempt's per-object secret (so
+    destroying that attempt destroys exactly its verifiability). The closed
+    request shape now REFUSES a `claim_subject_digest` member — the
+    committed negative vector. This is the field whose class had forced
+    per-object erasure secrets on the counterparty for no benefit.
+  - **`context_manifest_digest` (`episode_claim`,
+    `context_manifest_show` result) → `portable_public`.** The
+    ContextManifest is Kovee's object; byom holds only the ref and cannot
+    re-derive a keyed digest over content it does not have. It is also
+    preimage material for the already-`portable_public`
+    `context_source_digest`, so a keyed value there was the D-R1-2 shape
+    (a class both sides must derive containing one only the owner can).
+    The projection read republishes the same committed value, so its result
+    schema moves with it.
+  - **`checkpoint_digest` (`checkpoint_commit`) → `portable_public`.** The
+    checkpoint is the workload's content. byom records the commitment and
+    holds no bytes to re-derive it from, so the class has to be one the
+    worker and every later reader can derive.
+  - **The two fields already correct stay correct.**
+    `kovee_placement_digest` (`placement_admit`) and
+    `context_source_digest` (`episode_claim`) were already
+    `portable_public` and are unchanged. Every remaining
+    `local_erasure_safe` field in the runtime parsers names one of BYOM's
+    own records — `intent_digest`, `result_digest`,
+    `reconciles_admission_digest`, `basis_source_admission_digest`,
+    `classification_admission_digest` — and is recomputable by byom, so the
+    class is correct there.
+  - **Rule-eligible, NOT re-classed by this decision.** The two optional
+    Kovee-owned pairs on `episode_claim` —
+    `kovee_context_assembly_digest` and
+    `provider_context_manifest_digest` (and the same pair on the §7.4
+    onboarding-compute rows) — name Kovee objects byom cannot recompute, so
+    the rule would move them too. They are outside the ratified four-field
+    decision and are recorded here for the family-contract owner rather
+    than changed silently.
+  - **The achievable call order (S-3).** `episode_request` → Kovee authors
+    the `PlacementBinding` → `placement_admit` → `episode_claim`/
+    `episode_start`. `placement_admit` binds the exact ResourceAllocation,
+    including the digest above, so it can only run after the
+    `episode_request` that creates it;
+    `../governed-work/episode-budget-dispatch.md` now states this order.
+    The family contract's L25 row (a LOCKED, digest-pinned artifact) still
+    transcribes `PlacementBinding → placement_admit → episode_request`;
+    correcting it is an owner-side amendment plus a new lock row, not a
+    byom edit — recorded here so the discrepancy is not silent.

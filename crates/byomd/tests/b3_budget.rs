@@ -38,7 +38,7 @@ fn a_subordinate_reservation_is_never_above_its_parent() {
     let wake = f.wake("w1");
     let ep = f.request_episode(&wake, "e1");
     let token = f.placement_token(&ep.allocation_ref);
-    let allocation_digest = f.allocation_digest(&ep.allocation_ref);
+    let allocation_digest = ep.allocation_digest.clone();
 
     // ABOVE PARENT: schema-shape-valid, refused as a cross-member check.
     let above = f.runtime(
@@ -82,7 +82,7 @@ fn a_subordinate_reservation_is_never_above_its_parent() {
             "version": "0.2", "op": "placement_admit",
             "meta": f.meta("plc-reshape", None),
             "resource_allocation_ref": ep.allocation_ref,
-            "resource_allocation_digest": f.allocation_digest(&ep.allocation_ref),
+            "resource_allocation_digest": ep.allocation_digest,
             "kovee_placement_ref": "kovee-placement-reshape",
             "kovee_placement_revision": 1,
             "kovee_placement_digest": portable(0x5d),

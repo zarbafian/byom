@@ -10,12 +10,31 @@ and the `byom_akson_dispatch_v1` driver + `ByomAksonDispatchOutcomeReceipt`
 head (family contract §1); the shapes in this directory are the
 byom-normative side.
 
-What one governed hosted turn looks like, end to end:
+What one governed hosted turn looks like, end to end. The call order below is
+the ACHIEVABLE one, and it is not negotiable: `placement_admit` binds the
+exact `ResourceAllocation` — including the portable allocation digest — so it
+can only run AFTER the `episode_request` that creates that allocation. Kovee
+authors its `PlacementBinding` in between, from the allocation the
+`episode_request` reply published. Placement never comes first (seam findings
+S-1/S-3).
 
 ~~~text
-resource_allocate [kernel]  reserve byom dimensions, then the byom_subordinate
-                            bridge saga: reserve -> confirmed (never above the
-                            parent worst case)                    L31-L32
+episode_request (R29)       ONE participant call drives stages 1-3:
+                            wake_intent_submit -> activation_admit [kernel]
+                            -> resource_allocate [kernel]. It reserves every
+                            byom dimension and persists the byom_subordinate
+                            bridge in `requested`, and it ANSWERS with the
+                            Episode `eligible` (NOT queued) plus
+                            `resource_allocation_id` and its portable_public
+                            `resource_allocation_digest`           L31-L32
+Kovee authors PlacementBinding  among already-eligible Manifestations, pinning
+                            the allocation digest the reply carried — the ONE
+                            activation record Kovee owns (§11.1 stage 4)
+placement_admit (R33)       the narrow Kovee placement adapter presents that
+                            digest byte-for-byte and the byom_subordinate saga
+                            outcome: reserve -> confirmed (never above the
+                            parent worst case) completes both reservation sets
+                            and QUEUES the Episode                 L31-L33
 episode_claim/start (R30)   Kovee commits ByomEpisodeBinding{ep-88, attempt-2,
                             BOTH fences, context refs, budget/bridge refs,
                             allowed_local_commitments}, idempotent   L19-L22

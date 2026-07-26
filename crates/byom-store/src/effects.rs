@@ -690,6 +690,7 @@ const TABLES: &[(&str, &[&str])] = &[
             "state",
             "dependency_digest",
             "digest",
+            "binding_digest",
             "created_at",
         ],
     ),

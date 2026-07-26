@@ -1,6 +1,6 @@
 {
-  "name": "ops/placement-admit-request-denied-with-items-invalid",
-  "description": "\u00a711.4: only a CONFIRMED subordinate reservation names a committed ref/revision/digest and items \u2014 a denial creates nothing",
+  "name": "ops/placement-admit-request-keyed-allocation-digest-invalid",
+  "description": "seam finding S-2, cross-boundary class rule: the allocation pin is the PUBLISHED portable_public binding digest, so a well-constructed local_erasure_safe digest \u2014 an HMAC under a per-object secret only byom holds, which Kovee could echo but never derive (D-R1-2) \u2014 is refused as a class mismatch, never accepted as a silent substitution.",
   "input": {
     "schema": "placement-admit-request",
     "value": {
@@ -14,11 +14,12 @@
       },
       "resource_allocation_ref": "alloc-wake-0001-r1",
       "resource_allocation_digest": {
-        "class": "portable_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:alloc-wake-0001-r1",
         "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
-      "kovee_placement_ref": "kovee-placement-2",
+      "kovee_placement_ref": "kovee-placement-1",
       "kovee_placement_revision": 1,
       "kovee_placement_digest": {
         "class": "portable_public",
@@ -31,8 +32,8 @@
       "kovee_fence_epoch": 7,
       "subordinate_reservation": {
         "stable_external_reservation_key": "sub-alloc-wake-0001-r1",
-        "outcome": "denied",
-        "subordinate_reservation_ref": "kovee-sub-2",
+        "outcome": "confirmed",
+        "subordinate_reservation_ref": "kovee-sub-1",
         "revision": 1,
         "digest": {
           "class": "portable_public",
@@ -44,7 +45,7 @@
             "kovee_account_ref": "kovee-acct-1",
             "dimension": "unit",
             "unit": "unit",
-            "amount": 10,
+            "amount": 200,
             "parent_account_ref": "mandate-ceiling-1",
             "parent_account_revision": 1,
             "parent_dimension": "unit",

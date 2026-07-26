@@ -26,7 +26,8 @@
       "$ref": "#/$defs/identifier"
     },
     "context_manifest_digest": {
-      "$ref": "#/$defs/localErasureSafeDigest"
+      "$ref": "#/$defs/portablePublicDigest",
+      "description": "The Episode's committed ContextManifest digest, republished verbatim. Class portable_public: it is the same cross-boundary value `episode_claim` binds (seam finding S-2)."
     },
     "provider_context_manifest_byom_fields": {
       "type": "object",

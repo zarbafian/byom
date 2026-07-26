@@ -234,6 +234,22 @@ six classes:
   explicit durable-identifier disclosure — never a silent upgrade.
 - Authority subjects take `local_erasure_safe` commitments (strictly
   per-object), never a public hash and never a scope-keyed digest.
+- **The cross-boundary class rule** (added by the 2026-07-26 live-seam
+  decision, S-2). A digest one protocol DEMANDS from the other across the
+  protocol boundary MUST be `portable_public`: the counterparty has to derive
+  the same value from the same bytes, and a keyed class is an HMAC under the
+  owner's secret — the counterparty could only echo an opaque blob it can
+  never check, and D-R1-2 forbids re-deriving such a value from a shared key.
+  Crossing the boundary IS the durable-identifier disclosure this class
+  requires: the peer already holds the content, and the digest is computed
+  over exactly the FROZEN cross-boundary fragment (the members both sides
+  hold), never over the owner's whole erasable record — so
+  `public_hash_over_erasable_content_forbidden` is untouched. The converse
+  half is equally normative: a digest the owner recomputes from its OWN
+  committed state keeps `local_erasure_safe` and is therefore **never a
+  request member at all** — an implementation that asks a counterparty for a
+  value it computes itself has mis-drawn the boundary, and its class choice
+  buys nothing while costing the counterparty per-object erasure storage.
 - The two erasure classes are **mutually non-substitutable** (D-R0-1): a
   per-scope key never stands in for a per-object secret (erasing one object
   must kill exactly that object's verifiability) and a per-object secret
@@ -442,3 +458,16 @@ change, not an implementation choice:
     re-deriving the OFFERED ref's value where key material is available,
     and a verifier without the key treats a keyed ref as well-typed but
     unverified (added R0/FV-02).
+14. The cross-boundary class rule of section 6.2 (added by the 2026-07-26
+    live-seam decision S-2). Both designs name `portable_public` as the class
+    for "truly portable content" without saying which fields are portable;
+    two independent implementations meeting at the seam showed the omission
+    is load-bearing — byom demanded four `local_erasure_safe` values from
+    Kovee, two of which byom could not recompute either, which forced Kovee
+    to add per-object erasure secrets for nothing and left one field
+    obtainable only by reading byom's database. The rule fixes the missing
+    normative half in BOTH directions (demanded across the boundary ⇒
+    `portable_public` over a frozen cross-boundary fragment; recomputable by
+    the owner ⇒ `local_erasure_safe` and not a request member). **Both repos
+    mirror this section:** it is a family-contract rule, not a byom
+    implementation choice.

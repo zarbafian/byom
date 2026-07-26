@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/bpp/v0/ops/placement-admit-request.schema.json",
   "title": "BPP placement_admit request (DESIGN.md \u00a711.1, \u00a711.4; registry R33 runtime)",
-  "description": "Mutation (meta required, create-classed). Stage 4 of the \u00a711.1 activation: the narrow Kovee placement adapter bound to the exact ResourceAllocation. Byom records only a PlacementAdmission after source verification \u2014 Kovee alone authors the PlacementBinding. The request also carries the `byom_subordinate` saga outcome, because \u00a714.6 defines no byom-side catalog operation for the Kovee-owned saga verbs (recorded deviation): a confirmed outcome completes the reservation set and queues the Episode, a denial releases only demonstrably unspent byom quantity, and an unknown result stays uncertain with spend blocked until the R38 seat decides.",
+  "description": "Mutation (meta required, create-classed). Stage 4 of the \u00a711.1 activation: the narrow Kovee placement adapter bound to the exact ResourceAllocation, pinned through the portable_public binding digest `episode_request` published. Byom records only a PlacementAdmission after source verification \u2014 Kovee alone authors the PlacementBinding. The request also carries the `byom_subordinate` saga outcome, because \u00a714.6 defines no byom-side catalog operation for the Kovee-owned saga verbs (recorded deviation): a confirmed outcome completes the reservation set and queues the Episode, a denial releases only demonstrably unspent byom quantity, and an unknown result stays uncertain with spend blocked until the R38 seat decides.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -34,7 +34,8 @@
       "$ref": "#/$defs/identifier"
     },
     "resource_allocation_digest": {
-      "$ref": "#/$defs/digestRef"
+      "$ref": "#/$defs/portablePublicDigest",
+      "description": "The PUBLISHED cross-boundary binding digest of the exact ResourceAllocation \u2014 byte-identical to the resource_allocation_digest `episode_request` returned for this allocation. It is portable_public over the `bpp-resource-allocation-binding-v0` fragment, so Kovee derives and pins the same value byom compares; byom's own keyed record digest is never asked for (seam findings S-1/S-2)."
     },
     "kovee_placement_ref": {
       "$ref": "#/$defs/identifier"
@@ -304,6 +305,15 @@
         }
       },
       "description": "MutationMeta (\u00a714.2), create-classed: this operation creates a record (or CASes a subordinate head through its own body fields), so the closed create meta carries NO expected_revision member \u2014 supplying one fails the closed schema (RT-01: update CAS is structural, never optional)."
+    },
+    "portablePublicDigest": {
+      "$ref": "#/$defs/digestRef",
+      "properties": {
+        "class": {
+          "const": "portable_public"
+        }
+      },
+      "description": "Contextual digest-class binding (PROFILE.md \u00a76.2, D-R0-1; RT-02): this field commits to a PORTABLE structure a peer re-derives without a byom secret, so exactly class portable_public (unkeyed SHA-256) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch \u2014 never a silent substitution."
     }
   }
 }

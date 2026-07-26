@@ -50,7 +50,8 @@
       "$ref": "#/$defs/identifier"
     },
     "checkpoint_digest": {
-      "$ref": "#/$defs/digestRef"
+      "$ref": "#/$defs/portablePublicDigest",
+      "description": "The workload's checkpoint content. byom records the commitment and holds no bytes to re-derive it from, so the cross-boundary class is portable_public \u2014 the worker and every later reader derive the same value (seam finding S-2)."
     }
   },
   "$defs": {
@@ -183,6 +184,15 @@
         }
       },
       "description": "MutationMeta (\u00a714.2), create-classed: this operation creates a record (or CASes a subordinate head through its own body fields), so the closed create meta carries NO expected_revision member \u2014 supplying one fails the closed schema (RT-01: update CAS is structural, never optional)."
+    },
+    "portablePublicDigest": {
+      "$ref": "#/$defs/digestRef",
+      "properties": {
+        "class": {
+          "const": "portable_public"
+        }
+      },
+      "description": "Contextual digest-class binding (PROFILE.md \u00a76.2, D-R0-1; RT-02): this field commits to a PORTABLE structure a peer re-derives without a byom secret, so exactly class portable_public (unkeyed SHA-256) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch \u2014 never a silent substitution."
     }
   }
 }

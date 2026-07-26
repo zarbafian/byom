@@ -30,6 +30,7 @@
 //!    carrying one current fence and one stale fence is refused (family
 //!    contract L21).
 
+use bpp_core::canonical::{sha256_hex, tagged_canonical};
 use bpp_core::digest::DigestRef;
 use bpp_core::ops;
 use bpp_core::problem::{Problem, ProblemKind};
@@ -487,6 +488,78 @@ fn record_digest(
     body: &Value,
 ) -> Result<DigestRef, Problem> {
     part_common::conn_record_digest(conn, society_id, object, tag, body)
+}
+
+/// The canonicalization domain of the ResourceAllocation's CROSS-BOUNDARY
+/// binding fragment.
+pub const ALLOCATION_BINDING_TAG: &str = "bpp-resource-allocation-binding-v0";
+
+/// The frozen member set of that fragment, in order. Every member is
+/// KERNEL-DERIVED from names the caller already supplied (`alloc-<wake>-r<n>`,
+/// `adm-…`, `rset-…`, `bridge-…`, `sub-…`, `wake-…`) or fixed by §11.4, so a
+/// counterparty holding the activation notice derives the same bytes. The
+/// mutable members (`revision`, `state`) and byom-minted internal ids
+/// (`mandate_use_refs`) are deliberately OUT: the binding digest names the
+/// allocation's cross-boundary identity, which never changes under it.
+pub const ALLOCATION_BINDING_FIELDS: [&str; 10] = [
+    "allocation_id",
+    "activation_admission_ref",
+    "activity_stream_ref",
+    "generation",
+    "byom_budget_reservation_set_ref",
+    "byom_budget_reservation_set_revision",
+    "external_budget_bridge_ref",
+    "stable_allocation_key",
+    "stable_external_reservation_key",
+    "reservation_items",
+];
+
+/// The `portable_public` digest `episode_request` PUBLISHES and
+/// `placement_admit` compares byte-for-byte (seam findings S-1/S-2).
+///
+/// `resource_allocations.digest` stays byom's own `local_erasure_safe`
+/// record commitment — an HMAC under a per-object secret nobody outside
+/// byom can re-derive, hence never a value a counterparty may be asked to
+/// pin. This one is SHA-256 over the `$domain`-tagged canonical bytes of
+/// exactly the fragment above, exactly as `context_source_digest` is
+/// (§12.1), so both sides derive it from bytes both sides hold.
+pub fn allocation_binding_digest(
+    allocation_id: &str,
+    activation_admission_ref: &str,
+    activity_stream_ref: &str,
+    generation: u64,
+    stable_allocation_key: &str,
+    reservation_items: &Value,
+) -> Result<DigestRef, Problem> {
+    let fragment = json!({
+        "allocation_id": allocation_id,
+        "activation_admission_ref": activation_admission_ref,
+        "activity_stream_ref": activity_stream_ref,
+        "generation": generation,
+        "byom_budget_reservation_set_ref": reservation_set_ref(allocation_id),
+        "byom_budget_reservation_set_revision": 1,
+        "external_budget_bridge_ref": bridge_ref(allocation_id),
+        "stable_allocation_key": stable_allocation_key,
+        "stable_external_reservation_key": stable_external_key(allocation_id),
+        "reservation_items": reservation_items,
+    });
+    // The fragment is EXACTLY the frozen member set: a silent addition would
+    // change a digest a counterparty already pinned.
+    let mut emitted: Vec<&str> = fragment
+        .as_object()
+        .map(|o| o.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    let mut frozen = ALLOCATION_BINDING_FIELDS.to_vec();
+    emitted.sort_unstable();
+    frozen.sort_unstable();
+    if emitted != frozen {
+        return Err(state::internal(
+            "the composed resource-allocation binding fragment is not the frozen member set",
+        ));
+    }
+    let bytes = tagged_canonical(ALLOCATION_BINDING_TAG, &fragment)
+        .map_err(|e| state::internal(&e.to_string()))?;
+    Ok(DigestRef::portable_public(sha256_hex(&bytes)))
 }
 
 // ============================================ stage 2: activation_admit ==
@@ -1082,6 +1155,17 @@ fn resource_allocate(
             "bpp-resource-allocation-v0",
             &allocation_body,
         )?;
+        // The published cross-boundary pin (S-1): computed here, returned by
+        // `episode_request`, compared by `placement_admit`. No counterparty
+        // ever needs to read byom's database to obtain it.
+        let binding_digest = allocation_binding_digest(
+            &allocation_c,
+            &admission_id,
+            &req_c.activity_stream_ref,
+            req_c.generation,
+            &stable_allocation_key(&req_c.wake_intent_ref, wi_revision),
+            &items,
+        )?;
         let expires_at = rfc3339_utc(now + 86_400);
         let row = obj_pairs([
             ("allocation_id", json!(allocation_c)),
@@ -1111,6 +1195,7 @@ fn resource_allocate(
                 rows::json_of(&committed, "dependency_digest"),
             ),
             ("digest", digest_json(&allocation_digest)),
+            ("binding_digest", digest_json(&binding_digest)),
             ("created_at", json!(created_at)),
         ]);
         let result = allocation_result(&row);
@@ -1159,6 +1244,7 @@ fn allocation_result(row: &Map<String, Value>) -> Value {
         "byom_budget_reservation_set_ref": rows::str_of(row, "byom_budget_reservation_set_ref"),
         "external_budget_bridge_ref": rows::str_of(row, "external_budget_bridge_ref"),
         "digest": rows::json_of(row, "digest"),
+        "binding_digest": rows::json_of(row, "binding_digest"),
     })
 }
 
@@ -1359,7 +1445,7 @@ pub fn episode_request(
         .next()
         {
             return Ok(Prepared {
-                result: episode_result(&existing),
+                result: episode_result(&existing, &committed),
                 revision: Some(rows::u64_of(&existing, "revision")),
                 cursor: CursorMint::AfterEvents {
                     society_id: caller_c.society_id.clone(),
@@ -1441,7 +1527,7 @@ pub fn episode_request(
             ("created_at", json!(created_at)),
             ("terminal_at", Value::Null),
         ]);
-        let result = episode_result(&row);
+        let result = episode_result(&row, &committed);
         let mut effects = vec![Effect::Upsert {
             table: "episodes".into(),
             row,
@@ -1490,13 +1576,20 @@ pub fn episode_request(
     Ok(reply)
 }
 
-fn episode_result(row: &Map<String, Value>) -> Value {
+/// The `episode_request` result. It PUBLISHES the stage-3 allocation this
+/// call created together with the `portable_public` digest `placement_admit`
+/// requires (seam finding S-1): the four-stage activation now runs over
+/// published surfaces alone — no counterparty inspects byom's database to
+/// obtain a value byom demands back.
+fn episode_result(row: &Map<String, Value>, allocation: &Map<String, Value>) -> Value {
     json!({
         "episode_id": rows::str_of(row, "episode_id"),
         "activity_stream_id": rows::str_of(row, "activity_stream_ref"),
         "generation": rows::u64_of(row, "generation"),
         "revision": rows::u64_of(row, "revision"),
         "state": rows::str_of(row, "state"),
+        "resource_allocation_id": rows::str_of(allocation, "allocation_id"),
+        "resource_allocation_digest": rows::json_of(allocation, "binding_digest"),
         "created_at": rows::str_of(row, "created_at"),
     })
 }
@@ -1563,12 +1656,16 @@ pub fn placement_admit(
         )
         .map_err(db_err)?
         .ok_or_else(state::not_found)?;
+        // The pin is against the PUBLISHED cross-boundary binding digest —
+        // exactly the bytes `episode_request` returned (S-1). The row's own
+        // `digest` is byom's keyed record commitment and is never asked for.
         if !req_c
             .resource_allocation_digest
-            .same_ref_json(&rows::json_of(&allocation, "digest"))
+            .same_ref_json(&rows::json_of(&allocation, "binding_digest"))
         {
             return Err(state::stale_binding(
-                "resource_allocation_digest does not pin the committed allocation",
+                "resource_allocation_digest does not pin the allocation binding digest \
+                 episode_request published",
             ));
         }
         let allocation_id = rows::str_of(&allocation, "allocation_id").to_owned();
@@ -2401,6 +2498,29 @@ pub fn episode_claim(
             "bpp-episode-attempt-v0",
             &attempt_record,
         )?;
+        // The claim subject is BYOM's authority subject over BYOM's own
+        // staged attempt, so byom computes it — `local_erasure_safe` under
+        // the attempt's per-object secret, the class PROFILE.md §6.2 requires
+        // for an authority subject. It is not a request member: a
+        // counterparty could not derive a keyed value, and asking for one
+        // forced erasure secrets on the other side for nothing (S-2).
+        let claim_subject_digest = record_digest(
+            conn,
+            &society_c,
+            &attempt_id,
+            "bpp-episode-claim-subject-v0",
+            &json!({
+                "episode_ref": req_c.episode_ref,
+                "generation": req_c.generation,
+                "claim_ordinal": claim_ordinal,
+                "holder_runtime_binding": req_c.holder_runtime_binding,
+                "byom_attempt_ref": attempt_id,
+                "byom_fence_epoch": fence,
+                "kovee_invocation_ref": req_c.kovee_invocation_ref,
+                "kovee_invocation_fence": req_c.kovee_invocation_fence,
+                "stable_binding_key": req_c.stable_binding_key,
+            }),
+        )?;
         effects.push(Effect::Upsert {
             table: "episode_attempts".into(),
             row: obj_pairs([
@@ -2423,10 +2543,7 @@ pub fn episode_claim(
                 ("kovee_invocation_ref", json!(req_c.kovee_invocation_ref)),
                 ("kovee_attempt_ref", Value::Null),
                 ("kovee_fence_digest", Value::Null),
-                (
-                    "claim_subject_digest",
-                    digest_json(&req_c.claim_subject_digest),
-                ),
+                ("claim_subject_digest", digest_json(&claim_subject_digest)),
                 ("created_at", json!(acquired_at)),
                 ("digest", digest_json(&attempt_digest)),
             ]),

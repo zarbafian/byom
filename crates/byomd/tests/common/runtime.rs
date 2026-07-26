@@ -57,6 +57,9 @@ pub struct Episode {
     pub allocation_ref: String,
     pub bridge_ref: String,
     pub stable_external_key: String,
+    /// The allocation pin `episode_request` PUBLISHED (seam finding S-1):
+    /// the harness takes it from the reply, never from `byom.db`.
+    pub allocation_digest: Value,
 }
 
 /// One held lease (the claim CAS result).
@@ -372,6 +375,18 @@ impl Fixture {
              reservation sets (§11.4)"
         );
         let allocation_ref = Fixture::allocation_ref(wake);
+        // The result names the allocation it created AND its published
+        // cross-boundary digest: everything stage 4 needs, over the wire.
+        assert_eq!(
+            reply["result"]["resource_allocation_id"], allocation_ref,
+            "episode_request publishes the stage-3 allocation it created"
+        );
+        let allocation_digest = reply["result"]["resource_allocation_digest"].clone();
+        assert_eq!(
+            allocation_digest["class"], "portable_public",
+            "the published allocation pin is portable_public — both sides derive it \
+             (seam finding S-2): {allocation_digest}"
+        );
         Episode {
             episode_id: reply["result"]["episode_id"].as_str().unwrap().to_owned(),
             wake_intent_ref: wake.to_owned(),
@@ -379,6 +394,7 @@ impl Fixture {
             bridge_ref: format!("bridge-{allocation_ref}"),
             stable_external_key: format!("sub-{allocation_ref}"),
             allocation_ref,
+            allocation_digest,
         }
     }
 
@@ -576,7 +592,9 @@ impl Fixture {
         sub: Subordinate,
         token: &str,
     ) -> Value {
-        let allocation_digest = self.allocation_digest(&ep.allocation_ref);
+        // The pin comes from the `episode_request` REPLY the harness kept —
+        // there is no inspection path left (seam finding S-1).
+        let allocation_digest = ep.allocation_digest.clone();
         let subordinate = match sub {
             Subordinate::Confirmed(amount) => json!({
                 "stable_external_reservation_key": ep.stable_external_key,
@@ -625,21 +643,6 @@ impl Fixture {
         let reply = self.admit_placement_raw(ep, key, sub);
         assert_eq!(reply["outcome"], "ok", "placement_admit: {reply}");
         reply
-    }
-
-    /// The committed ResourceAllocation digest the placement adapter must
-    /// pin (read straight from the store — the harness's inspection
-    /// channel).
-    pub fn allocation_digest(&self, allocation: &str) -> Value {
-        let conn = rusqlite::Connection::open(self.daemon.data_dir.join("byom.db")).unwrap();
-        let text: String = conn
-            .query_row(
-                "SELECT digest FROM resource_allocations WHERE allocation_id = ?1",
-                [allocation],
-                |r| r.get(0),
-            )
-            .unwrap_or_else(|e| panic!("allocation digest {allocation}: {e}"));
-        serde_json::from_str(&text).unwrap()
     }
 
     pub fn row(&self, sql: &str, key: &str) -> Option<String> {
@@ -703,13 +706,12 @@ impl Fixture {
                 "episode_ref": episode,
                 "generation": 1,
                 "holder_runtime_binding": holder,
-                "claim_subject_digest": test_digest(0xd1),
                 "lease_ttl_seconds": ttl,
                 "kovee_invocation_ref": format!("kovee-inv-{key}"),
                 "kovee_invocation_fence": kovee_fence,
                 "stable_binding_key": binding_key,
                 "context_manifest_ref": "ctxman-1",
-                "context_manifest_digest": test_digest(0xd2),
+                "context_manifest_digest": portable_digest(0xd2),
                 "context_source_digest": portable_digest(0xd3),
                 "mandate_use_refs": ["muse-1"],
                 "allowed_local_commitments": ["kovee_local_note"],

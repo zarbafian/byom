@@ -1329,7 +1329,19 @@ CREATE TABLE execution_consumption_receipts (
 ) STRICT;
 "#;
 
-const MIGRATIONS: [&str; 8] = [V1, V2, V3, V4, V5, V6, V7, V8];
+/// V9 (seam fix S-1/S-2): the ResourceAllocation's CROSS-BOUNDARY binding
+/// digest. `resource_allocations.digest` is byom's own `local_erasure_safe`
+/// record commitment under a per-object secret — nobody outside byom can
+/// re-derive it, so it can never be the value a counterparty pins. The new
+/// column holds the `portable_public` digest over the exact
+/// `bpp-resource-allocation-binding-v0` fragment (the members Kovee also
+/// holds), which `episode_request` publishes and `placement_admit` compares.
+const V9: &str = r#"
+ALTER TABLE resource_allocations
+    ADD COLUMN binding_digest TEXT NOT NULL DEFAULT '';
+"#;
+
+const MIGRATIONS: [&str; 9] = [V1, V2, V3, V4, V5, V6, V7, V8, V9];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

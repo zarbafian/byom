@@ -14,9 +14,8 @@
       },
       "resource_allocation_ref": "alloc-wake-0001-r1",
       "resource_allocation_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "key-a",
+        "class": "portable_public",
+        "algorithm": "sha-256",
         "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "kovee_placement_ref": "kovee-placement-1",

@@ -15,21 +15,14 @@
       "episode_ref": "ep-0001",
       "generation": 1,
       "holder_runtime_binding": "kovee-worker-1",
-      "claim_subject_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "key-d",
-        "value_hex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-      },
       "lease_ttl_seconds": 300,
       "kovee_invocation_ref": "kovee-inv-1",
       "kovee_invocation_fence": 7,
       "stable_binding_key": "bindkey-ep-0001-att-2",
       "context_manifest_ref": "ctxman-1",
       "context_manifest_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "key-e",
+        "class": "portable_public",
+        "algorithm": "sha-256",
         "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       },
       "context_source_digest": {

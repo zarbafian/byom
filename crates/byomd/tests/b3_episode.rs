@@ -18,8 +18,8 @@
 
 mod common;
 
-use common::runtime::{merge, Claim, Fixture, Subordinate};
-use common::{kind_of, test_digest};
+use common::kind_of;
+use common::runtime::{merge, portable_digest, Claim, Fixture, Subordinate};
 use serde_json::{json, Value};
 
 /// One queued Episode ready to be claimed.
@@ -29,6 +29,103 @@ fn queued(tag: &str, ttl_key: &str) -> (Fixture, common::runtime::Episode) {
     let ep = f.request_episode(&wake, "e1");
     f.admit_placement(&ep, ttl_key, Subordinate::Confirmed(200));
     (f, ep)
+}
+
+/// Seam finding S-1: the allocation pin `placement_admit` requires is
+/// PUBLISHED by `episode_request` and by nothing else. Three facts, on the
+/// real daemon:
+///
+/// 1. the digest the reply carries is byte-identical to the one stage 4
+///    accepts (so Kovee binds a value it received over a surface);
+/// 2. any other digest is refused (`stale_binding`);
+/// 3. the value the old harnesses read out of `byom.db`
+///    (`resource_allocations.digest`, byom's keyed record commitment) is
+///    itself refused — the out-of-band path is not merely unnecessary, it
+///    no longer works.
+#[test]
+fn the_allocation_pin_is_published_and_the_db_value_no_longer_works() {
+    let f = Fixture::start("b3-ep-pin", 8);
+    let wake = f.wake("w1");
+    let ep = f.request_episode(&wake, "e1");
+
+    // (1) What `episode_request` published, verbatim.
+    let published = ep.allocation_digest.clone();
+    assert_eq!(published["class"], "portable_public", "{published}");
+    assert_eq!(published["algorithm"], "sha-256", "{published}");
+    assert!(
+        published.get("key_ref").is_none(),
+        "a portable pin carries no key_ref: {published}"
+    );
+
+    let token = f.placement_token(&ep.allocation_ref);
+    let admit = |digest: &Value, key: &str| {
+        f.runtime(
+            &token,
+            &json!({
+                "version": "0.2", "op": "placement_admit",
+                "meta": f.meta(key, None),
+                "resource_allocation_ref": ep.allocation_ref,
+                "resource_allocation_digest": digest,
+                "kovee_placement_ref": format!("kovee-placement-{key}"),
+                "kovee_placement_revision": 1,
+                "kovee_placement_digest": portable_digest(0x5d),
+                "source_binding_epoch": 1,
+                "selected_manifestation_ref": "manif-selected-1",
+                "kovee_invocation_ref": format!("kovee-inv-{key}"),
+                "kovee_fence_epoch": 7,
+                "subordinate_reservation": {
+                    "stable_external_reservation_key": ep.stable_external_key,
+                    "outcome": "confirmed",
+                    "subordinate_reservation_ref": format!("kovee-sub-{key}"),
+                    "revision": 1,
+                    "digest": portable_digest(0x5c),
+                    "items": [{
+                        "kovee_account_ref": "kovee-acct-1",
+                        "dimension": "unit", "unit": "unit", "amount": 200,
+                        "parent_account_ref": common::runtime::PARENT_ACCOUNT,
+                        "parent_account_revision": 1,
+                        "parent_dimension": "unit", "parent_unit": "unit",
+                        "parent_worst_case_amount": common::runtime::WORST_CASE,
+                    }],
+                },
+            }),
+        )
+    };
+
+    // (2) Another well-formed portable digest is refused.
+    let wrong = admit(&portable_digest(0x11), "plc-wrong");
+    assert_eq!(kind_of(&wrong), "stale_binding", "{wrong}");
+
+    // (3) The value the harnesses used to read out of `byom.db` — byom's OWN
+    // `local_erasure_safe` record commitment — is refused at the shape gate:
+    // it is not even of the class the boundary accepts.
+    let db_value: Value = serde_json::from_str(
+        &f.row(
+            "SELECT digest FROM resource_allocations WHERE allocation_id = ?1",
+            &ep.allocation_ref,
+        )
+        .expect("the committed allocation row"),
+    )
+    .unwrap();
+    assert_eq!(
+        db_value["class"], "local_erasure_safe",
+        "byom's own record digest stays keyed and per-object: {db_value}"
+    );
+    let out_of_band = admit(&db_value, "plc-db");
+    assert_eq!(kind_of(&out_of_band), "invalid", "{out_of_band}");
+
+    // (1, concluded) The published digest — and only it — is admitted.
+    let ok = admit(&published, "plc-ok");
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+    assert_eq!(
+        f.row(
+            "SELECT state FROM resource_allocations WHERE allocation_id = ?1",
+            &ep.allocation_ref
+        )
+        .as_deref(),
+        Some("bridged"),
+        "stage 4 completed the reservation set over published surfaces alone"
+    );
 }
 
 #[test]
@@ -378,7 +475,7 @@ fn checkpoints_and_terminalization_run_under_both_fences() {
         "meta": f.meta("ckp", None),
         "expected_lease_revision": lease_revision,
         "checkpoint_ref": "ckpt-1",
-        "checkpoint_digest": test_digest(0xe1),
+        "checkpoint_digest": portable_digest(0xe1),
     });
     merge(&mut checkpoint, f.fences(&ep.episode_id, &c));
     let committed = f.runtime(&token, &checkpoint);
