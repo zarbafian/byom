@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/bpp/v0/ops/execution-permit-consume-result.schema.json",
   "title": "BPP execution_permit_consume result (DESIGN.md §13.1, §14.8; registry R34 runtime)",
-  "description": "Success.result for execution_permit_consume: the verbatim §13.1 ExecutionConsumptionReceipt with max_uses pinned to 1 (one-shot; gap note G37, G4 invariant-pinning precedent). If the host crashes after consumption it recovers this same receipt rather than asking for new authority; the host intersects it with stricter current platform policy, mints its local permit, and only then creates a driver attempt (§13.1 steps 6–7). Episode binding on the receipt is an exact pair: episode_ref with episode_fence_digest, both-or-neither (RT-05).",
+  "description": "Success.result for execution_permit_consume: the verbatim §13.1 ExecutionConsumptionReceipt with max_uses pinned to 1 (one-shot; gap note G37, G4 invariant-pinning precedent). If the host crashes after consumption it recovers this same receipt rather than asking for new authority; the host intersects it with stricter current platform policy, mints its local permit, and only then creates a driver attempt (§13.1 steps 6–7). Episode binding on the receipt is an exact pair: episode_ref with episode_fence_digest, both-or-neither (RT-05). EVERY member this shape defines is RENDERED — a digest member returned as null is a conformance failure, never an omission the consumer may treat as a match (kovee seam finding on the receipt, gap note G48). Each digest is one the consumer can actually check: intent_digest, subject_digest, disclosure_digest and episode_fence_digest are echoes of values the consumption request itself pinned, rechecked against byom's committed records inside the consuming transaction, so they stay local_erasure_safe and are verified by exact DigestRef identity; mandate_use_digest and digest name records the consumer never supplied and holds no key for, so they are portable_public over frozen cross-boundary fragments the consumer re-derives (A8, PROFILE.md §6.2).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -47,7 +47,8 @@
       "$ref": "#/$defs/identifier"
     },
     "mandate_use_digest": {
-      "$ref": "#/$defs/localErasureSafeDigest"
+      "$ref": "#/$defs/portableBindingDigest",
+      "description": "The CROSS-BOUNDARY pin of the MandateUse this consumption inserted (A8; the resource_allocation_digest construction, gap note G48). The consumer never supplied a MandateUse and holds no per-object secret for byom's own mandate_uses.digest, so a keyed class here would be an opaque blob it could only echo. This is portable_public SHA-256 over the $domain-tagged canonical bytes of exactly the frozen `bpp-mandate-use-binding-v0` fragment {mandate_use_id, intent_ref, use_key, consumed_at}, whose every member is published on this receipt: mandate_use_id is mandate_use_ref, intent_ref is intent_ref, use_key is stable_execution_key, consumed_at is issued_at. byom's own local_erasure_safe MandateUse record commitment is unchanged and is demanded from nobody."
     },
     "stable_execution_key": {
       "$ref": "#/$defs/identifier"
@@ -84,7 +85,8 @@
       "description": "Invariant constant: an ExecutionConsumptionReceipt is one-shot (§13.1)."
     },
     "digest": {
-      "$ref": "#/$defs/localErasureSafeDigest"
+      "$ref": "#/$defs/portableBindingDigest",
+      "description": "The receipt's own CROSS-BOUNDARY commitment (A8): portable_public SHA-256 over the $domain-tagged canonical bytes of the frozen `bpp-execution-consumption-receipt-binding-v0` fragment — EXACTLY the members of this shape except `digest` itself, with an absent optional binding ABSENT (never null) and the transport-only `replayed` marker excluded. The consumer therefore derives it from the receipt it just received, which is the whole point: it is the one digest that authenticates the binding the broker relies on before egress, so it can never be a keyed value only byom can compute. The keyed member digests inside this preimage are published bytes both sides hold, not values the consumer must derive, so PROFILE.md §6.2's public-hash prohibition is untouched: erasing an object secret still erases exactly that member's own verifiability, while this pin only ever proved the receipt's bytes are the bytes byom committed. byom keeps no keyed twin — nothing inside byom compares this value; it exists to cross the boundary."
     }
   },
   "$defs": {
@@ -195,6 +197,15 @@
         }
       },
       "description": "Contextual digest-class binding (PROFILE.md §6.2, D-R0-1; RT-02): this field commits to an authority subject or other erasable per-object content, so exactly class local_erasure_safe (per-object secret, keyed HMAC) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — never a silent substitution."
+    },
+    "portableBindingDigest": {
+      "$ref": "#/$defs/digestRef",
+      "properties": {
+        "class": {
+          "const": "portable_public"
+        }
+      },
+      "description": "Contextual digest-class binding (PROFILE.md §6.2 cross-boundary class rule, amendment §A8; RT-02): this field commits to a FROZEN cross-boundary fragment the consumer holds and must re-derive without a byom secret, so exactly class portable_public (unkeyed SHA-256 over the $domain-tagged canonical fragment) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — and a keyed one would be a value the consumer could only echo, which is the defect the rule exists to prevent."
     }
   },
   "oneOf": [

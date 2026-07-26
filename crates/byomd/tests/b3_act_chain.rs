@@ -12,16 +12,167 @@
 //!
 //! And each refusal, exactly: no permit, spent permit, stale fence, wrong
 //! class subject.
+//!
+//! The receipt is checked MEMBER BY MEMBER against the frozen §13.1 shape
+//! and each of its digests is re-derived here — a rendered `null` or a
+//! class the consumer cannot check is a failure, not a silent gap
+//! (kovee seam finding on `ExecutionConsumptionReceipt`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 
-use common::runtime::{portable_digest, Act, Claim, Fixture, Subordinate};
+use common::runtime::{
+    consume_disclosure_digest, portable_digest, Act, Claim, Fixture, Subordinate,
+};
 use common::{kind_of, test_digest};
 use serde_json::{json, Value};
 
 const BROKER: &str = "kovee-model-broker";
+
+/// The FROZEN §13.1 result shape, committed with the bundle. Every receipt
+/// assertion below is driven by this file, so a member the shape defines
+/// but the daemon does not render fails the suite instead of reaching the
+/// consumer as `null`.
+const RECEIPT_SCHEMA: &str =
+    include_str!("../../../spec/schemas/ops/execution-permit-consume-result.schema.json");
+
+/// The cross-boundary canonicalization domains, written out HERE rather
+/// than imported from byomd: the consumer holds only the frozen tag and
+/// member set, so a change on either side of the seam must fail this test.
+const RECEIPT_BINDING_TAG: &str = "bpp-execution-consumption-receipt-binding-v0";
+const MANDATE_USE_BINDING_TAG: &str = "bpp-mandate-use-binding-v0";
+
+/// Every member of the frozen shape with the digest class it pins (`None`
+/// for the non-digest members), read out of the schema's contextual
+/// `$defs` — the machine-checked class parity of PROFILE.md §6.2.
+fn receipt_shape() -> Vec<(String, Option<String>)> {
+    let schema: Value = serde_json::from_str(RECEIPT_SCHEMA).unwrap();
+    let defs = schema["$defs"].clone();
+    schema["properties"]
+        .as_object()
+        .expect("the frozen shape names its members")
+        .iter()
+        .map(|(name, body)| {
+            let class = body["$ref"]
+                .as_str()
+                .and_then(|r| r.strip_prefix("#/$defs/"))
+                .and_then(|def| defs[def]["properties"]["class"]["const"].as_str())
+                .map(str::to_owned);
+            (name.clone(), class)
+        })
+        .collect()
+}
+
+/// EVERY member the frozen shape defines is PRESENT, NON-NULL, and carries
+/// exactly the digest class that shape pins — asserted member by member,
+/// so "the field exists" can never pass for "the field is rendered".
+fn assert_receipt_complete(receipt: &Value) {
+    let members = receipt.as_object().expect("the receipt is an object");
+    let shape = receipt_shape();
+    for (name, class) in &shape {
+        let value = members
+            .get(name)
+            .unwrap_or_else(|| panic!("the receipt omits {name}: {receipt}"));
+        assert!(
+            !value.is_null(),
+            "the receipt renders {name} null — the consumer cannot verify a binding \
+             it is never told: {receipt}"
+        );
+        let Some(class) = class else { continue };
+        assert_eq!(
+            value["class"],
+            json!(class),
+            "{name} digest class: {receipt}"
+        );
+        assert_eq!(
+            value["value_hex"].as_str().map(str::len),
+            Some(64),
+            "{name} value_hex: {receipt}"
+        );
+        // PROFILE.md §6.1: the class/algorithm pairing and `key_ref`
+        // presence are closed, in both directions.
+        if class == "portable_public" {
+            assert_eq!(value["algorithm"], "sha-256", "{name}: {receipt}");
+            assert!(
+                value.get("key_ref").is_none(),
+                "{name} is unkeyed — the consumer re-derives it: {receipt}"
+            );
+        } else {
+            assert_eq!(value["algorithm"], "hmac-sha-256", "{name}: {receipt}");
+            assert!(
+                value["key_ref"].is_string(),
+                "{name} names the key its verifiability dies with: {receipt}"
+            );
+        }
+    }
+    for name in members.keys() {
+        assert!(
+            name == "replayed" || shape.iter().any(|(n, _)| n == name),
+            "the receipt carries {name}, which the frozen shape does not define: {receipt}"
+        );
+    }
+}
+
+/// The `portable_public` DigestRef a CONSUMER derives: SHA-256 over the
+/// `$domain`-tagged canonical bytes of the fragment it holds.
+fn consumer_derived(tag: &str, fragment: &Value) -> Value {
+    let bytes = bpp_core::canonical::tagged_canonical(tag, fragment).unwrap();
+    json!({
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": bpp_core::canonical::sha256_hex(&bytes),
+    })
+}
+
+/// Both cross-boundary receipt digests, RE-DERIVED from the published
+/// receipt exactly as Kovee's broker must (A8, PROFILE.md §6.2): the
+/// MandateUse pin over its four published members, and the receipt pin
+/// over every §13.1 member except itself. Nothing is taken on trust —
+/// each expected value is computed here from the fragment.
+fn assert_cross_boundary_digests_rederive(receipt: &Value) {
+    let mandate_use = consumer_derived(
+        MANDATE_USE_BINDING_TAG,
+        &json!({
+            "mandate_use_id": receipt["mandate_use_ref"],
+            "intent_ref": receipt["intent_ref"],
+            "use_key": receipt["stable_execution_key"],
+            "consumed_at": receipt["issued_at"],
+        }),
+    );
+    assert_eq!(
+        receipt["mandate_use_digest"], mandate_use,
+        "mandate_use_digest must re-derive over the frozen MandateUse binding \
+         fragment the receipt publishes: {receipt}"
+    );
+    let mut fragment = receipt.as_object().unwrap().clone();
+    fragment.remove("digest");
+    fragment.remove("replayed");
+    let pin = consumer_derived(RECEIPT_BINDING_TAG, &Value::Object(fragment));
+    assert_eq!(
+        receipt["digest"], pin,
+        "the receipt's own digest must re-derive over exactly the members it \
+         publishes: {receipt}"
+    );
+}
+
+/// The committed golden receipt: the bundle's own vector for the result.
+const RECEIPT_VECTOR: &str =
+    include_str!("../../../spec/vectors/ops/execution-permit-consume-result-valid.json");
+
+/// The golden vector is BYTE-PINNED, not just shape-valid: its two
+/// cross-boundary digests re-derive here over exactly the fragments the
+/// frozen tags name. A changed tag, a changed member set, or a changed
+/// canonicalization breaks this test — which is what makes the vector a
+/// contract the consumer can implement against.
+#[test]
+fn the_committed_receipt_vector_re_derives_its_cross_boundary_digests() {
+    let vector: Value = serde_json::from_str(RECEIPT_VECTOR).unwrap();
+    assert_eq!(vector["expected"]["valid"], true);
+    let receipt = &vector["input"]["value"];
+    assert_receipt_complete(receipt);
+    assert_cross_boundary_digests_rederive(receipt);
+}
 
 /// A running Episode holding its lease, plus its committed binding digest.
 fn running(tag: &str) -> (Fixture, String, Claim, Value) {
@@ -191,6 +342,55 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
         !receipt["mandate_use_ref"].is_null(),
         "MandateUse inserted once"
     );
+
+    // -- the receipt Kovee must be able to CHECK, member by member -------
+    // Every member of the frozen shape is rendered (nothing null), each
+    // digest carries the class the shape pins, and no member the shape
+    // does not define is present.
+    assert_receipt_complete(receipt);
+    // The two cross-boundary pins re-derive here, from the receipt's own
+    // published bytes.
+    assert_cross_boundary_digests_rederive(receipt);
+    // The four ECHO digests, each compared against an INDEPENDENT source —
+    // byom's committed row, or the exact value the request carried — never
+    // against the receipt itself.
+    assert_eq!(
+        receipt["intent_digest"],
+        f.intent_digest(&intent_id),
+        "intent_digest is the committed ActIntent record digest"
+    );
+    assert_eq!(
+        receipt["subject_digest"], subject_digest,
+        "subject_digest is the exact authorized act subject the caller pinned"
+    );
+    assert_eq!(
+        receipt["disclosure_digest"],
+        consume_disclosure_digest(),
+        "disclosure_digest is the exact manifest digest the consumption bound"
+    );
+    assert_eq!(
+        receipt["episode_fence_digest"], binding_digest,
+        "episode_fence_digest is the committed ByomEpisodeBinding digest"
+    );
+    // A8's converse half: byom's OWN keyed MandateUse record commitment
+    // still exists, is still per-object erasable, and is NOT what the
+    // receipt published — the consumer is never handed a blob it can only
+    // echo.
+    let own_use_digest: Value = serde_json::from_str(
+        &f.row(
+            "SELECT digest FROM mandate_uses WHERE mandate_use_id = ?1",
+            receipt["mandate_use_ref"].as_str().unwrap(),
+        )
+        .expect("the MandateUse record digest"),
+    )
+    .unwrap();
+    assert_eq!(own_use_digest["class"], "local_erasure_safe");
+    assert_ne!(
+        own_use_digest, receipt["mandate_use_digest"],
+        "the receipt publishes the cross-boundary pin, never byom's keyed \
+         record digest (A8)"
+    );
+
     assert_eq!(
         f.count("SELECT COUNT(*) FROM mandate_uses"),
         1,
@@ -364,6 +564,20 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
     assert_eq!(
         replay["result"]["receipt_id"],
         first["result"]["receipt_id"]
+    );
+    // The recovered receipt is rendered from the STORED row while the first
+    // was rendered from the row being written — one renderer, so they are
+    // identical but for the replay marker, and every digest still
+    // re-derives. (The mint path rendering its in-memory row is exactly
+    // where the null-digest gap lived.)
+    assert_receipt_complete(&replay["result"]);
+    assert_cross_boundary_digests_rederive(&replay["result"]);
+    let mut recovered = replay["result"].as_object().unwrap().clone();
+    assert_eq!(recovered.remove("replayed"), Some(json!(true)));
+    assert_eq!(
+        Value::Object(recovered),
+        first["result"],
+        "a receipt recovered after a crash is the receipt first returned"
     );
     let changed = f.consume_permit_with(
         &token,

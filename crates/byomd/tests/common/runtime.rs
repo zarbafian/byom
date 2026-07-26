@@ -36,6 +36,17 @@ pub struct Fixture {
     pub tag: String,
 }
 
+/// The exact disclosure manifest every `consume_permit_with` consumption
+/// pins, so the receipt's optional `disclosure_digest` member is always
+/// exercised (and the consumer's echo check has a value to match).
+pub const CONSUME_DISCLOSURE_REF: &str = "disclosure-consume-1";
+
+/// Its digest: Kovee's OWN object, keyed per-object on Kovee's side, which
+/// byom echoes verbatim and never re-derives.
+pub fn consume_disclosure_digest() -> Value {
+    test_digest(0xd9)
+}
+
 /// One prepared-and-authorized act, with the refs its consumption needs.
 #[derive(Debug, Clone)]
 pub struct Act {
@@ -537,6 +548,11 @@ impl Fixture {
 
     /// `execution_permit_consume` (runtime, R34) under an explicit token,
     /// key and fence pair, so every refusal can be probed exactly.
+    ///
+    /// The disclosure pair is ALWAYS carried (`CONSUME_DISCLOSURE_REF` /
+    /// `CONSUME_DISCLOSURE_DIGEST`): the receipt's `disclosure_digest` is a
+    /// member the consumer checks, so the suite exercises it rather than
+    /// leaving the optional binding absent everywhere.
     #[allow(clippy::too_many_arguments)]
     pub fn consume_permit_with(
         &self,
@@ -561,6 +577,8 @@ impl Fixture {
             "host_effect_ref": format!("kovee-effect-{effect_key}"),
             "host_effect_digest": host_effect_digest,
             "subject_digest": act.subject_digest,
+            "disclosure_manifest_ref": CONSUME_DISCLOSURE_REF,
+            "disclosure_digest": consume_disclosure_digest(),
             "driver_audience": driver_audience,
             "budget_reservation_set_ref": act.budget_reservation_set_ref,
             "byom_fence_epoch": byom_fence,

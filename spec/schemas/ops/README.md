@@ -308,7 +308,11 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   a changed request → `idempotency_mismatch`; a different key cannot
   consume the spent one-shot decision (→ `stale_revision`); a stale
   fence → `stale_revision`; a dangling disclosure ref fails the closed
-  schema — vectors for all four negative classes.
+  schema — vectors for all four negative classes. Amended again (the
+  receipt half of G48, below): EVERY member of the result is rendered —
+  a digest returned as `null` is a conformance failure — and the two
+  members the consumer cannot re-derive from its own state are
+  `portable_public` over frozen cross-boundary fragments.
 - **G38 — cursor and page encoding.** Continuation tokens are one opaque
   scope- and audience-bound string (§14.4: authenticated cursor, endpoint
   incarnation, recovery epoch, filter digest, retention semantics), bounded
@@ -621,6 +625,86 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
     `reconciles_admission_digest`, `basis_source_admission_digest`,
     `classification_admission_digest` — and is recomputable by byom, so the
     class is correct there.
+  - **The `ExecutionConsumptionReceipt` (`execution_permit_consume`
+    result) — the RECEIPT half of the same rule, found the same way.**
+    Wiring Kovee's model broker to byomd's real act chain found the
+    receipt rendering **every digest member `null`**: the daemon composed
+    the receipt row in memory and read its structured columns back with a
+    text-only accessor, so `intent_digest`, `mandate_use_digest`,
+    `subject_digest`, `episode_fence_digest` and `digest` all serialized
+    as `null` on the mint path (the replay path, which reads the row back
+    from SQLite, was unaffected — which is why only the live seam saw it).
+    byom's own B3 suite asserted the non-digest members only, so the gap
+    was invisible here. The consumer could not verify the binding it is
+    required to hold before egress, and recorded the whole set as
+    unverifiable. Fixed at the root — the accessor now parses either form,
+    and the receipt's published members and its digest preimage are ONE
+    composed fragment, so a rendered member is a digested member and a
+    `null` is unrepresentable — and the classes are now the ones a
+    consumer can actually check:
+    - `intent_digest`, `subject_digest`, `disclosure_digest`,
+      `episode_fence_digest` **stay `local_erasure_safe`**. Each is an
+      ECHO of a value the consumption request itself pinned, rechecked
+      against byom's committed record inside the consuming transaction, so
+      the consumer verifies it by exact `DigestRef` identity against the
+      value it already holds — no re-derivation is needed and none is
+      possible. `subject_digest` additionally MUST keep the per-object
+      class: PROFILE.md §6.2 requires authority subjects to be
+      `local_erasure_safe` and forbids a public hash there, so the
+      cross-boundary rule cannot reach it. The receipt now publishes
+      byom's COMMITTED row values for the intent, subject and fence
+      digests rather than the caller's echo (proven identical by the
+      recheck, and honest about whose record it is).
+    - `mandate_use_digest` **→ `portable_public`**, over the frozen
+      `bpp-mandate-use-binding-v0` fragment `{mandate_use_id, intent_ref,
+      use_key, consumed_at}` — every member published on the receipt
+      (`mandate_use_ref`, `intent_ref`, `stable_execution_key`,
+      `issued_at`). The consumer never supplied a MandateUse and holds no
+      per-object secret, so byom's keyed `mandate_uses.digest` could only
+      ever be echoed. That record commitment is unchanged, stays keyed,
+      and is now demanded from nobody — the `resource_allocation_digest`
+      construction exactly. The MandateUse's byom-internal members
+      (`mandate_ref`, `mandate_digest`, `use_ordinal`,
+      `ceiling_reservation_refs`, `decision_refs`) are deliberately out:
+      a member the consumer cannot hold could never be re-derived.
+    - `digest` **→ `portable_public`**, over the frozen
+      `bpp-execution-consumption-receipt-binding-v0` fragment: EXACTLY the
+      §13.1 receipt members except `digest` itself, absent optionals
+      absent (never `null`), the transport-only `replayed` marker
+      excluded. The consumer derives it from the receipt it just received.
+      This is the one digest that authenticates the binding the broker
+      relies on, so a keyed value there was the defect the rule exists to
+      prevent. byom keeps no keyed twin: nothing inside byom compares this
+      value — it exists to cross the boundary. The stored row's host-side
+      and fence columns and `society_id` are not receipt members and stay
+      out of the preimage, so the fragment is never byom's whole record.
+    - The keyed member digests inside those public preimages are
+      **published bytes both sides hold**, not values the consumer must
+      derive, so `public_hash_over_erasable_content_forbidden` is
+      untouched: destroying an object secret still erases exactly that
+      member's own verifiability, while the portable pins only ever proved
+      that the receipt's bytes are the bytes byom committed.
+    - Receipts minted before this revision keep whatever they committed —
+      an immutable record is never rewritten, and a stored receipt replays
+      byte-for-byte as it was issued. No store column changed.
+    - **Recorded, not changed: the request side.** The converse half of
+      the rule says a digest the owner recomputes from its own state is
+      never a request member. `execution_permit_consume`'s REQUEST still
+      carries `intent_digest` and `subject_digest`, which byom rechecks
+      against its own committed act — the `claim_subject_digest` shape.
+      Removing them is a change to a frozen request shape a live consumer
+      already calls, so it belongs to the owner decision that removed
+      `claim_subject_digest`, not to this fix. Keeping them costs the
+      consumer nothing (it holds both from byom's own act notice, and both
+      stay keyed), and it is what lets the receipt's echoes be verified by
+      identity.
+    - Vectors: `execution-permit-consume-result-valid` (every member
+      rendered, both pins the real re-derived values — `b3_act_chain`
+      recomputes them from the vector), plus the three negatives
+      `-null-digest-invalid` (the exact regression),
+      `-keyed-receipt-digest-invalid` and
+      `-keyed-mandate-use-digest-invalid` (typing-only rejections with
+      arithmetically well-formed offered values).
   - **Rule-eligible, NOT re-classed by this decision.** The two optional
     Kovee-owned pairs on `episode_claim` —
     `kovee_context_assembly_digest` and

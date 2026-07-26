@@ -94,11 +94,21 @@ pub fn u64_of(m: &Map<String, Value>, key: &str) -> u64 {
 }
 
 /// Parses a JSON-carrying TEXT column (Null when absent or unparseable).
+///
+/// A row READ back from SQLite carries such a column as JSON text; a row
+/// COMPOSED in memory for an `Effect::Upsert` carries the structured value
+/// itself (`bind` serializes it on the way to the column). Both are the
+/// same row shape to every other reader here, so both parse to the same
+/// value: reading only the text form silently rendered every typed digest
+/// member of a freshly composed row `null` — the kovee seam finding on
+/// `ExecutionConsumptionReceipt`, where the mint path rendered the
+/// in-memory row and only the replay path read it back from disk.
 pub fn json_of(m: &Map<String, Value>, key: &str) -> Value {
-    m.get(key)
-        .and_then(Value::as_str)
-        .and_then(|t| serde_json::from_str(t).ok())
-        .unwrap_or(Value::Null)
+    match m.get(key) {
+        Some(Value::String(text)) => serde_json::from_str(text).unwrap_or(Value::Null),
+        Some(structured @ (Value::Object(_) | Value::Array(_))) => structured.clone(),
+        _ => Value::Null,
+    }
 }
 
 /// The current seat-head CAS row of `(proposal_kind, proposal_ref,

@@ -1,0 +1,61 @@
+{
+  "name": "ops/execution-permit-consume-result-keyed-receipt-digest-invalid",
+  "description": "A8 / PROFILE.md \u00a76.2 cross-boundary class rule: the receipt's own digest offered as a well-constructed local_erasure_safe HMAC under a byom per-object secret. The consumer holds no such secret, so that value is an opaque blob it could only echo \u2014 the rejection is typing-only (the offered ref is arithmetically well-formed for its class), exactly the placement-admit keyed-allocation-digest precedent.",
+  "input": {
+    "schema": "execution-permit-consume-result",
+    "value": {
+      "receipt_id": "ecr-0001",
+      "byom_endpoint_ref": "byom-endpoint-1",
+      "endpoint_incarnation": "inc-0001",
+      "recovery_epoch": 0,
+      "intent_ref": "act-0031",
+      "intent_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:act-0031-record",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "mandate_use_ref": "muse-0007",
+      "mandate_use_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "9409e735dc4cb2528f27421d9fe5d9c50a95b61b040ad9d70967f755cf951036"
+      },
+      "stable_execution_key": "exec-act-0031",
+      "subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:act-0031",
+        "value_hex": "5d0f0c5cbb2c3d0d2f4e6a8b0c1d2e3f405162738495a6b7c8d9eafb0c1d2e3f"
+      },
+      "disclosure_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "kovee-key:disclosure-0007",
+        "value_hex": "1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9fa0b"
+      },
+      "driver_audience": "kovee-model-broker",
+      "participant_ref": "part-agent-1",
+      "episode_ref": "ep-0044",
+      "episode_fence_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:bind-0044",
+        "value_hex": "7f26f35fd8404944dd9a2441528c810b6c55fb2ae7b569b0438d309d81806acf"
+      },
+      "budget_reservation_set_ref": "rset-act-0031",
+      "issued_at": "2026-07-26T09:00:00Z",
+      "expires_at": "2026-07-26T10:00:00Z",
+      "max_uses": 1,
+      "digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:ecr-0001",
+        "value_hex": "4b1e9d8c7a6f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0918273645"
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

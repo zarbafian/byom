@@ -20,6 +20,7 @@
 //! and the egress ceiling — and every mandatory domain of the act's class
 //! must be present or preparation fails closed.
 
+use bpp_core::canonical::{sha256_hex, tagged_canonical};
 use bpp_core::digest::DigestRef;
 use bpp_core::ops;
 use bpp_core::problem::{Problem, ProblemKind};
@@ -1210,7 +1211,12 @@ pub fn execution_permit_consume(
         act_mandate_gate(&mandate, &participant_ref, &act_class)?;
 
         // -- the DUAL fences (family contract L21) -----------------------
-        let episode_fence = match (&req_c.episode_ref, &req_c.episode_fence_digest) {
+        // Yields the digest of the COMMITTED ByomEpisodeBinding, which is
+        // what the receipt publishes: byom names its own committed record,
+        // never the caller's echo (the two are proven identical by the
+        // comparison below, so publishing the committed one costs nothing
+        // and cannot drift).
+        let episode_fence: Option<Value> = match (&req_c.episode_ref, &req_c.episode_fence_digest) {
             (Some(episode_ref), Some(fence_digest)) => {
                 let lease = rows::get_row(conn, "episode_lease_heads", "episode_id", episode_ref)
                     .map_err(db_err)?
@@ -1248,12 +1254,13 @@ pub fn execution_permit_consume(
                             .to_owned(),
                     ));
                 }
-                if !fence_digest.same_ref_json(&rows::json_of(&binding, "digest")) {
+                let committed_fence = rows::json_of(&binding, "digest");
+                if !fence_digest.same_ref_json(&committed_fence) {
                     return Err(state::stale_binding(
                         "episode_fence_digest does not pin the committed ByomEpisodeBinding",
                     ));
                 }
-                true
+                Some(committed_fence)
             }
             _ => {
                 if rows::str_of(&intent, "execution_kind") == "external_effect" {
@@ -1262,7 +1269,7 @@ pub fn execution_permit_consume(
                          episode ref/fence pair is not optional here (family contract L21)",
                     ));
                 }
-                false
+                None
             }
         };
 
@@ -1317,12 +1324,22 @@ pub fn execution_permit_consume(
             "ceiling_reservation_refs": reservation_refs,
             "consumed_at": issued_at,
         });
+        // byom's OWN record commitment: keyed, per-object, erasable, and
+        // demanded from nobody (PROFILE.md §6.2 converse half).
         let use_digest = conn_record_digest(
             conn,
             &society_c,
             &mandate_use_id,
             "bpp-mandate-use-v0",
             &use_record,
+        )?;
+        // The CROSS-BOUNDARY pin the receipt publishes instead (A8): the
+        // consumer holds all four members and re-derives this value.
+        let use_binding_digest = mandate_use_binding_digest(
+            &mandate_use_id,
+            &req_c.intent_ref,
+            &req_c.stable_execution_key,
+            &issued_at,
         )?;
         let mut effects = vec![Effect::Upsert {
             table: "mandate_uses".into(),
@@ -1355,35 +1372,12 @@ pub fn execution_permit_consume(
         part_common::settle_holder(conn, &mut effects, "act_intent", &req_c.intent_ref, true)?;
 
         // -- the ONE immutable ExecutionConsumptionReceipt ---------------
-        let receipt_record = json!({
-            "receipt_id": receipt_id,
-            "byom_endpoint_ref": byom_endpoint_ref,
-            "endpoint_incarnation": incarnation,
-            "recovery_epoch": recovery_epoch,
-            "intent_ref": req_c.intent_ref,
-            "intent_digest": rows::json_of(&intent, "intent_digest"),
-            "mandate_use_ref": mandate_use_id,
-            "mandate_use_digest": digest_json(&use_digest),
-            "stable_execution_key": req_c.stable_execution_key,
-            "subject_digest": digest_json(&req_c.subject_digest),
-            "disclosure_digest": opt_digest(&req_c.disclosure_digest),
-            "driver_audience": req_c.driver_audience,
-            "participant_ref": participant_ref,
-            "episode_ref": opt_json(&req_c.episode_ref),
-            "episode_fence_digest": opt_digest(&req_c.episode_fence_digest),
-            "budget_reservation_set_ref": req_c.budget_reservation_set_ref,
-            "issued_at": issued_at,
-            "expires_at": expires_at,
-            "max_uses": 1,
-        });
-        let receipt_digest = conn_record_digest(
-            conn,
-            &society_c,
-            &receipt_id,
-            "bpp-execution-consumption-receipt-v0",
-            &receipt_record,
-        )?;
-        let receipt_row = obj_pairs([
+        // Every §13.1 member is composed ONCE, here. The published receipt
+        // and the digest's preimage are the same fragment of this row
+        // (`receipt_fragment`), so a member that is rendered is digested
+        // and a member that is digested is rendered — the two can never
+        // drift apart, and a rendered `null` is impossible by shape.
+        let mut receipt_row = obj_pairs([
             ("receipt_id", json!(receipt_id)),
             ("society_id", json!(society_c)),
             ("byom_endpoint_ref", json!(byom_endpoint_ref)),
@@ -1392,16 +1386,18 @@ pub fn execution_permit_consume(
             ("intent_ref", json!(req_c.intent_ref)),
             ("intent_digest", rows::json_of(&intent, "intent_digest")),
             ("mandate_use_ref", json!(mandate_use_id)),
-            ("mandate_use_digest", digest_json(&use_digest)),
+            ("mandate_use_digest", digest_json(&use_binding_digest)),
             ("stable_execution_key", json!(req_c.stable_execution_key)),
-            ("subject_digest", digest_json(&req_c.subject_digest)),
+            // The COMMITTED authority subject, not the caller's echo (the
+            // recheck above proved them identical).
+            ("subject_digest", rows::json_of(&intent, "subject_digest")),
             ("disclosure_digest", opt_digest(&req_c.disclosure_digest)),
             ("driver_audience", json!(req_c.driver_audience)),
             ("participant_ref", json!(participant_ref)),
             ("episode_ref", opt_json(&req_c.episode_ref)),
             (
                 "episode_fence_digest",
-                opt_digest(&req_c.episode_fence_digest),
+                episode_fence.clone().unwrap_or(Value::Null),
             ),
             (
                 "budget_reservation_set_ref",
@@ -1414,8 +1410,10 @@ pub fn execution_permit_consume(
             ("issued_at", json!(issued_at)),
             ("expires_at", json!(expires_at)),
             ("max_uses", json!(1)),
-            ("digest", digest_json(&receipt_digest)),
+            ("digest", Value::Null),
         ]);
+        let receipt_digest = receipt_binding_digest(&receipt_fragment(&receipt_row))?;
+        receipt_row.insert("digest".to_owned(), digest_json(&receipt_digest));
         effects.push(Effect::Upsert {
             table: "execution_consumption_receipts".into(),
             row: receipt_row.clone(),
@@ -1447,44 +1445,210 @@ pub fn execution_permit_consume(
                 json!({"state": "consumed", "max_uses": 1,
                        "act_class": act_class,
                        "mandate_use_ref": mandate_use_id,
-                       "episode_bound": episode_fence,
+                       "episode_bound": episode_fence.is_some(),
                        "receipt_ref": receipt_id}),
             )],
         })
     })
 }
 
-fn receipt_result(row: &Map<String, Value>, replayed: bool) -> Value {
-    let mut out = json!({
-        "receipt_id": rows::str_of(row, "receipt_id"),
-        "byom_endpoint_ref": rows::str_of(row, "byom_endpoint_ref"),
-        "endpoint_incarnation": rows::str_of(row, "endpoint_incarnation"),
-        "recovery_epoch": rows::u64_of(row, "recovery_epoch"),
-        "intent_ref": rows::str_of(row, "intent_ref"),
-        "intent_digest": rows::json_of(row, "intent_digest"),
-        "mandate_use_ref": rows::str_of(row, "mandate_use_ref"),
-        "mandate_use_digest": rows::json_of(row, "mandate_use_digest"),
-        "stable_execution_key": rows::str_of(row, "stable_execution_key"),
-        "subject_digest": rows::json_of(row, "subject_digest"),
-        "driver_audience": rows::str_of(row, "driver_audience"),
-        "participant_ref": rows::str_of(row, "participant_ref"),
-        "budget_reservation_set_ref": rows::str_of(row, "budget_reservation_set_ref"),
-        "issued_at": rows::str_of(row, "issued_at"),
-        "expires_at": rows::str_of(row, "expires_at"),
-        "max_uses": 1,
-        "digest": rows::json_of(row, "digest"),
-    });
-    let disclosure = rows::json_of(row, "disclosure_digest");
-    if !disclosure.is_null() {
-        out["disclosure_digest"] = disclosure;
+// ============================ the CROSS-BOUNDARY receipt digests (A8) ====
+//
+// The receipt is the one artifact the consumer must hold before egress, so
+// every digest ON it has to be one the consumer can actually check
+// (PROFILE.md §6.2 cross-boundary class rule, amendment §A8):
+//
+// - `intent_digest`, `subject_digest`, `disclosure_digest` and
+//   `episode_fence_digest` stay `local_erasure_safe`. Each is an ECHO of a
+//   value the consumer itself pinned in the request, rechecked against
+//   byom's committed record inside this transaction, so the consumer
+//   verifies it by exact `DigestRef` identity against the value it holds —
+//   and `subject_digest` is an authority subject, which §6.2 requires to
+//   be per-object keyed and forbids from ever taking a public hash.
+// - `mandate_use_digest` and `digest` name records the consumer never
+//   supplied and holds no key for. A keyed class there would be an opaque
+//   blob it could only echo, so both are `portable_public` over a FROZEN
+//   cross-boundary fragment whose every member is published on the receipt
+//   itself — exactly the `resource_allocation_digest` construction (gap
+//   note G48). byom's own keyed `mandate_uses.digest` record commitment is
+//   unchanged and is demanded from nobody.
+//
+// The keyed refs that appear inside these public preimages are published
+// bytes, not values the consumer must derive: the receipt carries them
+// verbatim, so both sides hold the identical fragment. Destroying an
+// object secret still erases exactly what it always erased — the keyed
+// member's own verifiability — while the portable pins only ever proved
+// that the receipt's own bytes are the bytes byom committed.
+
+/// The canonicalization domain of the MandateUse's cross-boundary fragment.
+pub const MANDATE_USE_BINDING_TAG: &str = "bpp-mandate-use-binding-v0";
+
+/// The frozen member set of that fragment, in order. Every member is on
+/// the receipt under its §13.1 name — `mandate_use_id` as
+/// `mandate_use_ref`, `use_key` as `stable_execution_key`, `consumed_at`
+/// as `issued_at`, `intent_ref` as itself — so a holder of the receipt
+/// derives the same bytes. The MandateUse's byom-internal members
+/// (`mandate_ref`, `mandate_digest`, `use_ordinal`,
+/// `ceiling_reservation_refs`, `decision_refs`) are deliberately OUT: the
+/// pin names the consumption's cross-boundary identity, and a member the
+/// consumer cannot hold could never be re-derived.
+pub const MANDATE_USE_BINDING_FIELDS: [&str; 4] =
+    ["mandate_use_id", "intent_ref", "use_key", "consumed_at"];
+
+/// The canonicalization domain of the receipt's cross-boundary fragment.
+pub const RECEIPT_BINDING_TAG: &str = "bpp-execution-consumption-receipt-binding-v0";
+
+/// The frozen member set of the receipt fragment: EXACTLY the §13.1
+/// `ExecutionConsumptionReceipt` members, minus `digest` itself (which
+/// commits to these bytes). The stored row's host-side and fence columns
+/// (`host_effect_ref`, `host_effect_digest`, `byom_fence_epoch`,
+/// `host_fence_epoch`) and `society_id` are NOT receipt members and stay
+/// out of the fragment, so the preimage is never byom's whole record.
+pub const RECEIPT_BINDING_FIELDS: [&str; 19] = [
+    "receipt_id",
+    "byom_endpoint_ref",
+    "endpoint_incarnation",
+    "recovery_epoch",
+    "intent_ref",
+    "intent_digest",
+    "mandate_use_ref",
+    "mandate_use_digest",
+    "stable_execution_key",
+    "subject_digest",
+    "disclosure_digest",
+    "driver_audience",
+    "participant_ref",
+    "episode_ref",
+    "episode_fence_digest",
+    "budget_reservation_set_ref",
+    "issued_at",
+    "expires_at",
+    "max_uses",
+];
+
+/// The receipt members that are never optional (§13.1; the two optional
+/// bindings are exact pairs, enforced by the request's closed shape).
+const RECEIPT_REQUIRED_FIELDS: [&str; 16] = [
+    "receipt_id",
+    "byom_endpoint_ref",
+    "endpoint_incarnation",
+    "recovery_epoch",
+    "intent_ref",
+    "intent_digest",
+    "mandate_use_ref",
+    "mandate_use_digest",
+    "stable_execution_key",
+    "subject_digest",
+    "driver_audience",
+    "participant_ref",
+    "budget_reservation_set_ref",
+    "issued_at",
+    "expires_at",
+    "max_uses",
+];
+
+/// SHA-256 over the `$domain`-tagged canonical bytes of EXACTLY a frozen
+/// cross-boundary fragment (`context_source_digest`/
+/// `allocation_binding_digest` construction). A member outside the frozen
+/// set, a missing required member, or a `null` member fails closed: a
+/// silent addition would change a digest a counterparty already pinned,
+/// and a `null` would let two different fragments share a preimage.
+fn cross_boundary_digest(
+    tag: &str,
+    fragment: &Map<String, Value>,
+    frozen: &[&str],
+    required: &[&str],
+) -> Result<DigestRef, Problem> {
+    for name in fragment.keys() {
+        if !frozen.contains(&name.as_str()) {
+            return Err(state::internal(&format!(
+                "{tag}: {name} is not a member of the frozen cross-boundary fragment"
+            )));
+        }
     }
-    let episode = rows::str_of(row, "episode_ref").to_owned();
-    if !episode.is_empty() {
-        out["episode_ref"] = json!(episode);
-        out["episode_fence_digest"] = rows::json_of(row, "episode_fence_digest");
+    for name in required {
+        if fragment.get(*name).is_none_or(Value::is_null) {
+            return Err(state::internal(&format!(
+                "{tag}: the fragment does not carry its required member {name}"
+            )));
+        }
     }
-    if replayed {
-        out["replayed"] = json!(true);
+    if fragment.values().any(Value::is_null) {
+        return Err(state::internal(&format!(
+            "{tag}: an absent optional member is ABSENT, never null"
+        )));
+    }
+    let bytes = tagged_canonical(tag, &Value::Object(fragment.clone()))
+        .map_err(|e| state::internal(&e.to_string()))?;
+    Ok(DigestRef::portable_public(sha256_hex(&bytes)))
+}
+
+/// The `portable_public` MandateUse pin the receipt publishes as
+/// `mandate_use_digest`.
+pub fn mandate_use_binding_digest(
+    mandate_use_id: &str,
+    intent_ref: &str,
+    use_key: &str,
+    consumed_at: &str,
+) -> Result<DigestRef, Problem> {
+    let fragment = obj_pairs([
+        ("mandate_use_id", json!(mandate_use_id)),
+        ("intent_ref", json!(intent_ref)),
+        ("use_key", json!(use_key)),
+        ("consumed_at", json!(consumed_at)),
+    ]);
+    cross_boundary_digest(
+        MANDATE_USE_BINDING_TAG,
+        &fragment,
+        &MANDATE_USE_BINDING_FIELDS,
+        &MANDATE_USE_BINDING_FIELDS,
+    )
+}
+
+/// The receipt's own published members, exactly as the result renders
+/// them: the frozen fragment, absent optionals absent (never null),
+/// `digest` excluded. This is BOTH the digest preimage and the rendered
+/// result body, so the receipt the consumer re-derives is the receipt
+/// byom digested.
+fn receipt_fragment(row: &Map<String, Value>) -> Map<String, Value> {
+    let mut out = Map::new();
+    for name in RECEIPT_BINDING_FIELDS {
+        let value = match name {
+            "recovery_epoch" => json!(rows::u64_of(row, name)),
+            // Invariant constant: an ExecutionConsumptionReceipt is
+            // one-shot (§13.1), never a stored number that could drift.
+            "max_uses" => json!(1),
+            digest if digest.ends_with("_digest") => rows::json_of(row, digest),
+            plain => match rows::str_of(row, plain) {
+                "" => Value::Null,
+                text => json!(text),
+            },
+        };
+        if !value.is_null() {
+            out.insert(name.to_owned(), value);
+        }
     }
     out
+}
+
+/// The `portable_public` receipt pin the receipt publishes as `digest`.
+fn receipt_binding_digest(fragment: &Map<String, Value>) -> Result<DigestRef, Problem> {
+    cross_boundary_digest(
+        RECEIPT_BINDING_TAG,
+        fragment,
+        &RECEIPT_BINDING_FIELDS,
+        &RECEIPT_REQUIRED_FIELDS,
+    )
+}
+
+/// The §13.1 receipt as `execution_permit_consume` returns it — the ONE
+/// renderer both the minting and the replay path go through, so a receipt
+/// recovered after a crash is byte-identical to the one first returned.
+fn receipt_result(row: &Map<String, Value>, replayed: bool) -> Value {
+    let mut out = receipt_fragment(row);
+    out.insert("digest".to_owned(), rows::json_of(row, "digest"));
+    if replayed {
+        out.insert("replayed".to_owned(), json!(true));
+    }
+    Value::Object(out)
 }
