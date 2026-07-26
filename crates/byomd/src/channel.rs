@@ -158,6 +158,12 @@ fn operations_of(surface: bpp_core::registry::Surface) -> Vec<String> {
         // authorizes it. The runtime-surface commands are NOT here —
         // a runtime identity never crosses to participant (§14.7).
         .chain(crate::reads::RUNTIME_OPS.iter())
+        // B3 slice 3: the §13.1 act chain's participant seats
+        // (act_intent_prepare/position/finalize). The runtime one-shot
+        // consumptions and the narrow onboarding/attention adapters carry
+        // their own workload channels and are filtered out below by their
+        // surface, exactly like the runtime episode commands.
+        .chain(crate::reads::SLICE3_OPS.iter())
         .filter(|op| {
             bpp_core::registry::lookup(op, surface).is_some()
                 || bpp_core::registry::lookup(op, bpp_core::registry::Surface::Originating)

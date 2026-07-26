@@ -495,7 +495,7 @@ pub fn membership_refuse(
                 .map(|v| json!(v))
                 .unwrap_or(Value::Null),
         );
-        let effects = vec![
+        let mut effects = vec![
             Effect::Upsert {
                 table: "membership_offers".into(),
                 row: offer_row,
@@ -523,6 +523,17 @@ pub fn membership_refuse(
                 row: closed_credential(conn, &channel.channel_id, &refused_at)?,
             },
         ];
+        // §7.4: the same CAS transaction moves any OnboardingActivationOffer
+        // to `refused`, advances its fence and REVOKES unused onboarding
+        // compute authority. Every onboarding channel's token subject
+        // contains that fence, so the workload's own credential stops
+        // matching (the refusal fences the workload).
+        effects.extend(crate::onboard_ops::fence_onboarding(
+            conn,
+            &offer.offer_id,
+            "refused",
+            new_fence,
+        )?);
         let events = vec![
             NewEvent {
                 event_id: refuse_event.clone(),
@@ -578,5 +589,7 @@ pub fn membership_refuse(
         })
     })?;
     ensure_channel_files(store);
+    // The onboarding workload token file goes with the fenced offer.
+    crate::episode_ops::ensure_runtime_token_files(store);
     Ok(bytes)
 }

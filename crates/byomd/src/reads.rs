@@ -132,6 +132,26 @@ pub const RUNTIME_OPS: [&str; 11] = [
 /// runtime bundle it releases holds for.
 pub const BUDGET_OPS: [&str; 1] = ["budget_reconcile"];
 
+/// The B3 slice-3 bundle (C2 `byom_governed_work_v1`; §7.4, §11.1, §12.1,
+/// §13.1-§13.3; registry R10/R19-R23/R31/R32/R34 plus the derived attention
+/// intake row, gap note G47): the §7.4 onboarding path with its ONE-SHOT
+/// hosted compute, the attention intake that is never a wake, the §12.1
+/// provider-context source-field read, and the model-egress act/effect
+/// chain. One bundle: a client either speaks the whole act/onboarding seam
+/// or none of it (§16.6 all-or-nothing compatibility).
+pub const SLICE3_OPS: [&str; 10] = [
+    "onboarding_offer",
+    "onboarding_compute_permit_consume",
+    "onboarding_episode_claim",
+    "onboarding_episode_complete",
+    "attention_notice_record",
+    "context_manifest_show",
+    "act_intent_prepare",
+    "act_intent_position",
+    "act_intent_finalize",
+    "execution_permit_consume",
+];
+
 /// Is the operation implemented by THIS daemon (the honest feature_info
 /// set and the conformance live-replay contract)?
 pub fn implemented(op: &str) -> bool {
@@ -141,6 +161,7 @@ pub fn implemented(op: &str) -> bool {
         || HOST_INTEGRATION_OPS.contains(&op)
         || RUNTIME_OPS.contains(&op)
         || BUDGET_OPS.contains(&op)
+        || SLICE3_OPS.contains(&op)
         || op == "events_read"
 }
 
@@ -207,6 +228,10 @@ pub fn feature_info(store: &Store) -> Result<Vec<u8>, Problem> {
         json!({
             "feature": "byom_governed_work_v1:budget-reconciliation",
             "operations": BUDGET_OPS,
+        }),
+        json!({
+            "feature": "byom_governed_work_v1:acts-and-onboarding",
+            "operations": SLICE3_OPS.to_vec(),
         }),
         json!({
             "feature": "b0.1-events-recovery-core",

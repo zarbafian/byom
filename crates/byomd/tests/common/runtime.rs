@@ -28,8 +28,24 @@ pub struct Fixture {
     pub society_id: String,
     pub agent_token: String,
     pub mandate_id: String,
+    /// The exact prepared Mandate subject digest an act must pin.
+    pub mandate_subject_digest: Value,
+    /// The Mandate's CURRENT revision (issue advanced it): an act pins it.
+    pub mandate_revision: u64,
     pub stream: String,
     pub tag: String,
+}
+
+/// One prepared-and-authorized act, with the refs its consumption needs.
+#[derive(Debug, Clone)]
+pub struct Act {
+    pub intent_id: String,
+    pub seat_ref: String,
+    pub subject_digest: Value,
+    pub intent_digest: Value,
+    pub stable_execution_key: String,
+    pub budget_reservation_set_ref: String,
+    pub revision: u64,
 }
 
 /// One requested Episode with the refs the runtime commands need.
@@ -190,8 +206,13 @@ impl Fixture {
                     "meta": meta(&incarnation, &format!("{tag}-mprep"), None),
                     "grantee_participant_ref": "part-agent-1",
                     "purpose_ref": "purpose-explore-1",
+                    // The Δ4 act classes this Mandate bounds, alongside the
+                    // activity operations (family contract Δ4: act classes
+                    // are carried in ActIntent subjects and bounded by
+                    // Mandates).
                     "allowed_operations": ["activity_open", "continuation_write",
-                                           "wake_intent_submit"],
+                                           "wake_intent_submit",
+                                           "model_egress", "share"],
                     "resource_selectors": ["res-repo-1"],
                     "data_class_selectors": ["class-public"],
                     "destination_selectors": [],
@@ -228,18 +249,17 @@ impl Fixture {
                 }),
             ),
         );
-        ok(
-            "mandate_issue",
-            &daemon.call(
-                "governance",
-                &json!({
-                    "version": "0.2", "op": "mandate_issue",
-                    "meta": meta(&incarnation, &format!("{tag}-missue"), Some(1)),
-                    "mandate_id": mandate_id,
-                    "subject_digest": prepared_mandate["result"]["subject_digest"],
-                }),
-            ),
+        let issued = daemon.call(
+            "governance",
+            &json!({
+                "version": "0.2", "op": "mandate_issue",
+                "meta": meta(&incarnation, &format!("{tag}-missue"), Some(1)),
+                "mandate_id": mandate_id,
+                "subject_digest": prepared_mandate["result"]["subject_digest"],
+            }),
         );
+        ok("mandate_issue", &issued);
+        let mandate_revision = issued["result"]["revision"].as_u64().unwrap();
 
         // -- the ActivityStream the Episodes run under --
         let opened = daemon
@@ -269,6 +289,8 @@ impl Fixture {
             society_id,
             agent_token,
             mandate_id,
+            mandate_subject_digest: prepared_mandate["result"]["subject_digest"].clone(),
+            mandate_revision,
             stream,
             tag: tag.to_owned(),
         }
@@ -378,6 +400,163 @@ impl Fixture {
     }
     pub fn placement_token(&self, allocation: &str) -> String {
         self.token_file(&format!("runtime-placement-{allocation}.token"))
+    }
+    /// The trusted host effect service's channel, bound to one act's
+    /// one-shot key (R34).
+    pub fn permit_token(&self, intent_id: &str) -> String {
+        self.token_file(&format!("runtime-permit-{intent_id}.token"))
+    }
+    /// The Kovee model broker's channel, bound to one OnboardingComputeIntent
+    /// (R32).
+    pub fn broker_token(&self, compute_intent: &str) -> String {
+        self.token_file(&format!("runtime-broker-{compute_intent}.token"))
+    }
+    /// The candidate workload's channel, bound to one offer AND its fence
+    /// (R31): advancing the fence invalidates the token itself.
+    pub fn onboarding_token(&self, onboarding_id: &str) -> String {
+        self.token_file(&format!("runtime-onboarding-{onboarding_id}.token"))
+    }
+    /// The narrow Kovee attention adapter's channel, bound to one
+    /// ActivityStream generation.
+    pub fn attention_token(&self, stream: &str) -> String {
+        self.token_file(&format!("runtime-attention-{stream}.token"))
+    }
+    pub fn token_path_exists(&self, name: &str) -> bool {
+        self.daemon.data_dir.join("channels").join(name).exists()
+    }
+
+    // ----------------------------------------- the §13.1 act chain ----
+
+    /// `act_intent_prepare` (participant, R19) for one Δ4 act class.
+    pub fn prepare_act_raw(&self, key: &str, kind: &str, driver_audience: Option<&str>) -> Value {
+        let mut body = json!({
+            "version": "0.2", "op": "act_intent_prepare",
+            "meta": self.meta(&format!("actprep-{key}"), None),
+            "kind": kind,
+            "execution_kind": "external_effect",
+            "subject_ref": format!("subject-{key}"),
+            "subject_revision": 1,
+            "mandate_ref": self.mandate_id,
+            "mandate_revision": self.mandate_revision,
+            "mandate_digest": self.mandate_subject_digest,
+            "context_manifest_ref": "ctxman-1",
+            "context_manifest_digest": test_digest(0xe1),
+            "disclosure_manifest_ref": format!("disclosure-{key}"),
+            "disclosure_manifest_digest": test_digest(0xe2),
+        });
+        if let Some(audience) = driver_audience {
+            merge(&mut body, json!({"driver_audience": audience}));
+        }
+        self.participant(&body)
+    }
+
+    /// prepare + position (governance gate seat) + finalize: the authorized
+    /// act a permit consumption needs.
+    pub fn authorized_act(&self, key: &str, kind: &str, driver_audience: &str) -> Act {
+        let prepared = self.prepare_act_raw(key, kind, Some(driver_audience));
+        assert_eq!(prepared["outcome"], "ok", "act_intent_prepare: {prepared}");
+        let r = &prepared["result"];
+        let intent_id = r["intent_id"].as_str().unwrap().to_owned();
+        let seat_ref = r["required_seat_refs"][0].as_str().unwrap().to_owned();
+        let subject_digest = r["subject_digest"].clone();
+        let positioned = self.governance(&json!({
+            "version": "0.2", "op": "act_intent_position",
+            "meta": self.meta(&format!("actpos-{key}"), None),
+            "proposal_ref": intent_id,
+            "proposal_revision": 1,
+            "subject_digest": subject_digest,
+            "seat_ref": seat_ref,
+            "value": "assent",
+        }));
+        assert_eq!(
+            positioned["outcome"], "ok",
+            "act_intent_position: {positioned}"
+        );
+        let finalized = self.governance(&json!({
+            "version": "0.2", "op": "act_intent_finalize",
+            "meta": self.meta(&format!("actfin-{key}"), Some(1)),
+            "intent_id": intent_id,
+            "subject_digest": subject_digest,
+        }));
+        assert_eq!(
+            finalized["outcome"], "ok",
+            "act_intent_finalize: {finalized}"
+        );
+        Act {
+            intent_digest: self.intent_digest(&intent_id),
+            stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
+            budget_reservation_set_ref: r["budget_reservation_set_ref"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+            revision: finalized["result"]["revision"].as_u64().unwrap(),
+            intent_id,
+            seat_ref,
+            subject_digest,
+        }
+    }
+
+    /// The committed ActIntent record digest a consumption must pin (read
+    /// straight from the store — the harness's inspection channel).
+    pub fn intent_digest(&self, intent_id: &str) -> Value {
+        let text = self
+            .row(
+                "SELECT intent_digest FROM act_intents WHERE intent_id = ?1",
+                intent_id,
+            )
+            .unwrap_or_else(|| panic!("intent digest {intent_id}"));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// The committed ByomEpisodeBinding digest an episode-bound act pins.
+    pub fn binding_digest(&self, binding_ref: &str) -> Value {
+        let text = self
+            .row(
+                "SELECT digest FROM byom_episode_bindings WHERE binding_id = ?1",
+                binding_ref,
+            )
+            .unwrap_or_else(|| panic!("binding digest {binding_ref}"));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// `execution_permit_consume` (runtime, R34) under an explicit token,
+    /// key and fence pair, so every refusal can be probed exactly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn consume_permit_with(
+        &self,
+        token: &str,
+        act: &Act,
+        key: &str,
+        effect_key: &str,
+        stable_key: &str,
+        driver_audience: &str,
+        episode: Option<(&str, &Value)>,
+        byom_fence: u64,
+        host_fence: u64,
+        expected_revision: u64,
+        host_effect_digest: Value,
+    ) -> Value {
+        let mut body = json!({
+            "version": "0.2", "op": "execution_permit_consume",
+            "meta": self.meta(&format!("perm-{key}"), Some(expected_revision)),
+            "stable_execution_key": stable_key,
+            "intent_ref": act.intent_id,
+            "intent_digest": act.intent_digest,
+            "host_effect_ref": format!("kovee-effect-{effect_key}"),
+            "host_effect_digest": host_effect_digest,
+            "subject_digest": act.subject_digest,
+            "driver_audience": driver_audience,
+            "budget_reservation_set_ref": act.budget_reservation_set_ref,
+            "byom_fence_epoch": byom_fence,
+            "host_fence_epoch": host_fence,
+        });
+        if let Some((episode_ref, fence_digest)) = episode {
+            merge(
+                &mut body,
+                json!({"episode_ref": episode_ref, "episode_fence_digest": fence_digest}),
+            );
+        }
+        self.runtime(token, &body)
     }
 
     /// Stage 4: the narrow Kovee placement adapter, carrying the

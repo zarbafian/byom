@@ -22,21 +22,25 @@
 //! ```
 
 pub mod activity;
+pub mod acts;
 pub mod charter;
 pub mod host;
 pub mod mandate;
 pub mod policy;
 pub mod reads;
 pub mod runtime;
+pub mod slice3;
 pub mod work;
 
 pub use activity::*;
+pub use acts::*;
 pub use charter::*;
 pub use host::*;
 pub use mandate::*;
 pub use policy::*;
 pub use reads::*;
 pub use runtime::*;
+pub use slice3::*;
 pub use work::*;
 
 use serde::{Deserialize, Serialize};

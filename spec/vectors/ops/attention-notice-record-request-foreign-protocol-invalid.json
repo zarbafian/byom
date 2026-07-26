@@ -1,0 +1,31 @@
+{
+  "name": "ops/attention-notice-record-request-foreign-protocol-invalid",
+  "description": "the intake is the Kovee attention seam only: source_protocol is the closed value \"kovee\"",
+  "input": {
+    "schema": "attention-notice-record-request",
+    "value": {
+      "version": "0.2",
+      "op": "attention_notice_record",
+      "meta": {
+        "request_id": "req-atn-1",
+        "idempotency_key": "idem-atn-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "source_protocol": "akson",
+      "source_endpoint_ref": "kovee-endpoint-1",
+      "source_event_ref": "kovee-event-9",
+      "source_event_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "activity_stream_ref": "act-0001",
+      "generation": 1,
+      "stable_notice_key": "notice-kovee-event-9"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -457,3 +457,93 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
     bundle, so `intent_ref` + `stable_execution_key` are the opaque
     stable pair the §13.1 heads are unique over, gated by the same dual
     fences as every other runtime mutation.
+- **G47 — the B0.5 acts / onboarding-compute / attention bundle (B3
+  slice 3).** The §13.1 act chain (`act_intent_prepare/position/finalize`,
+  `execution_permit_consume`) is a B0.1 sheet family and keeps its frozen
+  schemas; the §7.4 onboarding-compute rows, the §12.1 source-field read,
+  and the attention intake ship as bundle `B0.5` in the same
+  `spec/registry.json` (`bundle: "B0.5"`):
+  `onboarding_compute_permit_consume` (R32), `onboarding_episode_claim` and
+  `onboarding_episode_complete` (R31), `attention_notice_record` (derived),
+  and `context_manifest_show` (R4). The runner's `check_slice3_bundle` pins
+  the §14.7 surface, the RT-01 meta class, and — on every onboarding
+  mutation — that the OFFER FENCE member is *required*, so a shape that
+  could act after a refusal cannot be committed. Derivations DESIGN.md does
+  not spell out, recorded here:
+  - **`attention_notice_record` is a DERIVED byom-side operation name.**
+    §16.4 states that "Kovee Attention may notify the Byom adapter of an
+    admitted exact event", but §14.6 lists NO attention operation and §14.7
+    binds none — exactly the situation in which `placement_admit` carries
+    the Kovee-owned subordinate saga verbs. The narrow runtime row is
+    therefore derived, and the record it writes is EVIDENCE with a
+    server-computed `eligibility_effect` of `no_effect` or
+    `wake_intent_eligible`: a notification may at most make a participant's
+    OWN already-submitted WakeIntent eligible under its ALREADY ADOPTED
+    ActivationPolicy. The request shape carries no wake, admission,
+    allocation, episode, priority, rank or score member, and the result
+    pins `created.{wake_intent,activation_admission,resource_allocation,
+    episode}` as constant false (family contract L25; runner-enforced).
+    The row owns no descriptor: it drives no §14.8 machine transition,
+    because it changes no machine's state.
+  - **The §12.1 source fields are byom-composed, and `context_manifest_show`
+    projects them.** §16.6 item 5 adds the exact §12.1 field list to
+    Kovee's ProviderContextManifest; §12.1 names the members in prose, so
+    the frozen `provider-context-manifest-byom-fields` fragment is the
+    normative member set, and `episode_claim` now composes it from
+    committed state and records it — with byom's own
+    `context_source_digest` (class `portable_public` over the
+    `$domain`-tagged canonical fragment) — inside the
+    `ByomEpisodeBinding` record. Two members §12.1 does not give a record
+    for are derived: `disclosure_ceiling_ref` is the Mandate's
+    `context_ceiling_ref` when set, else `ceiling-<mandate>`; and
+    `ordered_source_items` is byom's SOURCE order over the Episode's
+    immutable inputs (the ContextManifest pin and the exact wake cause) —
+    Kovee owns the final provider-visible ordering and bytes. The
+    Episode's ContextManifest is IMMUTABLE: a later claim naming another
+    manifest is refused, and the read refuses refs that do not match.
+  - **The OnboardingComputeIntent is authorized before Kovee's final bytes
+    exist.** §7.4 requires `provider_context_manifest_*`,
+    `disclosure_manifest_*` and `model_profile_*` on the intent, but
+    §16.6 item 12 routes the call "through Kovee's final
+    ProviderContextManifest and model broker" — which only exists at
+    consume time. The intent therefore pins the Society-authorized EXACT
+    disclosed context and proposed Manifestation, and the RECEIPT carries
+    Kovee's final manifest/disclosure/model digests as presented by the
+    broker. `provider_binding_ref`, `region` and
+    `retention_and_training_claims` are endpoint labels (§7.4 pins
+    presence, not a value shape), and `maximum_output_bytes` is pinned at
+    65536.
+  - **The one-shot keys are kernel-derived, and each narrow channel binds
+    the record whose authority it carries.** `stable_compute_key` is
+    `occ-<compute_intent>`, `stable_execution_key` is `exec-<intent>`, and
+    the onboarding id is `onb-<membership_offer>` — so a request can only
+    echo the server value. The permit channel binds the exact ActIntent (so
+    an unauthorized act answers `decision_incomplete` and a spent decision
+    `stale_revision`, never an opaque forbidden); the broker channel binds
+    the compute key; the candidate channel binds the offer AND its fence,
+    so `membership_refuse` — which advances that fence and revokes unused
+    compute authority in the same CAS — invalidates the workload's own
+    credential. mTLS and attested workload identity remain honestly NOT
+    claimed at the developer profile (§11.5).
+  - **The Δ4 class subject is compiled, and the per-act ceilings are pinned
+    here.** `kind` stays the frozen open identifier; a `kind` that IS one of
+    the five act classes compiles `act_class_subject = {act_class,
+    subject_atoms}` from the dependency closure (§10.6) — never
+    caller-shaped — carrying exactly that class's mandatory domains. The
+    purpose atom pins a byom-owned snapshot over the Mandate's purpose
+    (§13.1 names no snapshot record); `binding` is `kovee:<driver_audience>`
+    and is rechecked against the consuming broker; `classification` pins
+    the Society's classification binding and the Mandate's first data
+    class. A missing mandatory domain fails preparation closed
+    (`policy_conflict`). §13.1 fixes no per-act reservation and §13.4 no
+    egress ceiling: one act reserves 64 units on the mandate's
+    `budget_ceiling_set_ref` and the `model_egress` quantity atom carries
+    262144 output bytes.
+  - **`act_intent_finalize` implements the authorizing branch only.** The
+    committed descriptor also lists `prepared|awaiting_decision|authorized
+    -> denied` via `act_intent_finalize`, plus `act_intent_cancel` and the
+    `server_time` expiry; this slice implements the `awaiting_decision ->
+    authorized` transition and the `authorized -> consumed` consumption.
+    The deny/cancel/expire branches remain unimplemented and honestly
+    answer `feature_unavailable` (`act_intent_cancel`) — recorded, not
+    silently absent.

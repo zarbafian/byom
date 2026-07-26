@@ -188,8 +188,10 @@ mod tests {
     #[test]
     fn the_registry_freezes_the_three_bundles() {
         // 80 B0.1 rows + 3 B0.3 host-integration rows (R39/R40/R42) + the
-        // 11 B0.4 runtime/reconciliation rows (R30/R33/R35/R38).
-        assert_eq!(all_rows().len(), 94);
+        // 11 B0.4 runtime/reconciliation rows (R30/R33/R35/R38) + the 5
+        // B0.5 rows (R31/R32 onboarding compute, the derived attention
+        // intake, the §12.1 context read).
+        assert_eq!(all_rows().len(), 99);
         for (op, surface, class) in [
             ("kovee_endeavor_form", Surface::Governance, OpClass::Create),
             (
@@ -237,5 +239,56 @@ mod tests {
         assert!(lookup("assent_policy_adopt", Surface::Participant).is_some());
         assert!(lookup("assent_policy_adopt", Surface::Governance).is_none());
         assert!(lookup("activation_policy_adopt", Surface::Runtime).is_none());
+    }
+
+    #[test]
+    fn attention_never_reaches_a_wake_authoring_row() {
+        // Family contract L25 decided by rows alone: the attention intake
+        // exists ONLY on the runtime surface, and the only WakeIntent
+        // author stays the Participant channel. There is no row through
+        // which a notification could submit a wake, request an Episode, or
+        // adopt an activation policy.
+        assert!(lookup("attention_notice_record", Surface::Runtime).is_some());
+        for surface in [
+            Surface::Participant,
+            Surface::Governance,
+            Surface::Candidate,
+            Surface::Projection,
+        ] {
+            assert!(lookup("attention_notice_record", surface).is_none());
+        }
+        for op in [
+            "wake_intent_submit",
+            "episode_request",
+            "activation_policy_adopt",
+        ] {
+            assert!(lookup(op, Surface::Runtime).is_none(), "{op}");
+            assert!(lookup(op, Surface::Participant).is_some(), "{op}");
+        }
+    }
+
+    #[test]
+    fn the_slice3_bundle_binds_its_exact_surfaces() {
+        // B0.5: the §7.4 onboarding compute path and the derived attention
+        // intake answer ONLY on runtime; the §12.1 source-field read ONLY
+        // on projection; a runtime identity never crosses to participant
+        // or governance (§14.7).
+        for op in [
+            "onboarding_compute_permit_consume",
+            "onboarding_episode_claim",
+            "onboarding_episode_complete",
+            "attention_notice_record",
+        ] {
+            assert!(lookup(op, Surface::Runtime).is_some(), "{op}");
+            assert!(lookup(op, Surface::Participant).is_none(), "{op}");
+            assert!(lookup(op, Surface::Governance).is_none(), "{op}");
+            assert!(lookup(op, Surface::Candidate).is_none(), "{op}");
+        }
+        let read = lookup("context_manifest_show", Surface::Projection).unwrap();
+        assert_eq!(read.class, OpClass::Read);
+        assert!(lookup("context_manifest_show", Surface::Runtime).is_none());
+        // The one-shot permit consumption is a RUNTIME row only.
+        assert!(lookup("execution_permit_consume", Surface::Runtime).is_some());
+        assert!(lookup("execution_permit_consume", Surface::Participant).is_none());
     }
 }

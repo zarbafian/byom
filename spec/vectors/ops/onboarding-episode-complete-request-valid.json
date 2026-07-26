@@ -1,0 +1,31 @@
+{
+  "name": "ops/onboarding-episode-complete-request-valid",
+  "description": "completion is EVIDENCE ONLY: outputs, evidence and a typed outcome under the one offer fence (\u00a77.4, \u00a716.6 item 12)",
+  "input": {
+    "schema": "onboarding-episode-complete-request",
+    "value": {
+      "version": "0.2",
+      "op": "onboarding_episode_complete",
+      "meta": {
+        "request_id": "req-onbcmp-1",
+        "idempotency_key": "idem-onbcmp-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 1
+      },
+      "onboarding_episode_ref": "onbep-1",
+      "onboarding_ref": "onb-offer-4",
+      "onboarding_fence_epoch": 1,
+      "outcome": "completed",
+      "output_refs": [
+        "candidate-output-1"
+      ],
+      "evidence_refs": [
+        "candidate-evidence-1"
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

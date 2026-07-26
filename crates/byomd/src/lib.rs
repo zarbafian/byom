@@ -15,6 +15,8 @@
 //! On the candidate socket a channel-token preamble line precedes the
 //! request line (the offer-scoped credential of §7.4).
 
+pub mod act_ops;
+pub mod attention_ops;
 pub mod cand_ops;
 pub mod channel;
 pub mod dispatch;
@@ -26,6 +28,7 @@ pub mod gov_ops;
 pub mod host_config;
 pub mod host_ops;
 pub mod host_recovery;
+pub mod onboard_ops;
 pub mod part_common;
 pub mod part_ops;
 pub mod peercred;

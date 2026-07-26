@@ -1135,7 +1135,201 @@ CREATE TABLE effect_governance_disposition_heads (
 ) STRICT;
 "#;
 
-const MIGRATIONS: [&str; 7] = [V1, V2, V3, V4, V5, V6, V7];
+/// V8 — the B3 slice-3 tables (DESIGN.md §7.4, §11.1, §12.1, §13.1):
+///
+/// - `attention_notices` — the Kovee attention intake. A notice is
+///   EVIDENCE, never authority (§11.1/§16.4, family contract L25): the
+///   only field it may carry is the server-computed `eligibility_effect`,
+///   and no wake, admission, allocation, or Episode is ever written by it.
+/// - `onboarding_offers`, `onboarding_compute_intents`,
+///   `onboarding_compute_receipts`, `onboarding_episodes` — the §7.4
+///   bounded onboarding path and its ONE-SHOT hosted compute
+///   (`max_uses = 1` by construction). Completion is evidence only; no
+///   MembershipAcceptance and no Standing come from it.
+/// - `act_intents`, `mandate_uses`, `execution_consumption_receipts` —
+///   the §13.1 intent-before-effect chain. The MandateUse uniqueness pair
+///   `(mandate_ref, use_key)` / `(mandate_ref, use_ordinal)` is expressed
+///   as real constraints; the receipt's `max_uses` is 1 by construction.
+const V8: &str = r#"
+CREATE TABLE attention_notices (
+    notice_id                TEXT PRIMARY KEY,
+    society_id               TEXT NOT NULL,
+    source_protocol          TEXT NOT NULL,
+    source_endpoint_ref      TEXT NOT NULL,
+    source_event_ref         TEXT NOT NULL,
+    source_event_digest      TEXT NOT NULL,
+    activity_stream_ref      TEXT NOT NULL,
+    generation               INTEGER NOT NULL,
+    participant_ref          TEXT NOT NULL,
+    stable_notice_key        TEXT NOT NULL,
+    eligibility_effect       TEXT NOT NULL,
+    eligible_wake_intent_ref TEXT,
+    activation_policy_ref    TEXT,
+    received_at              TEXT NOT NULL,
+    digest                   TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE onboarding_offers (
+    onboarding_id                      TEXT PRIMARY KEY,
+    society_id                         TEXT NOT NULL,
+    membership_offer_ref               TEXT NOT NULL UNIQUE,
+    candidate_participant_ref          TEXT NOT NULL,
+    proposed_manifestation_ref         TEXT NOT NULL,
+    proposed_manifestation_digest      TEXT NOT NULL,
+    exact_context_ref                  TEXT NOT NULL,
+    exact_context_digest               TEXT NOT NULL,
+    resource_reservation_ref           TEXT NOT NULL,
+    max_episodes                       INTEGER NOT NULL,
+    allowed_operations                 TEXT NOT NULL,
+    onboarding_compute_intent_ref      TEXT,
+    general_effect_and_child_authority TEXT NOT NULL,
+    fence_epoch                        INTEGER NOT NULL,
+    expires_at                         TEXT NOT NULL,
+    adopted_by_decision_ref            TEXT NOT NULL,
+    state                              TEXT NOT NULL,
+    revision                           INTEGER NOT NULL,
+    created_at                         TEXT NOT NULL,
+    digest                             TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE onboarding_compute_intents (
+    compute_intent_id     TEXT PRIMARY KEY,
+    society_id            TEXT NOT NULL,
+    onboarding_ref        TEXT NOT NULL,
+    record                TEXT NOT NULL,
+    candidate_fence_epoch INTEGER NOT NULL,
+    stable_compute_key    TEXT NOT NULL UNIQUE,
+    state                 TEXT NOT NULL,
+    receipt_ref           TEXT,
+    expires_at            TEXT NOT NULL,
+    created_at            TEXT NOT NULL,
+    digest                TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE onboarding_compute_receipts (
+    receipt_id            TEXT PRIMARY KEY,
+    society_id            TEXT NOT NULL,
+    compute_intent_ref    TEXT NOT NULL UNIQUE,
+    stable_compute_key    TEXT NOT NULL,
+    record                TEXT NOT NULL,
+    max_uses              INTEGER NOT NULL,
+    candidate_fence_epoch INTEGER NOT NULL,
+    kovee_invocation_ref  TEXT NOT NULL,
+    issued_at             TEXT NOT NULL,
+    expires_at            TEXT NOT NULL,
+    digest                TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE onboarding_episodes (
+    onboarding_episode_id      TEXT PRIMARY KEY,
+    society_id                 TEXT NOT NULL,
+    onboarding_ref             TEXT NOT NULL,
+    candidate_participant_ref  TEXT NOT NULL,
+    proposed_manifestation_ref TEXT NOT NULL,
+    compute_receipt_ref        TEXT,
+    onboarding_fence_epoch     INTEGER NOT NULL,
+    holder_runtime_binding     TEXT NOT NULL,
+    stable_claim_key           TEXT NOT NULL UNIQUE,
+    revision                   INTEGER NOT NULL,
+    state                      TEXT NOT NULL,
+    outcome                    TEXT,
+    output_refs                TEXT NOT NULL,
+    evidence_refs              TEXT NOT NULL,
+    acceptance_effect          TEXT NOT NULL,
+    claimed_at                 TEXT NOT NULL,
+    completed_at               TEXT,
+    digest                     TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE act_intents (
+    intent_id                          TEXT PRIMARY KEY,
+    society_id                         TEXT NOT NULL,
+    revision                           INTEGER NOT NULL,
+    endpoint_incarnation               TEXT NOT NULL,
+    recovery_epoch                     INTEGER NOT NULL,
+    requested_by_participant           TEXT NOT NULL,
+    actor_ref                          TEXT NOT NULL,
+    endeavor_ref                       TEXT,
+    pledge_ref                         TEXT,
+    preparation_trace_ref              TEXT NOT NULL,
+    preparation_trace_digest           TEXT NOT NULL,
+    preparation_trace                  TEXT NOT NULL,
+    kind                               TEXT NOT NULL,
+    act_class                          TEXT,
+    act_class_subject                  TEXT,
+    execution_kind                     TEXT NOT NULL,
+    subject_ref                        TEXT NOT NULL,
+    subject_revision                   INTEGER NOT NULL,
+    subject_digest                     TEXT NOT NULL,
+    intent_digest                      TEXT NOT NULL,
+    preconditions                      TEXT NOT NULL,
+    context_manifest_ref               TEXT,
+    context_manifest_digest            TEXT,
+    disclosure_manifest_ref            TEXT,
+    disclosure_manifest_digest         TEXT,
+    driver_audience                    TEXT,
+    budget_reservation_set_ref         TEXT NOT NULL,
+    mandate_ref                        TEXT NOT NULL,
+    mandate_revision                   INTEGER NOT NULL,
+    mandate_digest                     TEXT NOT NULL,
+    authorization_dependency_set_ref   TEXT NOT NULL,
+    dependency_digest                  TEXT NOT NULL,
+    authorization_decision_ref         TEXT,
+    authorization_slot_snapshot_digest TEXT,
+    required_seat_refs                 TEXT NOT NULL,
+    stable_execution_key               TEXT NOT NULL UNIQUE,
+    expires_at                         TEXT NOT NULL,
+    state                              TEXT NOT NULL,
+    created_at                         TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE mandate_uses (
+    mandate_use_id           TEXT PRIMARY KEY,
+    society_id               TEXT NOT NULL,
+    mandate_ref              TEXT NOT NULL,
+    mandate_digest           TEXT NOT NULL,
+    intent_ref               TEXT NOT NULL,
+    intent_digest            TEXT NOT NULL,
+    use_key                  TEXT NOT NULL,
+    use_ordinal              INTEGER NOT NULL,
+    ceiling_reservation_refs TEXT NOT NULL,
+    decision_refs            TEXT NOT NULL,
+    consumed_at              TEXT NOT NULL,
+    digest                   TEXT NOT NULL,
+    UNIQUE(mandate_ref, use_key),
+    UNIQUE(mandate_ref, use_ordinal)
+) STRICT;
+
+CREATE TABLE execution_consumption_receipts (
+    receipt_id                 TEXT PRIMARY KEY,
+    society_id                 TEXT NOT NULL,
+    byom_endpoint_ref          TEXT NOT NULL,
+    endpoint_incarnation       TEXT NOT NULL,
+    recovery_epoch             INTEGER NOT NULL,
+    intent_ref                 TEXT NOT NULL,
+    intent_digest              TEXT NOT NULL,
+    mandate_use_ref            TEXT NOT NULL,
+    mandate_use_digest         TEXT NOT NULL,
+    stable_execution_key       TEXT NOT NULL UNIQUE,
+    subject_digest             TEXT NOT NULL,
+    disclosure_digest          TEXT,
+    driver_audience            TEXT NOT NULL,
+    participant_ref            TEXT NOT NULL,
+    episode_ref                TEXT,
+    episode_fence_digest       TEXT,
+    budget_reservation_set_ref TEXT NOT NULL,
+    host_effect_ref            TEXT NOT NULL,
+    host_effect_digest         TEXT NOT NULL,
+    byom_fence_epoch           INTEGER NOT NULL,
+    host_fence_epoch           INTEGER NOT NULL,
+    issued_at                  TEXT NOT NULL,
+    expires_at                 TEXT NOT NULL,
+    max_uses                   INTEGER NOT NULL,
+    digest                     TEXT NOT NULL
+) STRICT;
+"#;
+
+const MIGRATIONS: [&str; 8] = [V1, V2, V3, V4, V5, V6, V7, V8];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

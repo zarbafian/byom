@@ -30,8 +30,8 @@ use crate::part_common::{self, Caller};
 use crate::socket::SocketSurface;
 use crate::state;
 use crate::{
-    cand_ops, effect_ops, episode_ops, gov_authority, gov_ops, host_ops, host_recovery, part_ops,
-    reads, work_ops,
+    act_ops, attention_ops, cand_ops, effect_ops, episode_ops, gov_authority, gov_ops, host_ops,
+    host_recovery, onboard_ops, part_ops, reads, work_ops,
 };
 
 /// A crash-honesty instruction from the environment
@@ -526,6 +526,11 @@ impl Daemon {
                     ops::MembershipOfferRequest::parse(body).map_err(|e| state::invalid(&e))?;
                 gov_ops::membership_offer(&mut store, &req, body, now, hooks)
             }
+            "onboarding_offer" => {
+                let req =
+                    ops::OnboardingOfferRequest::parse(body).map_err(|e| state::invalid(&e))?;
+                onboard_ops::onboarding_offer(&mut store, &req, body, now, hooks)
+            }
             "membership_offer_revoke" => {
                 let req = ops::MembershipOfferRevokeRequest::parse(body)
                     .map_err(|e| state::invalid(&e))?;
@@ -589,6 +594,43 @@ impl Daemon {
                 let req =
                     ops::CharterFinalizeRequest::parse(body).map_err(|e| state::invalid(&e))?;
                 gov_authority::charter_finalize(&mut store, &req, body, now, hooks)
+            }
+            // The §13.1 gate seats on the governance surface (R21/R23):
+            // the human principal fills its exact prepared human-authority
+            // seat, and the deterministic finalization authors none.
+            "act_intent_position" => {
+                let req = ops::PositionRequest::parse(
+                    body,
+                    "act_intent_position",
+                    ops::PositionAssentRule::Flat,
+                )
+                .map_err(|e| state::invalid(&e))?;
+                let (society_id, sovereign_row) = gov_authority::sovereign(&store)?;
+                act_ops::act_intent_position(
+                    &mut store,
+                    &society_id,
+                    &sovereign_row.participant_id,
+                    gov_ops::ACTOR_GOVERNANCE,
+                    "governance",
+                    &req,
+                    body,
+                    now,
+                    hooks,
+                )
+            }
+            "act_intent_finalize" => {
+                let req =
+                    ops::ActIntentFinalizeRequest::parse(body).map_err(|e| state::invalid(&e))?;
+                let (society_id, _) = gov_authority::sovereign(&store)?;
+                act_ops::act_intent_finalize(
+                    &mut store,
+                    &society_id,
+                    gov_ops::ACTOR_GOVERNANCE,
+                    &req,
+                    body,
+                    now,
+                    hooks,
+                )
             }
             // The two R38 reconciliation seats: the ONLY paths that
             // release an uncertain hold or record a local consequence
@@ -855,6 +897,46 @@ impl Daemon {
                 let req = ops::EpisodeRequestRequest::parse(body).map_err(invalid)?;
                 episode_ops::episode_request(&mut store, &caller, &req, body, now, hooks)
             }
+            "act_intent_prepare" => {
+                let req = ops::ActIntentPrepareRequest::parse(body).map_err(invalid)?;
+                act_ops::act_intent_prepare(&mut store, &caller, &req, body, now, hooks)
+            }
+            "act_intent_position" => {
+                let req = ops::PositionRequest::parse(
+                    body,
+                    "act_intent_position",
+                    ops::PositionAssentRule::Flat,
+                )
+                .map_err(invalid)?;
+                let society_id = caller.society_id.clone();
+                let participant = caller.participant.participant_id.clone();
+                let actor = caller.actor.clone();
+                act_ops::act_intent_position(
+                    &mut store,
+                    &society_id,
+                    &participant,
+                    &actor,
+                    "participant",
+                    &req,
+                    body,
+                    now,
+                    hooks,
+                )
+            }
+            "act_intent_finalize" => {
+                let req = ops::ActIntentFinalizeRequest::parse(body).map_err(invalid)?;
+                let society_id = caller.society_id.clone();
+                let actor = caller.actor.clone();
+                act_ops::act_intent_finalize(
+                    &mut store,
+                    &society_id,
+                    &actor,
+                    &req,
+                    body,
+                    now,
+                    hooks,
+                )
+            }
             "continuation_write" => {
                 let req = ops::ContinuationWriteRequest::parse(body).map_err(invalid)?;
                 part_ops::continuation_write(&mut store, &caller, &req, body, now, hooks)
@@ -928,6 +1010,29 @@ impl Daemon {
                 let req = ops::EffectOutcomeAdmitRequest::parse(body).map_err(invalid)?;
                 effect_ops::effect_outcome_admit(&mut store, token, &req, body, now, hooks)
             }
+            "execution_permit_consume" => {
+                let req = ops::ExecutionPermitConsumeRequest::parse(body).map_err(invalid)?;
+                act_ops::execution_permit_consume(&mut store, token, &req, body, now, hooks)
+            }
+            "onboarding_compute_permit_consume" => {
+                let req =
+                    ops::OnboardingComputePermitConsumeRequest::parse(body).map_err(invalid)?;
+                onboard_ops::onboarding_compute_permit_consume(
+                    &mut store, token, &req, body, now, hooks,
+                )
+            }
+            "onboarding_episode_claim" => {
+                let req = ops::OnboardingEpisodeClaimRequest::parse(body).map_err(invalid)?;
+                onboard_ops::onboarding_episode_claim(&mut store, token, &req, body, now, hooks)
+            }
+            "onboarding_episode_complete" => {
+                let req = ops::OnboardingEpisodeCompleteRequest::parse(body).map_err(invalid)?;
+                onboard_ops::onboarding_episode_complete(&mut store, token, &req, body, now, hooks)
+            }
+            "attention_notice_record" => {
+                let req = ops::AttentionNoticeRecordRequest::parse(body).map_err(invalid)?;
+                attention_ops::attention_notice_record(&mut store, token, &req, body, now, hooks)
+            }
             _ => Err(feature_unavailable()),
         }
     }
@@ -959,6 +1064,11 @@ impl Daemon {
             "activity_show" => {
                 let req = ops::ActivityShowRequest::parse(body).map_err(|e| state::invalid(&e))?;
                 reads::activity_show(&store, &req.activity_stream_ref)
+            }
+            "context_manifest_show" => {
+                let req =
+                    ops::ContextManifestShowRequest::parse(body).map_err(|e| state::invalid(&e))?;
+                attention_ops::context_manifest_show(&store, &req)
             }
             "charter_history" => {
                 let req =
@@ -1015,7 +1125,7 @@ fn participant_shape_check(op: &str, body: &Value) -> Result<(), Problem> {
             .map_err(e),
         "mandate_prepare" => ops::MandatePrepareRequest::parse(body).map(drop).map_err(e),
         "mandate_derive" => ops::MandateDeriveRequest::parse(body).map(drop).map_err(e),
-        "mandate_position" | "endeavor_position" => {
+        "mandate_position" | "endeavor_position" | "act_intent_position" => {
             ops::PositionRequest::parse(body, op, ops::PositionAssentRule::Flat)
                 .map(drop)
                 .map_err(e)
@@ -1055,6 +1165,12 @@ fn participant_shape_check(op: &str, body: &Value) -> Result<(), Problem> {
             .map(drop)
             .map_err(e),
         "episode_request" => ops::EpisodeRequestRequest::parse(body).map(drop).map_err(e),
+        "act_intent_prepare" => ops::ActIntentPrepareRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "act_intent_finalize" => ops::ActIntentFinalizeRequest::parse(body)
+            .map(drop)
+            .map_err(e),
         "continuation_write" => ops::ContinuationWriteRequest::parse(body)
             .map(drop)
             .map_err(e),
@@ -1086,6 +1202,23 @@ fn runtime_shape_check(op: &str, body: &Value) -> Result<(), Problem> {
         "episode_fail" => ops::EpisodeFailRequest::parse(body).map(drop).map_err(e),
         "usage_report" => ops::UsageReportRequest::parse(body).map(drop).map_err(e),
         "effect_outcome_admit" => ops::EffectOutcomeAdmitRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "execution_permit_consume" => ops::ExecutionPermitConsumeRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "onboarding_compute_permit_consume" => {
+            ops::OnboardingComputePermitConsumeRequest::parse(body)
+                .map(drop)
+                .map_err(e)
+        }
+        "onboarding_episode_claim" => ops::OnboardingEpisodeClaimRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "onboarding_episode_complete" => ops::OnboardingEpisodeCompleteRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "attention_notice_record" => ops::AttentionNoticeRecordRequest::parse(body)
             .map(drop)
             .map_err(e),
         _ => Ok(()),

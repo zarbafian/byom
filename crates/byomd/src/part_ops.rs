@@ -1122,7 +1122,7 @@ pub fn activity_open(
     };
     let caller = caller.clone();
     let req = req.clone();
-    run(store, scope, now, hooks, move |conn, _| {
+    let reply = run(store, scope, now, hooks, move |conn, _| {
         let mut effects = Vec::new();
         let mut events = Vec::new();
         let mut generation = 1u64;
@@ -1259,7 +1259,11 @@ pub fn activity_open(
             effects,
             events,
         })
-    })
+    })?;
+    // The stream-scoped attention channel follows the stream's own
+    // state (the `ensure_channel_files` discipline).
+    crate::episode_ops::ensure_runtime_token_files(store);
+    Ok(reply)
 }
 
 fn owned_activity(
@@ -1299,7 +1303,7 @@ pub fn activity_hold(
     };
     let caller = caller.clone();
     let req = req.clone();
-    run(store, scope, now, hooks, move |conn, _| {
+    let reply = run(store, scope, now, hooks, move |conn, _| {
         let activity = owned_activity(conn, &caller, &req.activity_stream_ref, req.generation)?;
         if req.meta.expected_revision != Some(rows::u64_of(&activity, "revision")) {
             return Err(state::stale_revision());
@@ -1341,7 +1345,11 @@ pub fn activity_hold(
                 json!({"state": "held"}),
             )],
         })
-    })
+    })?;
+    // The stream-scoped attention channel follows the stream's own
+    // state (the `ensure_channel_files` discipline).
+    crate::episode_ops::ensure_runtime_token_files(store);
+    Ok(reply)
 }
 
 pub fn activity_close(
@@ -1364,7 +1372,7 @@ pub fn activity_close(
     };
     let caller = caller.clone();
     let req = req.clone();
-    run(store, scope, now, hooks, move |conn, _| {
+    let reply = run(store, scope, now, hooks, move |conn, _| {
         let activity = owned_activity(conn, &caller, &req.activity_stream_ref, req.generation)?;
         if req.meta.expected_revision != Some(rows::u64_of(&activity, "revision")) {
             return Err(state::stale_revision());
@@ -1442,7 +1450,11 @@ pub fn activity_close(
             effects,
             events,
         })
-    })
+    })?;
+    // The stream-scoped attention channel follows the stream's own
+    // state (the `ensure_channel_files` discipline).
+    crate::episode_ops::ensure_runtime_token_files(store);
+    Ok(reply)
 }
 
 // -------------------------------------------------------- wake intents ----

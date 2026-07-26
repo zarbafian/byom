@@ -1,0 +1,39 @@
+{
+  "name": "ops/onboarding-episode-claim-request-valid",
+  "description": "the candidate workload claims the ONE onboarding Episode under the one offer fence, citing the exact OnboardingComputeReceipt (\u00a77.4, R31)",
+  "input": {
+    "schema": "onboarding-episode-claim-request",
+    "value": {
+      "version": "0.2",
+      "op": "onboarding_episode_claim",
+      "meta": {
+        "request_id": "req-onbclm-1",
+        "idempotency_key": "idem-onbclm-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "onboarding_ref": "onb-offer-4",
+      "candidate_participant_ref": "part-9",
+      "proposed_manifestation_ref": "manif-2",
+      "proposed_manifestation_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:manif",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "onboarding_fence_epoch": 1,
+      "holder_runtime_binding": "candidate-worker-a",
+      "stable_claim_key": "onbclaim-offer-4",
+      "compute_receipt_ref": "ocr-1",
+      "compute_receipt_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "society-key:soc-1/object:ocr",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

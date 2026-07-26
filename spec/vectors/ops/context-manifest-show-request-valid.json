@@ -1,0 +1,17 @@
+{
+  "name": "ops/context-manifest-show-request-valid",
+  "description": "the \u00a712.1 byom source fields Kovee binds before any model call, for one bound Episode/attempt (R4 projection read)",
+  "input": {
+    "schema": "context-manifest-show-request",
+    "value": {
+      "version": "0.2",
+      "op": "context_manifest_show",
+      "episode_ref": "ep-0001",
+      "byom_attempt_ref": "att-0001",
+      "context_manifest_ref": "ctxman-0001"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

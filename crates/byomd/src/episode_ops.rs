@@ -130,6 +130,24 @@ pub enum RuntimeChannel {
     /// The narrow Kovee placement adapter bound to one exact
     /// ResourceAllocation (R33).
     Placement,
+    /// The TRUSTED HOST EFFECT SERVICE bound to one exact prepared host
+    /// Effect (R34): the only channel that may consume an execution
+    /// permit. Its subject is the ActIntent's one-shot
+    /// `stable_execution_key`, so a permit token is unusable for any
+    /// other act.
+    Permit,
+    /// The Kovee MODEL BROKER bound to one exact OnboardingComputeIntent
+    /// (R32). Its subject is the kernel-derived `stable_compute_key`.
+    Broker,
+    /// The candidate workload bound to one exact OnboardingActivationOffer
+    /// and its ONE offer fence (R31). The fence is part of the subject, so
+    /// a refusal/revocation/expiry that advances it fences the workload's
+    /// token itself.
+    Onboarding,
+    /// The narrow Kovee ATTENTION adapter bound to one exact
+    /// ActivityStream generation (§16.4; derived row, gap note G47). It
+    /// may notify; it can never wake.
+    Attention,
 }
 
 impl RuntimeChannel {
@@ -138,6 +156,10 @@ impl RuntimeChannel {
             RuntimeChannel::Worker => "worker",
             RuntimeChannel::Meter => "meter",
             RuntimeChannel::Placement => "placement",
+            RuntimeChannel::Permit => "permit",
+            RuntimeChannel::Broker => "broker",
+            RuntimeChannel::Onboarding => "onboarding",
+            RuntimeChannel::Attention => "attention",
         }
     }
 
@@ -146,6 +168,10 @@ impl RuntimeChannel {
             RuntimeChannel::Worker => "rwk1.",
             RuntimeChannel::Meter => "rmt1.",
             RuntimeChannel::Placement => "rpl1.",
+            RuntimeChannel::Permit => "rpm1.",
+            RuntimeChannel::Broker => "rbr1.",
+            RuntimeChannel::Onboarding => "rob1.",
+            RuntimeChannel::Attention => "ratn1.",
         }
     }
 }
@@ -161,8 +187,14 @@ pub fn runtime_token(store: &Store, channel: RuntimeChannel, subject: &str) -> O
     ))
 }
 
-fn episode_subject(episode_ref: &str, generation: u64) -> String {
+pub fn episode_subject(episode_ref: &str, generation: u64) -> String {
     format!("{episode_ref}|{generation}")
+}
+
+/// The R31 candidate-workload subject: the exact offer AND its current
+/// fence, so advancing the fence invalidates the token itself (§7.4).
+pub fn onboarding_subject(onboarding_ref: &str, fence_epoch: u64) -> String {
+    format!("{onboarding_ref}|{fence_epoch}")
 }
 
 /// Verifies a presented runtime preamble against the exact subject. The
@@ -239,6 +271,110 @@ pub fn ensure_runtime_token_files(store: &Store) {
                     if let Some(token) =
                         runtime_token(store, RuntimeChannel::Placement, &allocation_id)
                     {
+                        want.push((name, token));
+                    }
+                } else {
+                    let _ = std::fs::remove_file(dir.join(&name));
+                }
+            }
+        }
+    }
+    // The B3 slice-3 narrow adapters. Each subject is exactly the record
+    // whose authority the channel carries, so a token never reaches a
+    // second act, a second compute intent, a fenced offer, or another
+    // ActivityStream generation.
+    for (table, id_col, subject_col, live, channel) in [
+        // The permit channel is bound to the exact PREPARED act (R34), so
+        // byom's own state and one-shot checks answer honestly instead of
+        // an opaque forbidden: an unauthorized act says `decision_incomplete`
+        // and a spent decision says `stale_revision`. A TERMINAL act loses
+        // the channel outright.
+        (
+            "act_intents",
+            "intent_id",
+            "intent_id",
+            &["prepared", "awaiting_decision", "authorized", "consumed"][..],
+            RuntimeChannel::Permit,
+        ),
+        // The broker channel survives into `consumed` so the ONE-SHOT
+        // refusal and the exact-retry replay are byom's own answers
+        // (§7.4 max_uses: 1), not an opaque forbidden. A revoked or failed
+        // intent loses the channel outright.
+        (
+            "onboarding_compute_intents",
+            "compute_intent_id",
+            "stable_compute_key",
+            &["authorized", "consumed"][..],
+            RuntimeChannel::Broker,
+        ),
+    ] {
+        if let Ok(mut stmt) = store.conn().prepare(&format!(
+            "SELECT {id_col}, {subject_col}, state FROM {table}"
+        )) {
+            if let Ok(list) = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            }) {
+                for (id, subject, row_state) in list.flatten() {
+                    let name = format!("runtime-{}-{id}.token", channel.tag());
+                    if live.contains(&row_state.as_str()) {
+                        if let Some(token) = runtime_token(store, channel, &subject) {
+                            want.push((name, token));
+                        }
+                    } else {
+                        let _ = std::fs::remove_file(dir.join(&name));
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(mut stmt) = store
+        .conn()
+        .prepare("SELECT onboarding_id, fence_epoch, state FROM onboarding_offers")
+    {
+        if let Ok(list) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) {
+            for (onboarding_id, fence, offer_state) in list.flatten() {
+                let name = format!("runtime-onboarding-{onboarding_id}.token");
+                if matches!(offer_state.as_str(), "offered" | "active") {
+                    let subject = onboarding_subject(&onboarding_id, fence.max(0) as u64);
+                    if let Some(token) = runtime_token(store, RuntimeChannel::Onboarding, &subject)
+                    {
+                        want.push((name, token));
+                    }
+                } else {
+                    let _ = std::fs::remove_file(dir.join(&name));
+                }
+            }
+        }
+    }
+    if let Ok(mut stmt) = store
+        .conn()
+        .prepare("SELECT activity_stream_id, generation, state FROM activity_streams")
+    {
+        if let Ok(list) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) {
+            for (stream_id, generation, stream_state) in list.flatten() {
+                let name = format!("runtime-attention-{stream_id}.token");
+                if matches!(
+                    stream_state.as_str(),
+                    "ready" | "active" | "waiting" | "reviewing"
+                ) {
+                    let subject = episode_subject(&stream_id, generation.max(0) as u64);
+                    if let Some(token) = runtime_token(store, RuntimeChannel::Attention, &subject) {
                         want.push((name, token));
                     }
                 } else {
@@ -2296,6 +2432,41 @@ pub fn episode_claim(
             ]),
         });
 
+        // §12.1: the Episode's ContextManifest is IMMUTABLE. The first
+        // claim binds it; a later attempt naming a different manifest is
+        // refused — a new manifest requires a new Episode, never a silent
+        // substitution.
+        let committed_manifest = rows::str_of(&episode, "context_manifest_ref").to_owned();
+        if !committed_manifest.is_empty() {
+            if committed_manifest != req_c.context_manifest_ref {
+                return Err(state::stale_binding(
+                    "context_manifest_ref is not the Episode's committed ContextManifest: the \
+                     manifest is immutable and is never silently changed (§12.1)",
+                ));
+            }
+            if !req_c
+                .context_manifest_digest
+                .same_ref_json(&rows::json_of(&episode, "context_manifest_digest"))
+            {
+                return Err(state::stale_binding(
+                    "context_manifest_digest does not pin the Episode's committed ContextManifest",
+                ));
+            }
+        }
+        let mut episode_row = episode.clone();
+        episode_row.insert(
+            "context_manifest_ref".into(),
+            json!(req_c.context_manifest_ref),
+        );
+        episode_row.insert(
+            "context_manifest_digest".into(),
+            digest_json(&req_c.context_manifest_digest),
+        );
+        effects.push(Effect::Upsert {
+            table: "episodes".into(),
+            row: episode_row.clone(),
+        });
+
         // The C2 ByomEpisodeBinding, field-verbatim.
         let participant_ref = rows::str_of(&episode, "participant_ref").to_owned();
         let participant = rows::get_participant(conn, &participant_ref)
@@ -2396,6 +2567,31 @@ pub fn episode_claim(
             record.insert("provider_context_manifest_ref".into(), json!(r));
             record.insert("provider_context_manifest_digest".into(), digest_json(d));
         }
+        // §12.1 / §16.6 item 5: byom composes the EXACT source fields Kovee
+        // binds into its ProviderContextManifest, and
+        // `context_source_digest` is the digest over exactly that canonical
+        // fragment. The recorded value is BYOM's own derivation, computed
+        // here from committed state plus this claim's staged attempt.
+        let (source_fields, source_digest) = crate::attention_ops::context_source_fields(
+            conn,
+            &crate::attention_ops::ContextSourceInput {
+                byom_endpoint_ref: &byom_endpoint_ref,
+                episode: &episode_row,
+                byom_attempt_ref: &attempt_id,
+                byom_fence_epoch: fence,
+                context_manifest_ref: &req_c.context_manifest_ref,
+                context_manifest_digest: digest_json(&req_c.context_manifest_digest),
+                mandate_use_refs: json!(req_c.mandate_use_refs.clone()),
+            },
+        )?;
+        record.insert(
+            "provider_context_manifest_byom_fields".into(),
+            source_fields.clone(),
+        );
+        record.insert(
+            "context_source_digest_recomputed".into(),
+            digest_json(&source_digest),
+        );
         let binding_digest = record_digest(
             conn,
             &society_c,
@@ -2556,6 +2752,7 @@ fn attempt_event_effect(
 }
 
 fn claim_result(lease: &Map<String, Value>, binding: &Map<String, Value>) -> Value {
+    let record = rows::json_of(binding, "record");
     json!({
         "episode_id": rows::str_of(lease, "episode_id"),
         "generation": rows::u64_of(lease, "generation"),
@@ -2566,8 +2763,16 @@ fn claim_result(lease: &Map<String, Value>, binding: &Map<String, Value>) -> Val
         "claim_ordinal": rows::u64_of(lease, "attempt_count"),
         "expires_at": rows::str_of(lease, "expires_at"),
         "byom_episode_binding_ref": rows::str_of(binding, "binding_id"),
-        "byom_episode_binding": rows::json_of(binding, "record"),
+        "byom_episode_binding": record.clone(),
         "kovee_invocation_fence": rows::u64_of(binding, "kovee_invocation_fence"),
+        // The §12.1 source fields Kovee binds before ANY model call, and
+        // byom's own digest over exactly that canonical fragment.
+        "provider_context_manifest_byom_fields":
+            record.get("provider_context_manifest_byom_fields").cloned()
+                .unwrap_or(Value::Null),
+        "context_source_digest":
+            record.get("context_source_digest_recomputed").cloned()
+                .unwrap_or(Value::Null),
     })
 }
 

@@ -1,0 +1,23 @@
+{
+  "name": "ops/context-manifest-show-request-meta-invalid",
+  "description": "\u00a714.2: reads never mutate and carry no meta \u2014 a projection read with a MutationMeta fails the closed schema",
+  "input": {
+    "schema": "context-manifest-show-request",
+    "value": {
+      "version": "0.2",
+      "op": "context_manifest_show",
+      "episode_ref": "ep-0001",
+      "byom_attempt_ref": "att-0001",
+      "context_manifest_ref": "ctxman-0001",
+      "meta": {
+        "request_id": "req-cms-1",
+        "idempotency_key": "idem-cms-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      }
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -335,6 +335,39 @@ B04_SURFACES = {
     "budget_reconcile": "governance",
 }
 
+# ------------------------- B0.5 acts / onboarding-compute / attention ----
+# B3 slice 3 (C2 `byom_governed_work_v1`): the §7.4 onboarding compute path,
+# the §11.1/§16.4 attention intake, and the §12.1 provider-context
+# source-field read. Their registry rows live in the SAME
+# spec/registry.json and carry `bundle: "B0.5"`; each publishes its closed
+# request/result pair under spec/schemas/ops/. The §13.1 act chain
+# (act_intent_prepare/position/finalize/cancel, execution_permit_consume)
+# already belongs to the B0.1 sheet and is NOT repeated here.
+B05_SLICE3 = ("onboarding_compute_permit_consume", "onboarding_episode_claim",
+              "onboarding_episode_complete", "attention_notice_record",
+              "context_manifest_show")
+B05_READS = frozenset({"context_manifest_show"})
+B05_SURFACES = {
+    "onboarding_compute_permit_consume": "runtime",
+    "onboarding_episode_claim": "runtime",
+    "onboarding_episode_complete": "runtime",
+    "attention_notice_record": "runtime",
+    "context_manifest_show": "projection",
+}
+# Every onboarding operation must present the ONE offer fence (§7.4: a
+# refusal, revocation or expiry advances it and revokes unused authority),
+# so the runner refuses to accept a shape that could omit it.
+B05_FENCE_REQUIRED = {"onboarding_compute_permit_consume": "onboarding_fence_epoch",
+                      "onboarding_episode_claim": "onboarding_fence_epoch",
+                      "onboarding_episode_complete": "onboarding_fence_epoch"}
+# DERIVED operation names: not present in the §14.6 catalog table, recorded
+# as gap notes with their byom-side justification. `attention_notice_record`
+# is the L25 attention intake — §16.4 states Kovee Attention "may notify the
+# Byom adapter" but §14.6 defines no byom-side catalog operation for it, so
+# the narrow runtime row is derived exactly as `placement_admit` carries the
+# Kovee-owned subordinate saga verbs (gap note G47).
+DERIVED_OPS = frozenset({"attention_notice_record"})
+
 # Named non-callable kernel/server transitions that may appear as a
 # descriptor `via` (§14.8, spec/README.md). `standing_replacement` is the
 # gap-note G12 name for the Standing row's operation-less 'replacement';
@@ -1520,14 +1553,14 @@ class Runner:
             info["rows"] += 1
         reg_ops = set(self.op_class)
         sheet_ops = (set(SLICE_OPS) | set(B03_HOST_INTEGRATION)
-                     | set(B04_RUNTIME))
+                     | set(B04_RUNTIME) | set(B05_SLICE3))
         for op in sorted(sheet_ops - reg_ops):
             self.fail(f"registry: sheet op {op} has no registry row "
                       "(missing surface binding)")
         for op in sorted(reg_ops - sheet_ops):
             self.fail(f"registry: row for {op} is not a B0.1 sheet, B0.3 "
-                      "host-integration, or B0.4 runtime op (extra surface "
-                      "binding)")
+                      "host-integration, B0.4 runtime, or B0.5 "
+                      "acts/onboarding op (extra surface binding)")
         for op in sorted(reg_ops & sheet_ops):
             surfaces = self.op_surfaces[op]
             if op in G35_DUAL:
@@ -1541,7 +1574,7 @@ class Runner:
                 self.fail(f"registry: op {op} must carry exactly one "
                           f"surface row, got {sorted(surfaces)}")
             want_read = (op in SLICE_READS or op in B03_READS
-                         or op in B04_READS)
+                         or op in B04_READS or op in B05_READS)
             if (self.op_class[op] == "read") != want_read:
                 self.fail(f"registry: {op} class {self.op_class[op]!r} "
                           "disagrees with the read set")
@@ -1754,6 +1787,86 @@ class Runner:
                               f"fence members {sorted(missing)} (family "
                               "contract L21: a mutation carrying one fence is "
                               "the committed negative vector)")
+                    continue
+            covered += 1
+        return covered
+
+    def check_slice3_bundle(self) -> int:
+        """B0.5 (B3 slice 3): the §7.4 onboarding-compute rows, the §11.1
+        attention intake and the §12.1 source-field read each publish their
+        closed request/result pair, bind the §14.7 surface, restate the
+        envelope with the right op const and RT-01 meta class, and — on
+        every onboarding mutation — REQUIRE the offer fence. A shape that
+        could omit the fence would let a refused, revoked or expired offer's
+        workload keep acting (§7.4), so the runner refuses to accept it.
+
+        `attention_notice_record` is a DERIVED row (gap note G47), so it is
+        checked against DERIVED_OPS rather than the §14.6 catalog table."""
+        covered = 0
+        for op in B05_SLICE3:
+            if op not in ALL_CATALOG_OPS and op not in DERIVED_OPS:
+                self.fail(f"b0.5: {op} is neither a §14.6 catalog operation "
+                          "nor a recorded DERIVED row")
+                continue
+            base = op.replace("_", "-")
+            want_surface = B05_SURFACES[op]
+            if self.op_surfaces.get(op) != {want_surface}:
+                self.fail(f"b0.5: {op} must bind exactly the {want_surface} "
+                          f"surface, got {sorted(self.op_surfaces.get(op, ()))}")
+                continue
+            reg_req = self.op_req_schema.get(op)
+            if reg_req != f"{base}-request":
+                self.fail(f"b0.5: registry request_schema for {op} is "
+                          f"{reg_req!r}, expected {base}-request")
+                continue
+            request = self.schemas.get(f"{base}-request")
+            result = self.schemas.get(f"{base}-result")
+            if request is None or result is None:
+                self.fail(f"b0.5: op {op} is missing its {base}-request/"
+                          f"{base}-result schema pair")
+                continue
+            op_const = (request.get("properties", {})
+                        .get("op", {}).get("const"))
+            if op_const != op:
+                self.fail(f"b0.5: {base}-request op const is {op_const!r}, "
+                          f"expected {op!r}")
+                continue
+            cls = self.op_class.get(op, "create")
+            if not self._meta_class_ok(op, cls, request, f"{base}-request"):
+                continue
+            fence = B05_FENCE_REQUIRED.get(op)
+            if fence and fence not in set(request.get("required", [])):
+                self.fail(f"b0.5: {base}-request does not REQUIRE {fence} "
+                          "(§7.4: refusal, revocation and expiry advance the "
+                          "onboarding fence and revoke unused authority; a "
+                          "shape that can omit it cannot be committed)")
+                continue
+            # The attention intake carries NO member through which a
+            # notification could author an interest (family contract L25).
+            if op == "attention_notice_record":
+                forbidden = {"wake_intent_ref", "activation_admission_ref",
+                             "resource_allocation_ref", "episode_ref",
+                             "priority", "rank", "score",
+                             "activation_policy_ref"}
+                smuggled = forbidden & set(request.get("properties", {}))
+                if smuggled:
+                    self.fail(
+                        f"b0.5: {base}-request carries {sorted(smuggled)} — a "
+                        "notification must have no member through which it "
+                        "could wake, admit, allocate, or rank (§11.1, family "
+                        "contract L25)")
+                    continue
+                created = (result.get("properties", {}).get("created", {})
+                           .get("properties", {}))
+                if sorted(created) != ["activation_admission", "episode",
+                                       "resource_allocation", "wake_intent"] \
+                        or any(v.get("const") is not False
+                               for v in created.values()):
+                    self.fail(
+                        f"b0.5: {base}-result must pin created."
+                        "{wake_intent,activation_admission,"
+                        "resource_allocation,episode} as constant false "
+                        "(notification is never a wake)")
                     continue
             covered += 1
         return covered
@@ -2944,6 +3057,7 @@ class Runner:
         covered = self.check_bundle()
         host = self.check_host_integration_bundle()
         runtime = self.check_runtime_bundle()
+        slice3 = self.check_slice3_bundle()
         successors = self.check_successor_schemas()
         gw = self.check_governed_work()
         mcp = self.check_mcp_tools()
@@ -2970,6 +3084,10 @@ class Runner:
         print(f"b0.4:     {runtime}/{len(B04_RUNTIME)} runtime/reconciliation "
               "rows (B3 slice 2): §14.7 surface, envelope + RT-01 meta "
               "class, dual fences required on every protected command")
+        print(f"b0.5:     {slice3}/{len(B05_SLICE3)} acts/onboarding/attention "
+              "rows (B3 slice 3): §14.7 surface, envelope + RT-01 meta "
+              "class, offer fence required on every onboarding mutation, "
+              "no wake-authoring member on the attention intake")
         print(f"descriptors: {desc['files']} machines "
               f"({desc['kovee']} kovee-owned), {desc['states']} "
               f"states, {desc['transitions']} transitions — "

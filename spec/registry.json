@@ -1,8 +1,8 @@
 {
   "registry": "byom-bpp-operations",
   "version": "0.1.0",
-  "bundle": "B0.1 + B0.3 (host integration)",
-  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md \u00a714.6 catalog + \u00a714.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md \u00a72.0; dual-surface split per gap note G35 (RT-12); B0.3 host-integration rows R39/R40/R42 per DESIGN.md \u00a716.3 and design/2026-07-25-family-contract.md \u00a72.0 (their result_schema names the FROZEN spec/governed-work/ record, so the wire is the C2 contract itself, never a fork)",
+  "bundle": "B0.1 + B0.3 (host integration) + B0.4 (runtime/reconciliation) + B0.5 (acts, onboarding compute, attention intake)",
+  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md \u00a714.6 catalog + \u00a714.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md \u00a72.0; dual-surface split per gap note G35 (RT-12); B0.3 host-integration rows R39/R40/R42 per DESIGN.md \u00a716.3 and design/2026-07-25-family-contract.md \u00a72.0 (their result_schema names the FROZEN spec/governed-work/ record, so the wire is the C2 contract itself, never a fork); B0.5 rows per DESIGN.md \u00a77.4/\u00a711.1/\u00a712.1/\u00a713.1 and family contract R31/R32/R34/L25 (attention_notice_record is a DERIVED byom-side row - \u00a714.6 lists no attention operation; gap note G47)",
   "description": "Machine-readable (operation,surface) registry for the complete B0.1 bundle: exactly one row per (operation,surface) pair. The four G35 dual-surface operations (mandate_position, act_intent_position, act_intent_finalize, act_intent_cancel) carry exactly two rows each (participant + governance); every other operation exactly one. class read: never mutates, no MutationMeta; class create: mutation with the closed create meta (no expected_revision member); class update: current-head CAS mutation whose closed update meta REQUIRES meta.expected_revision (RT-01). request_schema/result_schema name the committed schema files this registry freezes to - the -v2 names are the immutable G10/G31 successor publications (RT-06). conformance/run.py derives its bundle, meta-class, surface, and MCP checks from these rows and fails on any extra/missing surface binding.",
   "operations": [
     {
@@ -864,6 +864,56 @@
       "bundle": "B0.4",
       "request_schema": "budget-reconcile-request",
       "result_schema": "budget-reconcile-result"
+    },
+    {
+      "operation": "onboarding_compute_permit_consume",
+      "surface": "runtime",
+      "binding": "R32",
+      "family": "runtime",
+      "class": "update",
+      "bundle": "B0.5",
+      "request_schema": "onboarding-compute-permit-consume-request",
+      "result_schema": "onboarding-compute-permit-consume-result"
+    },
+    {
+      "operation": "onboarding_episode_claim",
+      "surface": "runtime",
+      "binding": "R31",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.5",
+      "request_schema": "onboarding-episode-claim-request",
+      "result_schema": "onboarding-episode-claim-result"
+    },
+    {
+      "operation": "onboarding_episode_complete",
+      "surface": "runtime",
+      "binding": "R31",
+      "family": "runtime",
+      "class": "update",
+      "bundle": "B0.5",
+      "request_schema": "onboarding-episode-complete-request",
+      "result_schema": "onboarding-episode-complete-result"
+    },
+    {
+      "operation": "attention_notice_record",
+      "surface": "runtime",
+      "binding": "R30-derived",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.5",
+      "request_schema": "attention-notice-record-request",
+      "result_schema": "attention-notice-record-result"
+    },
+    {
+      "operation": "context_manifest_show",
+      "surface": "projection",
+      "binding": "R4",
+      "family": "knowledge",
+      "class": "read",
+      "bundle": "B0.5",
+      "request_schema": "context-manifest-show-request",
+      "result_schema": "context-manifest-show-result"
     }
   ]
 }

@@ -50,6 +50,12 @@ pub const KIND_MEMBERSHIP_ADMISSION: &str = "membership_admission";
 pub const KIND_MANIFESTATION_ADMISSION: &str = "manifestation_admission";
 pub const KIND_MANDATE_AUTHORITY: &str = "mandate_authority";
 pub const KIND_CHARTER_ADOPTION: &str = "charter_adoption";
+/// The §13.1 act authorization: ONE decision bound to the exact prepared
+/// ActIntent digest, resolved again by `execution_permit_consume`.
+pub const KIND_ACT_AUTHORIZATION: &str = "act_authorization";
+/// The §7.4 onboarding invitation: the Society's invitation/disclosure
+/// authority, NEVER candidate assent.
+pub const KIND_ONBOARDING_INVITATION: &str = "onboarding_invitation";
 
 /// The decision reference derived from the subject it decides.
 pub fn society_decision_ref(society_id: &str) -> String {
@@ -66,6 +72,12 @@ pub fn mandate_decision_ref(mandate_id: &str) -> String {
 }
 pub fn charter_decision_ref(charter_revision_id: &str) -> String {
     format!("dec-charter-{charter_revision_id}")
+}
+pub fn act_decision_ref(intent_id: &str) -> String {
+    format!("dec-act-{intent_id}")
+}
+pub fn onboarding_decision_ref(onboarding_id: &str) -> String {
+    format!("dec-onboarding-{onboarding_id}")
 }
 
 /// The typed refusal when no immutable, current decision resolves.
