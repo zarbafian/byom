@@ -35,7 +35,10 @@ path = "src/main.rs"
 koveed = { path = "../../../../kovee/crates/koveed" }
 kovee-byom = { path = "../../../../kovee/crates/kovee-byom" }
 kovee-core = { path = "../../../../kovee/crates/kovee-core" }
-kovee-effects = { path = "../../../../kovee/crates/kovee-effects" }
+# `testing` for the RecordingTransport double: the stub provider is the ONE
+# thing a scripted run substitutes, and it is sealed behind this feature so a
+# production build cannot select it (disposition D-R3-1).
+kovee-effects = { path = "../../../../kovee/crates/kovee-effects", features = ["testing"] }
 kovee-store = { path = "../../../../kovee/crates/kovee-store" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde_json = "1.0"

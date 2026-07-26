@@ -40,7 +40,7 @@ use kovee_byom::hostint;
 use kovee_byom::records::{KoveeRealmByomBinding, KoveeSocietyMapping};
 use kovee_core::family::DigestRef;
 use kovee_core::problem::Problem;
-use kovee_effects::{HttpsTransport, RecordingTransport, Transport};
+use kovee_effects::{Egress, HttpsTransport, RecordingTransport};
 use kovee_store::Store;
 use koveed::episode::{self, Notice, Runtime};
 use koveed::model_broker::{self, ActAuthorization, CompleteRequest, Fault};
@@ -508,9 +508,13 @@ fn complete(args: &Value) -> Result<Value, Problem> {
         other => fail(&format!("unknown transport {other:?}")),
     };
     let https = HttpsTransport::new();
-    let transport: &dyn Transport = match &recording {
-        Some(double) => double,
-        None => &https,
+    // The wire is SEALED (disposition D-R3-1): `Egress` is the only thing
+    // `complete` accepts, the recording double exists only under
+    // kovee-effects' `testing` feature, and either arm stamps its own profile
+    // on the effect so a receipt cannot claim a provider call it never made.
+    let transport: Egress<'_> = match &recording {
+        Some(double) => Egress::recording(double),
+        None => Egress::live(&https),
     };
     let outcome = model_broker::complete(
         &mut store,
