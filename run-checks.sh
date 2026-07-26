@@ -43,4 +43,8 @@ cargo test --workspace --locked
 echo "== conformance live replay (slice-op request vectors against a spawned byomd)"
 python3 conformance/run.py --live
 
+echo "== i0 society-of-two tracer (scripted flow: byomd + koveed live,"
+echo "   byom-mcp/kovee-mcp driven over scripted MCP stdio, per-source trails)"
+python3 conformance/i0-society-of-two/run.py --scripted
+
 echo "run-checks: OK"
