@@ -150,6 +150,23 @@ belongs to:
     harness's own allowlist and launch argv, the identical tool surface for
     both); the REAL CLI sessions are `--harness claude|codex` under
     I1_REAL_HARNESS=1, which `--all-checks` runs and reports.
+  - **a real harness session is held to its MCP WIRE, not to its prose.**
+    Every session's byom-mcp stdio is relayed by this file
+    (`--_mcp-wire`) and recorded per session, so both harnesses answer to
+    the same evidence — the server's own record of the `tools/call` it was
+    sent and the answer it returned — and a step passes only when that
+    invocation AND byomd's effect event are both there. Neither CLI's
+    stdout is evidence of anything: a codex session once answered
+    `DONE <identifier>` having made no call at all.
+    What the wire cannot say is WHY a model chose what it chose. codex
+    (0.145, gpt-5.6-sol) does not enumerate MCP tools in the model's
+    visible tool surface at all — they are reachable only through its tool
+    search / dynamic-tool object, in every launch configuration tried —
+    so a session can be handed a tool and still not look for it. That is a
+    harness property, not a byom one: byom-mcp advertised all 34
+    participant tools in the same session's `tools/list`. The gate's
+    answer is to say so at that step, from the wire, and to run the step
+    again (bounded, every attempt recorded) rather than believe the model.
 
 Exit codes: 0 green, 1 failure, 2 honest skip (ungated mode).
 """
@@ -877,6 +894,11 @@ def kv(op: str, project: str | None, key: str | None, args: dict) -> dict:
 
 # ---------------------------------------------------------- MCP client ----
 
+# Refused tool calls, counted so each one's problem body gets its own
+# evidence path (raw evidence is never overwritten, R3-I04).
+_MCP_REFUSALS = 0
+
+
 class Mcp:
     """A scripted MCP stdio client driving a real server binary — the
     harness stand-in: the same JSON-RPC frames Claude Code / Codex send.
@@ -931,7 +953,19 @@ class Mcp:
 
     def call_ok(self, name: str, arguments: dict) -> dict:
         text, is_error = self.call(name, arguments)
-        need(not is_error, f"{self.tag}: {name}: {text}")
+        if is_error:
+            # The problem body is in the server's reply and nowhere else, so
+            # a refused call LANDS it — with the frames that led to it —
+            # before the failure propagates. A gate that cannot say why a
+            # call failed costs the next reader an hour.
+            global _MCP_REFUSALS
+            _MCP_REFUSALS += 1
+            self.ev.blob(
+                f"mcp-refusal-{_MCP_REFUSALS:02d}-{name}.json",
+                json.dumps({"server": self.tag, "tool": name,
+                            "arguments": arguments, "problem_body": text,
+                            "frames": self.transcript}, indent=1))
+            raise Fail(f"{self.tag}: {name}: {text}")
         return json.loads(text)
 
     def close(self, frames_name: str | None = None):
@@ -1026,6 +1060,155 @@ def mode_agent_call(run_dir: str, token_file: str) -> int:
         return 1
     print(answer)
     return 0
+
+
+# ------------------------------------------------------- the MCP wire ----
+
+# A harness that swallows a tool error leaves no trace of WHY a governed
+# call was refused. codex prints `mcp: byom/<tool> (failed)` and nothing
+# else — not the problem type, not the kind, not the detail — and the
+# model then narrates a success it never had. Claude Code prints a
+# summary of its own. Neither is the server's answer, and the server's
+# answer is the only place byomd's problem body exists.
+#
+# So the harness does not ask the CLI what happened: it puts THIS FILE
+# between the harness and the server it names, and records the wire.
+
+
+def _die_with_parent():
+    """`PR_SET_PDEATHSIG`: the relayed server dies with the relay.
+
+    byomd binds a participant channel to ONE LIVE process, so a leaked
+    server is not a stray process — it is the channel's holder, and the
+    next session's claim is refused while it lives."""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(
+            1, int(signal.SIGKILL), 0, 0, 0)          # PR_SET_PDEATHSIG
+    except Exception:                                 # pragma: no cover
+        pass
+
+
+def mode_mcp_wire(log_path: str, argv: list) -> int:
+    """The `--_mcp-wire` child: run the MCP server `argv` names and relay
+    its stdio VERBATIM, recording both directions and its stderr.
+
+    Nothing here interprets, rewrites or retries anything: every line the
+    harness sends reaches the server unchanged and every line the server
+    answers reaches the harness unchanged. The log is a JSONL transcript
+    (`{at, dir, frame|raw}`) — the evidence a failed `tools/call` leaves
+    behind, and the record of the tool surface the harness was actually
+    served."""
+    import threading
+    log = open(log_path, "a", buffering=1, encoding="utf-8")
+
+    def record(direction: str, **row):
+        log.write(json.dumps({"at": round(time.time(), 3),
+                              "dir": direction, **row}) + "\n")
+
+    def frame(direction: str, line: bytes):
+        text = line.decode("utf-8", "replace").rstrip("\r\n")
+        try:
+            record(direction, frame=json.loads(text))
+        except ValueError:
+            record(direction, raw=text)
+
+    server = subprocess.Popen(argv, stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,
+                              preexec_fn=_die_with_parent)
+    record("relay", argv=argv, server_pid=server.pid, relay_pid=os.getpid())
+
+    def pump_stdout():
+        for line in server.stdout:
+            sys.stdout.buffer.write(line)
+            sys.stdout.buffer.flush()
+            frame("server->harness", line)
+
+    def pump_stderr():
+        for line in server.stderr:
+            record("server-stderr",
+                   text=line.decode("utf-8", "replace").rstrip("\r\n"))
+
+    pumps = [threading.Thread(target=pump_stdout, daemon=True),
+             threading.Thread(target=pump_stderr, daemon=True)]
+    for pump in pumps:
+        pump.start()
+    try:
+        for line in sys.stdin.buffer:
+            frame("harness->server", line)
+            server.stdin.write(line)
+            server.stdin.flush()
+    except OSError:
+        pass
+    try:
+        server.stdin.close()
+    except OSError:
+        pass
+    try:
+        code = server.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        code = server.wait()
+    for pump in pumps:
+        pump.join(timeout=5)
+    record("relay", server_exit=code)
+    log.close()
+    return code if code and code > 0 else 0
+
+
+def wire_report(log: Path, tool: str) -> dict:
+    """What the session's MCP wire says, read back from the relay log.
+
+    - `served`: the tool names the server ADVERTISED in `tools/list` (the
+      surface question: was the tool the harness allowed even there?);
+    - `invocations`: every `tools/call` for `tool`, each with the server's
+      own answer — the problem body VERBATIM when byomd refused;
+    - `other_calls`: any call for a different tool (the prompt forbids
+      them, so this is a finding, not noise);
+    - `stderr`: the server's own stderr lines."""
+    rows = []
+    if log.exists():
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    pass
+    served: list = []
+    calls: list = []
+    pending: dict = {}
+    stderr: list = []
+    for row in rows:
+        if row.get("dir") == "server-stderr":
+            stderr.append(row.get("text", ""))
+            continue
+        body = row.get("frame") or {}
+        params = body.get("params") or {}
+        if body.get("method") == "tools/call":
+            pending[json.dumps(body.get("id"))] = {
+                "name": params.get("name"),
+                "arguments": params.get("arguments")}
+            continue
+        if body.get("method") is not None or "id" not in body:
+            continue
+        key = json.dumps(body.get("id"))
+        result = body.get("result") or {}
+        if "tools" in result:
+            served = [t.get("name") for t in result["tools"]]
+        call = pending.pop(key, None)
+        if call is None:
+            continue
+        content = result.get("content") or []
+        answer = content[0].get("text", "") if content else ""
+        call["failed"] = bool(result.get("isError")) or "error" in body
+        call["answer"] = answer or json.dumps(body.get("error") or result)
+        calls.append(call)
+    return {"served": served,
+            "invocations": [c for c in calls if c["name"] == tool],
+            "other_calls": [c for c in calls if c["name"] != tool],
+            "stderr": stderr,
+            "frames": len(rows)}
 
 
 # ----------------------------------------------------- the kovee driver ----
@@ -4106,6 +4289,14 @@ def mode_real_model() -> int:
 
 
 def harness_prompt(tool: str, args: dict) -> str:
+    """The one instruction a session gets. It names where the tool IS, not
+    only what to call: codex (0.145, gpt-5.6-sol) does not enumerate MCP
+    tools in the model's visible surface — they are reachable only through
+    its tool search / dynamic-tool object — and a session that took its
+    visible surface for the whole surface answered "that tool is not
+    available" and did nothing, which is exactly how the real-codex path
+    failed. Claude Code inlines MCP tools, so the sentence is a no-op
+    there."""
     return "\n".join([
         "You are the agent participant of a byom Society. The MCP tools "
         "you have been given are your only surface onto it.",
@@ -4116,9 +4307,32 @@ def harness_prompt(tool: str, args: dict) -> str:
         "",
         json.dumps(args, indent=2),
         "",
+        f"`{tool}` is served by the MCP server `byom`, which is attached "
+        "to this session. If it is not listed in your visible tool "
+        "surface, that surface is not the whole surface: your harness may "
+        "defer MCP tools behind a tool search or expose them on a dynamic "
+        "tools object. Find it there and call it. Never report a byom tool "
+        "as unavailable without having searched for it, and never claim a "
+        "result you did not receive from the tool itself.",
+        "",
         "When it returns, reply with the word DONE followed by the "
         "identifiers it returned.",
     ])
+
+
+def harness_wire_spec(spec: dict, logs: dict) -> dict:
+    """The SAME servers, with `--_mcp-wire` relaying each one's stdio.
+
+    The relay execs exactly the command below with exactly its arguments
+    and environment, and passes every byte through untouched — the server
+    the harness speaks to is the real binary, and the log is the proof of
+    what it was asked and what it answered. Without it a failed call is
+    `mcp: byom/<tool> (failed)` and nothing more."""
+    return {name: {**server, "command": sys.executable,
+                   "args": [str(HERE / "run.py"), "--_mcp-wire",
+                            str(logs[name]), server["command"],
+                            *server.get("args", [])]}
+            for name, server in spec.items()}
 
 
 def harness_server_spec(byom: ByomDaemon, society: str) -> dict:
@@ -4166,12 +4380,66 @@ def harness_launch(which: str, cli: str, prompt: str, server: dict,
             *overrides, prompt]
 
 
+# The event byomd commits for each tool the harness drives. It is what
+# makes a session's claim CHECKABLE: the step passed only if this event is
+# in byomd's ledger AFTER the session and was not there before.
+HARNESS_EFFECT = {
+    "byom_mandate_prepare": "mandate.prepared",
+    "byom_activity_open": "activity.opened",
+    "byom_wake_intent_submit": "wake-intent.submitted",
+    "byom_pledge_propose": "pledge.proposed",
+    "byom_pledge_position": "pledge.position_recorded",
+    "byom_pledge_finalize": "pledge.committed",
+    "byom_act_intent_prepare": "act-intent.prepared",
+    "byom_delivery_submit": "delivery.submitted",
+}
+
+
+def process_group(pgid: int) -> list:
+    """Every live process in one process group, named — read from /proc.
+
+    A harness session runs in its own session/group, so whatever is still
+    there when the CLI exits is what the CLI leaked; and since byomd binds
+    a participant channel to ONE LIVE process, a leaked MCP server is the
+    next session's refusal."""
+    members = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            fields = (entry / "stat").read_text(
+                encoding="utf-8").rsplit(")", 1)[-1].split()
+            if int(fields[2]) != pgid:
+                continue
+            members.append({
+                "pid": int(entry.name), "state": fields[0],
+                "cmdline": (entry / "cmdline").read_bytes()
+                .decode("utf-8", "replace").replace("\0", " ").strip()})
+        except (OSError, IndexError, ValueError):
+            continue
+    return members
+
+
 class HarnessAgent:
     """The agent seat, driven by a REAL harness session per step.
 
     `one(tool, args)` runs one session and then RECOVERS the reply from
     byomd's own store and event ledger — the same members the scripted MCP
-    reply would have carried, read from the daemon that committed them."""
+    reply would have carried, read from the daemon that committed them.
+
+    A session's own words are never the pass signal. Two things must be
+    true of every step: the session's MCP wire shows the tool INVOKED, and
+    byomd's ledger holds the effect it commits, minted after the session
+    started. A model that narrates `DONE <identifier>` having made no call
+    at all — which is exactly how the codex path failed — fails its own
+    step, at that step, with the wire to show for it."""
+
+    # A session that made no call — or sent arguments it rewrote — proved
+    # nothing about byom: it did not ask this step's question. That is worth
+    # asking again (bounded, and every attempt is its own recorded session).
+    # A refusal of the EXACT call is never retried: byom answered the
+    # governed question, and its answer is the finding.
+    ATTEMPTS = 3
 
     def __init__(self, which: str, cli_path: str, byom: ByomDaemon,
                  society: str, ev: Evidence, workdir: Path, genesis: str):
@@ -4187,27 +4455,98 @@ class HarnessAgent:
     def server(self) -> dict:
         return harness_server_spec(self.byom, self.society)
 
-    def session(self, tool: str, args: dict):
+    def session(self, tool: str, args: dict) -> dict:
+        """One real CLI session, and everything it can be held to: the
+        server's own transcript, the tool surface it was served, and what
+        the CLI leaked behind it."""
         self.sessions += 1
         n = self.sessions
+        stem = f"session-{n:02d}-{tool}"
         prompt = harness_prompt(tool, args)
         allowed = f"mcp__byom__{tool}"
+        spec = self.server()
+        logs = {name: self.ev.reserve(f"{stem}.{name}-wire.jsonl")
+                for name in spec}
         argv = harness_launch(
-            self.which, self.cli, prompt, self.server(), allowed,
-            self.ev.path(f"session-{n:02d}-{tool}.mcp.json"))
+            self.which, self.cli, prompt, harness_wire_spec(spec, logs),
+            allowed, self.ev.path(f"{stem}.mcp.json"))
         started = time.time()
-        session = subprocess.run(argv, capture_output=True, text=True,
-                                 stdin=subprocess.DEVNULL,
-                                 cwd=str(self.workdir), timeout=900)
-        self.ev.blob(f"session-{n:02d}-{tool}.txt",
-                     f"$ {' '.join(argv[:2])} ...\n--- exit "
-                     f"{session.returncode} after "
-                     f"{time.time() - started:.1f}s\n--- allowed tools\n"
-                     f"{allowed}\n--- stdout\n{session.stdout}\n"
-                     f"--- stderr\n{session.stderr}")
-        need(session.returncode == 0,
+        # Its own session, so the group is exactly this CLI and its
+        # descendants: the harness can then END what the CLI left running
+        # instead of hoping it exited — byom's channel has ONE live holder.
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True,
+                                cwd=str(self.workdir), start_new_session=True)
+        timed_out = False
+        try:
+            stdout, stderr = proc.communicate(timeout=900)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            os.killpg(proc.pid, signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+        leaked = self.release_group(proc.pid)
+        wire = wire_report(logs["byom"], tool)
+        wire["stdout"] = stdout
+        self.ev.blob(f"{stem}.txt", "\n".join([
+            f"$ {' '.join(argv[:2])} ...",
+            f"--- exit {proc.returncode} after {time.time() - started:.1f}s",
+            "--- allowed tools", allowed,
+            "--- mcp server (relayed verbatim by --_mcp-wire; wire log "
+            f"{stem}.byom-wire.jsonl)",
+            json.dumps(spec, indent=1),
+            "--- byom mcp wire",
+            json.dumps({"frames": wire["frames"],
+                        "tools_served": len(wire["served"]),
+                        f"{tool}_served": tool in wire["served"],
+                        "invocations": wire["invocations"],
+                        "other_calls": wire["other_calls"],
+                        "server_stderr": wire["stderr"]}, indent=1),
+            "--- processes the CLI left running (ended by the harness)",
+            json.dumps(leaked, indent=1),
+            f"--- stdout\n{stdout}",
+            f"--- stderr\n{stderr}"]))
+        need(not timed_out,
+             f"{self.which} session {n:02d} ({tool}) never returned")
+        need(proc.returncode == 0,
              f"{self.which} session {n:02d} ({tool}) failed "
-             f"({session.returncode}): {session.stderr[-600:]}")
+             f"({proc.returncode}): {stderr[-600:]}")
+        # The surface question, answered from the SERVER's own reply and
+        # not from the model's account of it.
+        need(wire["served"],
+             f"{self.which} session {n:02d}: the byom MCP server was never "
+             f"asked for its tools (wire {stem}.byom-wire.jsonl): "
+             f"{wire['stderr'][-3:]}")
+        need(tool in wire["served"],
+             f"{self.which} session {n:02d}: byom-mcp did not advertise "
+             f"{tool}, which the harness allowed — served "
+             f"{len(wire['served'])} tools: {sorted(wire['served'])}")
+        need(not wire["other_calls"],
+             f"{self.which} session {n:02d} called tools the prompt did "
+             f"not name: {[c['name'] for c in wire['other_calls']]}")
+        return wire
+
+    def release_group(self, pgid: int) -> list:
+        """End whatever the CLI session left behind, and say what it was.
+
+        The CLI exiting is not the same as its MCP servers exiting, and a
+        surviving byom-mcp still HOLDS the agent's participant channel
+        (byomd refuses a second live claimant, `channel.rs`), so the next
+        session would be refused for a reason no evidence would name."""
+        leaked = [p for p in process_group(pgid) if p["pid"] != pgid]
+        if not leaked:
+            return []
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, PermissionError):
+                break
+            deadline = time.time() + 5
+            while time.time() < deadline and process_group(pgid):
+                time.sleep(0.02)
+            if not process_group(pgid):
+                break
+        return leaked
 
     # The ONE agent call the harness cannot supply the result of.
     # `episode_request` publishes byom's stage-3 allocation pin only in its
@@ -4234,8 +4573,63 @@ class HarnessAgent:
                                             "reply is never evidence",
                                      "reply": reply}, indent=1))
             return reply
-        self.session(tool, args)
-        return self.recover(tool, args)
+        need(tool in HARNESS_EFFECT,
+             f"no byom event is pinned for {tool}, so a session driving it "
+             f"could not be held to anything")
+        kind = HARNESS_EFFECT[tool]
+        idle: list = []
+        for _ in range(self.ATTEMPTS):
+            since = len(timeline(self.byom, self.genesis))
+            wire = self.session(tool, args)
+            stem = f"session-{self.sessions:02d}-{tool}"
+            # "Every argument is fixed by this driver" is a CLAIM until the
+            # wire is compared with what the driver fixed. A session that
+            # reformatted, shortened or invented a member did not drive this
+            # step, whatever byom then answered.
+            exact = [c for c in wire["invocations"] if c["arguments"] == args]
+            altered = [c for c in wire["invocations"]
+                       if c["arguments"] != args]
+            landed = self.since(kind, since)
+            if landed:
+                need(exact,
+                     f"{self.which} session {self.sessions:02d}: byomd holds "
+                     f"a new {kind} event, but no invocation on this "
+                     f"session's wire carried the arguments this driver "
+                     f"fixed — the effect is not this step's. Sent: "
+                     f"{json.dumps([c['arguments'] for c in altered])[:600]} "
+                     f"({stem}.byom-wire.jsonl)")
+                need(not altered,
+                     f"{self.which} session {self.sessions:02d} also called "
+                     f"{tool} with arguments it changed: "
+                     f"{json.dumps([c['arguments'] for c in altered])[:600]}")
+                self.mark = since
+                return self.recover(tool, args)
+            if exact:
+                # byom was asked the exact governed question and refused it.
+                # Its answer IS the finding: never retried, quoted verbatim
+                # from the server's own reply.
+                raise Fail(
+                    f"{self.which} session {self.sessions:02d} called {tool} "
+                    f"with the exact arguments this driver fixed and byom "
+                    f"REFUSED it — byomd committed no {kind}. The server's "
+                    f"answer, verbatim: {exact[-1]['answer'][:900]} (full "
+                    f"wire: {stem}.byom-wire.jsonl)")
+            # Either no call at all, or a call the model rewrote: in both
+            # cases the session did not perform the step, and its words are
+            # not evidence of anything however confident they sound. Worth
+            # one more session — bounded, and every attempt is recorded.
+            idle.append({
+                "session": self.sessions,
+                "invocations": len(wire["invocations"]),
+                "altered_arguments": [c["arguments"] for c in altered],
+                "server_answer": [c["answer"][:300] for c in altered],
+                "said": (wire["stdout"] or "").strip()[:300]})
+        raise Fail(
+            f"{self.ATTEMPTS} {self.which} sessions failed to drive {tool} "
+            f"and byomd committed no {kind}: byom-mcp advertised the tool in "
+            f"every one of them and the driver's arguments were in every "
+            f"prompt, so the sessions either made no call or rewrote it "
+            f"before sending. Per session: {json.dumps(idle)[:1500]}")
 
     def open(self) -> "HarnessAgent":
         return self
@@ -4248,10 +4642,18 @@ class HarnessAgent:
 
     # -- recovery: byomd's own records, never the session's words --------
 
+    # Where the current step's session began in byomd's ledger. Recovery
+    # reads only what was minted after it, so a step can never be passed by
+    # an event some EARLIER session (or the scenario itself) committed.
+    mark = 0
+
+    def since(self, kind: str, mark: int) -> list:
+        return [e for i, e in enumerate(timeline(self.byom, self.genesis))
+                if e["kind"] == kind and i >= mark]
+
     def last(self, kind: str) -> dict:
-        rows = [e for e in timeline(self.byom, self.genesis)
-                if e["kind"] == kind]
-        need(rows, f"byomd's ledger holds no {kind} event")
+        rows = self.since(kind, self.mark)
+        need(rows, f"byomd's ledger holds no {kind} event from this session")
         return rows[-1]
 
     def recover(self, tool: str, args: dict) -> dict:
@@ -4268,10 +4670,11 @@ class HarnessAgent:
                     s["seat_ref"] for s in
                     json.loads(row["required_seat_refs"])]}}
         if tool == "byom_activity_open":
-            opened = self.last("activity.opened")
+            stream = self.last("activity.opened")["object_ref"]
             return {"result": {
-                "activity_stream_id": opened["object_ref"],
-                "state": "ready"}}
+                "activity_stream_id": stream,
+                "state": byom.row("SELECT state FROM activity_streams"
+                                  " WHERE activity_stream_id = ?", stream)}}
         if tool == "byom_wake_intent_submit":
             wake = self.last("wake-intent.submitted")["object_ref"]
             return {"result": {"wake_intent_id": wake,
@@ -4291,7 +4694,43 @@ class HarnessAgent:
                                     "seat_refs": [s["seat_ref"]]}
                                    for s in slots]}}
         if tool == "byom_pledge_position":
-            return {"result": {"state": "recorded"}}
+            # This step used to return a CONSTANT: `{"state": "recorded"}`,
+            # asserted against nothing. A codex session that made no call at
+            # all therefore passed it, and the flow only broke three steps
+            # later, at a finalize byom was right to refuse (the pledgor seat
+            # held no assent). The Position byomd actually recorded is the
+            # only thing that can pass this step.
+            recorded = self.last("pledge.position_recorded")
+            need(recorded["object_ref"] == args["proposal_ref"],
+                 f"the new pledge position is on {recorded['object_ref']}, "
+                 f"not the proposal this step positions "
+                 f"({args['proposal_ref']})")
+            # The seat HEAD is what byom itself reads to decide whether the
+            # required seat set assented (`all_seats_assent`), so it is what
+            # this step must be held to — and the head's own revision row
+            # says who authored it.
+            heads = byom.rows(
+                "SELECT position_ref, value, status FROM position_seat_heads"
+                " WHERE proposal_kind = 'pledge' AND proposal_ref = ?"
+                " AND seat_ref = ?",
+                (args["proposal_ref"], args["seat_ref"]))
+            need(heads,
+                 f"byomd holds no seat head for {args['seat_ref']} on "
+                 f"{args['proposal_ref']}: the seat is unfilled")
+            head = heads[0]
+            row = byom.rows("SELECT participant_ref, proposal_revision,"
+                            " assent_mode FROM position_revisions"
+                            " WHERE position_id = ?",
+                            (head["position_ref"],))[0]
+            need(head["status"] == "active"
+                 and head["value"] == args["value"]
+                 and row["participant_ref"] == AGENT,
+                 f"byomd recorded no active {args['value']} by {AGENT} for "
+                 f"seat {args['seat_ref']}: {head} {row}")
+            return {"result": {"position_id": head["position_ref"],
+                               "state": "recorded",
+                               "assent_mode": row["assent_mode"],
+                               "revision": row["proposal_revision"]}}
         if tool == "byom_pledge_finalize":
             return {"result": {
                 "pledge_id": self.last("pledge.committed")["object_ref"]}}
@@ -4525,6 +4964,17 @@ def mode_harness(which: str) -> int:
                 "versus --scripted; every identifier above was recovered "
                 "from byomd's OWN store and ledger",
                 harness=which, sessions=ctx["agent"].sessions)
+        ev.step("what passed each step, per session: the tool INVOCATION "
+                "on the byom MCP wire (recorded by the relay, server-side, "
+                "identically for both harnesses — not the CLI's prose) AND "
+                "byomd's own effect event, minted after that session "
+                "started. A session's `DONE …` line is never the signal: a "
+                "session that makes no call fails its own step, and a call "
+                "byom refuses fails it with the problem body",
+                sessions=ctx["agent"].sessions,
+                per_session_evidence=["session-NN-<tool>.txt",
+                                      "session-NN-<tool>.byom-wire.jsonl"],
+                effect_events=sorted(set(HARNESS_EFFECT.values())))
         print(f"{test_id}: PASS ({ctx['agent'].sessions} real {which} "
               f"sessions, {ev.n} steps; evidence "
               f"{ev.dir.relative_to(REPO)})")
@@ -5114,6 +5564,8 @@ def main(argv: list) -> int:
             return mode_all_checks()
         if len(args) == 3 and args[0] == "--_agent-call":
             return mode_agent_call(args[1], args[2])
+        if len(args) >= 3 and args[0] == "--_mcp-wire":
+            return mode_mcp_wire(args[1], args[2:])
     except Fail as e:
         print(f"FAIL  {e}")
         return 1
