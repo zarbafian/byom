@@ -212,7 +212,6 @@ struct FinalEvent {
     correlation_ref: String,
     payload: Value,
     payload_digest: Value,
-    payload_secret: String,
     visibility_scope_ref: String,
     occurred_at: String,
 }
@@ -351,15 +350,25 @@ impl Store {
                 witness::WITNESS_PROFILE
             ),
         )?;
-        tx.commit()?;
         // The first terminal checkpoint: from now on a missing one is a
         // seal condition, never a fresh store.
         self.write_checkpoint()?;
+        tx.commit()?;
         Ok(())
     }
 
-    /// Records the current audit/erasure chain heads as a terminal
-    /// checkpoint beside the witness (BY-J3).
+    /// Records the audit/erasure chain heads THIS OPEN TRANSACTION will
+    /// leave, as a terminal checkpoint beside the witness (BY-J3).
+    ///
+    /// Called INSIDE every audit-appending transaction, immediately
+    /// before its commit. That ordering is what makes the ledgers
+    /// completely covered: a committed database is always EXACTLY at
+    /// some checkpoint, so there is no "tail beyond the checkpoint" for
+    /// an adversary to rewrite — a re-chained append is detected because
+    /// the chain is longer than the checkpoint pins, not merely because
+    /// its interior hashes broke. The one window it opens (checkpoint
+    /// appended, commit lost) is the single PROVISIONAL checkpoint the
+    /// startup comparison is allowed to skip.
     fn write_checkpoint(&self) -> Result<(), StoreError> {
         let (audit_seq, audit_hash) = audit::head_of(&self.conn, audit::AUDIT)?;
         let (erasure_seq, erasure_hash) = audit::head_of(&self.conn, audit::ERASURE)?;
@@ -415,6 +424,11 @@ impl Store {
             "endpoint.sealed_diagnostic",
             reason,
         )?;
+        // The seal record is checkpointed like every other append, so a
+        // sealed endpoint's ledger stays completely covered. Best effort:
+        // the reason for sealing is often that the ledger no longer
+        // verifies, and a failure to checkpoint must never stop the seal.
+        let _ = self.write_checkpoint();
         tx.commit()?;
         Ok(())
     }
@@ -508,13 +522,20 @@ impl Store {
     /// Mints a `local_erasure_safe` digest over an object under a FRESH
     /// RANDOM per-object secret (D-R1-2), retained wrapped under the
     /// Society key so the object stays verifiable until ITS secret is
-    /// destroyed; returns (digest, secret_hex).
+    /// destroyed.
+    ///
+    /// The secret is NOT returned (BY-D2): the only retained copy is the
+    /// wrapped `object_secrets` row, so `destroy_object_secret` really
+    /// destroys it. Handing the raw bytes back is how they ended up
+    /// copied into `societies.preparation` and pending payloads, where
+    /// destruction never reached them. Re-derive through
+    /// `verify_object_digest` instead.
     pub fn mint_object_digest(
         &self,
         key_ref: &str,
         tag: &str,
         object: &Value,
-    ) -> Result<(DigestRef, String), StoreError> {
+    ) -> Result<DigestRef, StoreError> {
         let society_id = object_secrets::society_of(key_ref);
         let secret = object_secrets::mint(
             &self.conn,
@@ -525,10 +546,7 @@ impl Store {
         )?;
         let preimage = tagged_canonical(tag, object)?;
         let mac = hmac_sha256(&secret, &preimage);
-        Ok((
-            DigestRef::local_erasure_safe(key_ref, hex(&mac)),
-            hex(&secret),
-        ))
+        Ok(DigestRef::local_erasure_safe(key_ref, hex(&mac)))
     }
 
     /// A `local_erasure_safe` record digest under a RANDOM per-object
@@ -562,8 +580,19 @@ impl Store {
     /// Destroys exactly ONE object's secret: that object stops being
     /// verifiable, every other object keeps its own secret. The
     /// destruction is appended to the erasure journal, whose head the
-    /// next terminal checkpoint pins.
+    /// terminal checkpoint pins.
+    ///
+    /// BY-D2: destruction is COMPLETE. Zeroing the wrapped row while a
+    /// raw copy of the same bytes sits in another column erases nothing
+    /// — the confirmation found the secret still readable from
+    /// `societies.preparation`, pending payloads and `events`. So the
+    /// secret is unwrapped once, every TEXT/BLOB column of every table is
+    /// swept for those bytes, and the database file and its WAL are
+    /// rewritten so no free page keeps them.
     pub fn destroy_object_secret(&self, key_ref: &str, now: i64) -> Result<bool, StoreError> {
+        let society_id = object_secrets::society_of(key_ref);
+        let secret =
+            object_secrets::load(&self.conn, &self.society_wrap_key(&society_id)?, key_ref)?;
         let tx = self.conn.unchecked_transaction()?;
         let changed = tx.execute(
             "UPDATE object_secrets SET wrapped = '', state = 'destroyed', destroyed_at = ?2
@@ -574,10 +603,26 @@ impl Store {
             tx.rollback()?;
             return Ok(false);
         }
+        let swept = match &secret {
+            Some(secret) => scrub_everywhere(&tx, &hex(secret))?,
+            None => 0,
+        };
         audit::append_to(&tx, audit::ERASURE, now, "object-secret.destroyed", key_ref)?;
-        audit::append(&tx, now, "erasure.object_secret_destroyed", key_ref)?;
-        tx.commit()?;
+        audit::append(
+            &tx,
+            now,
+            "erasure.object_secret_destroyed",
+            &format!("{key_ref}; raw copies scrubbed: {swept}"),
+        )?;
         self.write_checkpoint()?;
+        tx.commit()?;
+        // The rows are gone; now the FILE must not keep them. A
+        // checkpoint folds the WAL into the database and truncates it, a
+        // VACUUM rewrites the database without its free pages, and a
+        // second checkpoint truncates the WAL the VACUUM itself wrote.
+        self.conn.execute_batch(
+            "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
+        )?;
         Ok(true)
     }
 
@@ -629,14 +674,25 @@ impl Store {
 
     /// The request digest covered by the idempotency record: the body
     /// minus the volatile meta members (`request_id`,
-    /// `causation_event_ref`, `correlation_ref`) — reusing a key with a
-    /// changed covered value is `idempotency_mismatch`.
+    /// `causation_event_ref`, `correlation_ref`) and minus the DERIVED
+    /// CAS token (`expected_revision`) — reusing a key with a changed
+    /// covered value is `idempotency_mismatch`.
+    ///
+    /// MCP-1: `expected_revision` is a precondition, not an argument.
+    /// A client that recomputes it from observable state — every MCP
+    /// bridge does — necessarily reads a DIFFERENT value after the first
+    /// attempt committed, so covering it turned the retry of an
+    /// ambiguous (committed but unanswered) call into
+    /// `idempotency_mismatch`: the one case the retained receipt exists
+    /// for. The CAS itself is still enforced, per operation, against the
+    /// live revision; it just no longer changes what the logical call IS.
     pub fn request_digest(body: &Value) -> Result<String, StoreError> {
         let mut projected = body.clone();
         if let Some(meta) = projected.get_mut("meta").and_then(Value::as_object_mut) {
             meta.remove("request_id");
             meta.remove("causation_event_ref");
             meta.remove("correlation_ref");
+            meta.remove("expected_revision");
         }
         let bytes = match &projected {
             Value::Object(_) => tagged_canonical("bpp-request-idempotency-v0", &projected)?,
@@ -902,7 +958,6 @@ impl Store {
                 correlation_ref: event.correlation_ref.clone(),
                 payload: event.payload.clone(),
                 payload_digest: serde_json::to_value(&digest)?,
-                payload_secret: hex(&secret),
                 visibility_scope_ref: event.visibility_scope_ref.clone(),
                 occurred_at: occurred_at.clone(),
             });
@@ -956,6 +1011,7 @@ impl Store {
             [txn_id],
         )?;
         audit::append(&tx, now, "authority-journal.abandoned", txn_id)?;
+        self.write_checkpoint()?;
         tx.commit()?;
         Ok(())
     }
@@ -1001,7 +1057,26 @@ impl Store {
                 "transaction {txn_id} already finalized"
             )));
         }
-        let payload: PendingPayload = serde_json::from_str(&payload_text)?;
+        // BY-J2: the transition digest is RECOMPUTED from the stored
+        // payload — never read out of the digest column beside it. The
+        // witness committed to `sha256(jcs(payload))`, so a payload that
+        // no longer hashes to the witnessed value is exactly the state
+        // finalize must refuse: comparing a stored column to the witness
+        // proves only that two copies of a number agree, and would then
+        // apply UNCHECKED effects, events and outbox rows.
+        let payload_value: Value = serde_json::from_str(&payload_text)?;
+        let recomputed = sha256_hex(&jcs(&payload_value)?);
+        if recomputed != entry.transition_digest || recomputed != stored_transition {
+            tx.rollback()?;
+            let reason = format!(
+                "pending payload of {txn_id} hashes to {recomputed}, not the witnessed \
+                 transition digest {}",
+                entry.transition_digest
+            );
+            self.seal(&reason)?;
+            return Err(StoreError::Corrupt(reason));
+        }
+        let payload: PendingPayload = serde_json::from_value(payload_value)?;
         // The exact reply bytes, recomputed from the witnessed
         // transition — not re-derived from live state.
         let bytes = payload.result_bytes()?;
@@ -1057,7 +1132,12 @@ impl Store {
                     event.correlation_ref,
                     event.payload.to_string(),
                     serde_json::to_string(&event.payload_digest)?,
-                    event.payload_secret,
+                    // BY-D2: the ONLY retained copy of a per-event
+                    // secret is its wrapped `object_secrets` row, so
+                    // destroying that row destroys the secret. A raw
+                    // copy here made every "destroyed" event secret
+                    // still readable.
+                    "",
                     event.visibility_scope_ref,
                     event.occurred_at,
                 ],
@@ -1141,16 +1221,20 @@ impl Store {
             ),
         )?;
 
+        // The terminal checkpoint pins the audit and erasure heads this
+        // transition leaves behind, written INSIDE the transaction so
+        // the committed ledger is always exactly at a checkpoint (BY-J3).
+        self.write_checkpoint()?;
+
         if hooks.abort_before_finalize {
             // Crash inside finalize before commit: witnessed entry with
             // an unfinalized pending row — recovered by the exact
-            // receipt at startup, finalized once.
+            // receipt at startup, finalized once. The checkpoint this
+            // transaction appended is the single PROVISIONAL one the
+            // startup comparison may skip.
             std::process::abort();
         }
         tx.commit()?;
-        // The terminal checkpoint pins the audit and erasure heads this
-        // transition left behind (BY-J3).
-        self.write_checkpoint()?;
         Ok(bytes)
     }
 
@@ -1181,6 +1265,14 @@ impl Store {
                 "local journal mirror {mirror} ahead of witness head {}",
                 entries.len()
             ))?;
+            return Ok(());
+        }
+        // §15.3: the complete audit and erasure chains are verified and
+        // bound to a terminal checkpoint BEFORE anything is recovered and
+        // before any non-diagnostic surface opens (BY-J3). Verified here,
+        // not at the end, so recovery's own appends cannot mask a tail an
+        // adversary wrote.
+        if !self.verify_chains_against_checkpoints()? {
             return Ok(());
         }
         for entry in &entries {
@@ -1254,8 +1346,8 @@ impl Store {
                     }
                     let tx = self.conn.unchecked_transaction()?;
                     audit::append(&tx, now, "authority-journal.recovered", &txn_id)?;
-                    tx.commit()?;
                     self.write_checkpoint()?;
+                    tx.commit()?;
                 }
                 None => {
                     // Proven no entry: abandoned, never guessed.
@@ -1264,69 +1356,118 @@ impl Store {
             }
         }
 
-        // The local mirror must name the exact witness head entry, not
-        // just its generation number.
+        // The local mirror must name the exact witness head entry — the
+        // generation AND the entry digest. After recovery every
+        // witnessed transition is finalized, so a mirror short of the
+        // head is a database that lost committed authority state.
         let head_digest = entries
             .last()
             .map(|e| e.entry_digest.clone())
             .unwrap_or_default();
         let mirror_gen = self.mirror_gen()?;
-        if mirror_gen == entries.len() as u64 && self.mirror_digest()? != head_digest {
+        if mirror_gen != entries.len() as u64 {
+            self.seal(&format!(
+                "after recovery the local journal mirror is at generation {mirror_gen}, \
+                 not the witness head {}",
+                entries.len()
+            ))?;
+            return Ok(());
+        }
+        if self.mirror_digest()? != head_digest {
             self.seal("local journal mirror names a different head entry than the witness")?;
             return Ok(());
         }
-
-        // §15.3: the complete audit and erasure chains are verified and
-        // compared against the terminal checkpoints BEFORE any
-        // non-diagnostic surface opens (BY-J3).
-        self.verify_chains_against_checkpoints()
+        Ok(())
     }
 
-    /// Verifies both hash-chained ledgers completely and compares them
-    /// with the last terminal checkpoint. Seals on missing, older,
-    /// conflicting or unreadable state.
-    fn verify_chains_against_checkpoints(&self) -> Result<(), StoreError> {
-        let latest = match self.checkpoints.latest(&self.witness) {
-            Ok(latest) => latest,
+    /// Verifies both hash-chained ledgers completely and binds them to a
+    /// terminal checkpoint. Returns `false` when it sealed.
+    ///
+    /// BY-J3. Two things the first fix left open:
+    ///
+    /// 1. **The tail beyond the checkpoint was unchecked.** The audit
+    ///    chain is unkeyed SHA-256, so anything appended after the
+    ///    checkpointed sequence could be rewritten and RE-CHAINED, and
+    ///    both the internal chain check and the "matches at the pinned
+    ///    sequence" check still passed. Now a checkpoint is appended
+    ///    inside every audit-appending transaction, so a committed
+    ///    database sits EXACTLY at a checkpoint: the comparison is
+    ///    equality, and any extra record — however well re-chained — is
+    ///    a chain the endpoint never witnessed.
+    /// 2. **`journal_generation` was recorded and never read.** The
+    ///    checkpoint now has to name the generation the mirror is at, so
+    ///    a truncated/rolled-back checkpoint file (an older but genuinely
+    ///    signed record) no longer certifies a newer journal.
+    ///
+    /// Exactly ONE checkpoint may be skipped: the latest, when its
+    /// transaction never committed (the checkpoint is appended just
+    /// before the commit). Anything further back is a rollback.
+    fn verify_chains_against_checkpoints(&self) -> Result<bool, StoreError> {
+        let records = match self.checkpoints.records(&self.witness) {
+            Ok(records) => records,
             Err(e) => {
                 self.seal(&format!("terminal checkpoints unreadable: {e}"))?;
-                return Ok(());
+                return Ok(false);
             }
         };
-        let Some(latest) = latest else {
+        if records.is_empty() {
             self.seal("no terminal audit/erasure checkpoint beside the witness")?;
-            return Ok(());
-        };
-        for (table, head) in [
-            (audit::AUDIT, &latest.audit),
-            (audit::ERASURE, &latest.erasure),
-        ] {
-            let (count, _) = match audit::head_of(&self.conn, table) {
-                Ok(head) => head,
+            return Ok(false);
+        }
+        let mut heads = Vec::new();
+        for table in [audit::AUDIT, audit::ERASURE] {
+            match audit::head_of(&self.conn, table) {
+                Ok((count, hash)) => heads.push((count, hex(&hash))),
                 Err(e) => {
                     self.seal(&format!("{table} chain does not verify: {e}"))?;
-                    return Ok(());
-                }
-            };
-            if count < head.seq {
-                self.seal(&format!(
-                    "{table} chain is at {count} records, behind the witnessed checkpoint {}",
-                    head.seq
-                ))?;
-                return Ok(());
-            }
-            if head.seq > 0 {
-                let at = audit::hash_at(&self.conn, table, head.seq)?;
-                if at.map(|h| hex(&h)).as_deref() != Some(head.hash_hex.as_str()) {
-                    self.seal(&format!(
-                        "{table} chain conflicts with the witnessed checkpoint at record {}",
-                        head.seq
-                    ))?;
-                    return Ok(());
+                    return Ok(false);
                 }
             }
         }
-        Ok(())
+        let mirror = self.mirror_gen()?;
+        let matches = |c: &checkpoint::Checkpoint| {
+            c.journal_generation == mirror
+                && heads[0] == (c.audit.seq, c.audit.hash_hex.clone())
+                && heads[1] == (c.erasure.seq, c.erasure.hash_hex.clone())
+        };
+        // A LOST COMMIT is the only reason the database may sit one
+        // checkpoint back: the skipped record must then be strictly
+        // ahead of the database in both ledgers and name this generation
+        // or its immediate successor. Anything else — an older
+        // checkpoint reinstated, a generation the endpoint never reached
+        // — is not a crash window.
+        let provisional = |c: &checkpoint::Checkpoint| {
+            c.audit.seq >= heads[0].0
+                && c.erasure.seq >= heads[1].0
+                && (c.journal_generation == mirror || c.journal_generation == mirror + 1)
+        };
+        let last = records.len() - 1;
+        if matches(&records[last])
+            || (provisional(&records[last]) && last > 0 && matches(&records[last - 1]))
+        {
+            return Ok(true);
+        }
+        let latest = records.last().map(|c| {
+            format!(
+                "checkpoint {} pins audit {}/{} erasure {}/{} at generation {}",
+                c.sequence,
+                c.audit.seq,
+                &c.audit.hash_hex[..c.audit.hash_hex.len().min(12)],
+                c.erasure.seq,
+                &c.erasure.hash_hex[..c.erasure.hash_hex.len().min(12)],
+                c.journal_generation
+            )
+        });
+        self.seal(&format!(
+            "audit/erasure ledgers do not match any terminal checkpoint: database holds \
+             audit {}/{} erasure {}/{} at journal generation {mirror}; {}",
+            heads[0].0,
+            &heads[0].1[..heads[0].1.len().min(12)],
+            heads[1].0,
+            &heads[1].1[..heads[1].1.len().min(12)],
+            latest.unwrap_or_default()
+        ))?;
+        Ok(false)
     }
 
     // ------------------------------------------------------- cursors ----
@@ -1546,6 +1687,58 @@ fn verify_receipt(
         return fail("signed under a foreign witness key");
     }
     Ok(())
+}
+
+/// Removes one secret's hex bytes from EVERY text-bearing column of
+/// EVERY table (BY-D2), returning how many values it rewrote.
+///
+/// The sweep is deliberately blind to meaning. If a raw copy ever
+/// reappeared inside an unfinalized `authority_pending.payload`, the
+/// sweep would change that payload and its recomputed transition digest
+/// would no longer match the witness — finalize would then SEAL rather
+/// than commit, which is the right way round: erasure wins, and the
+/// endpoint says so instead of quietly diverging.
+///
+/// Enumerating the columns from `sqlite_master`/`table_info` rather than
+/// naming them is the point: the confirmation found the secret in three
+/// columns the fix had not thought of, and a hand-written list would
+/// silently miss the fourth. Case-insensitive, since hex is written both
+/// ways across the codebase.
+fn scrub_everywhere(conn: &Connection, secret_hex: &str) -> Result<usize, StoreError> {
+    let tables: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table'
+               AND name NOT LIKE 'sqlite_%'",
+        )?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut swept = 0usize;
+    for table in tables {
+        let columns: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+            let rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for (column, kind) in columns {
+            let kind = kind.to_ascii_uppercase();
+            if !(kind.contains("TEXT") || kind.contains("BLOB") || kind.is_empty() || kind == "ANY")
+            {
+                continue;
+            }
+            swept += conn.execute(
+                &format!(
+                    "UPDATE \"{table}\" SET \"{column}\" =
+                         replace(replace(CAST(\"{column}\" AS TEXT), ?1, ''), ?2, '')
+                     WHERE instr(CAST(\"{column}\" AS TEXT), ?1) > 0
+                        OR instr(CAST(\"{column}\" AS TEXT), ?2) > 0"
+                ),
+                params![secret_hex, secret_hex.to_ascii_uppercase()],
+            )?;
+        }
+    }
+    Ok(swept)
 }
 
 pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], StoreError> {

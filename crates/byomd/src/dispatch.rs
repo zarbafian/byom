@@ -155,6 +155,26 @@ impl Daemon {
                 }
             }
         };
+        // A CHANNEL CLAIM occupies the whole connection: the client
+        // sends `bpb1.<channel_id>` and nothing else, and byomd answers
+        // with the proof key bound to THIS connection's peer (BY-C1).
+        // Transport-level, like the preamble itself — not a registry
+        // operation.
+        if matches!(
+            surface,
+            SocketSurface::Candidate | SocketSurface::Participant
+        ) {
+            if let Some(channel_id) = token
+                .as_deref()
+                .and_then(|t| t.trim().strip_prefix(crate::channel::CLAIM_PREFIX))
+            {
+                let reply = self.claim_channel(channel_id, peer);
+                let mut stream = stream;
+                stream.write_all(&reply)?;
+                stream.write_all(b"\n")?;
+                return Ok(());
+            }
+        }
         if line.is_empty() {
             // Read at most one byte past the cap so an oversized request
             // is detected, not buffered.
@@ -167,6 +187,26 @@ impl Daemon {
         stream.write_all(&reply)?;
         stream.write_all(b"\n")?;
         Ok(())
+    }
+
+    /// Answers one channel claim: the peer-bound proof key, or a
+    /// non-enumerating refusal (a closed/unknown channel and a channel
+    /// another LIVE process holds are indistinguishable).
+    fn claim_channel(&self, channel_id: &str, peer: Peer) -> Vec<u8> {
+        let outcome = self.lock_store().and_then(|store| {
+            if store.sealed() {
+                return Err(state::endpoint_sealed());
+            }
+            crate::channel::claim_for_peer(&store, channel_id, peer, unix_now())
+        });
+        match outcome {
+            Ok(key) => serde_json::to_vec(&serde_json::json!({
+                "outcome": "ok",
+                "result": {"proof_key": bpp_core::canonical::hex(&key)},
+            }))
+            .unwrap_or_default(),
+            Err(problem) => problem_bytes(problem),
+        }
     }
 
     /// One request line to one reply line (no trailing newline).

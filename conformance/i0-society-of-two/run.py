@@ -32,8 +32,9 @@ Who speaks on which channel (the attribution the trails verify):
     operator's uid (actor `governance:sovereign`);
   - candidate ops (membership_accept): the byom-mcp CANDIDATE profile
     as a subprocess, the offer's channel credential via
-    BYOM_CANDIDATE_TOKEN_FILE — a sender-constrained proof key, not a
-    bearer token: every call carries a fresh proof bound to the
+    BYOM_CANDIDATE_TOKEN_FILE — a keyless channel binding, not a
+    bearer token: the holder claims a peer-bound proof key over the
+    socket and every call carries a fresh proof bound to the
     connecting process (actor `candidate:<channel>`); the channel
     closes at admission;
   - agent participant ops (mandate_prepare, activity_open,
@@ -169,24 +170,30 @@ class Evidence:
 
 # ----------------------------------------------- channel proofs (BY-C1) ----
 
-# The candidate/participant credential is NOT a bearer token any more.
-# What byomd mints in `<data-dir>/channels/*.token` is
+# The candidate/participant credential is NOT a bearer token, and since
+# the R1 confirmation it carries NO KEY MATERIAL AT ALL. What byomd mints
+# in `<data-dir>/channels/*.token` is only the public binding
 #
 #     bpk1.<hex JSON {channel_id, audience, scope_ref, binding_ref,
-#                     fence_epoch, key}>
+#                     fence_epoch}>
 #
-# and what a client presents on every call is a FRESH per-call proof
+# so a copy of that file mints nothing. A client CLAIMS its channel once
+# over the surface socket
+#
+#     bpb1.<channel_id>            -> {"outcome":"ok",
+#                                      "result":{"proof_key":"<hex>"}}
+#
+# and byomd answers with a proof key bound to THAT connection's
+# kernel-observed peer, refusing any other live process. Every call then
+# carries a FRESH per-call proof
 #
 #     bpx1.<channel_id>.<nonce>.<issued_at>.<mac>
 #
-# MAC'd under the channel proof key over the exact (audience, channel,
+# MAC'd under that peer-bound key over the exact (audience, channel,
 # scope, operation, binding, fence, PEER pid + kernel start time, nonce,
 # issued_at) — crates/byomd/src/channel.rs. This is the client half of
 # that construction, ported so the scenario's direct-socket calls speak
-# exactly what byom-mcp and byom-cli speak. Because the preimage commits
-# to the CONNECTING process, a proof minted here would not verify from
-# any other process, and a proof for one operation does not authorize
-# another.
+# exactly what byom-mcp and byom-cli speak.
 
 CHANNEL_PROOF_TAG = "bpp-channel-proof-v0"
 
@@ -223,14 +230,15 @@ def parse_credential(line: str) -> dict:
     return json.loads(bytes.fromhex(body[len("bpk1."):]))
 
 
-def mint_proof(credential_line: str, operation: str) -> str:
-    """One sender-constrained proof for exactly this call."""
+def mint_proof(credential_line: str, key: bytes, operation: str) -> str:
+    """One sender-constrained proof for exactly this call, under the
+    peer-bound key this process claimed."""
     cred = parse_credential(credential_line)
     nonce = os.urandom(16).hex()
     issued_at = int(time.time())
     pid = os.getpid()
     mac = hmac.new(
-        bytes.fromhex(cred["key"]),
+        key,
         tagged_canonical(CHANNEL_PROOF_TAG, {
             "audience": cred["audience"],
             "channel_id": cred["channel_id"],
@@ -282,6 +290,9 @@ class ByomDaemon:
         self.data_dir = Path(tempfile.mkdtemp(prefix=f"i0-byom-{tag}-data-"))
         self.run_dir = Path(tempfile.mkdtemp(prefix=f"i0-byom-{tag}-run-"))
         self.proc = None
+        # Peer-bound proof keys this process claimed, per credential
+        # (BY-C1): claimed once, kept across daemon restarts.
+        self._claimed: dict[str, bytes] = {}
         self.start(env)
 
     def start(self, env: dict | None = None):
@@ -336,11 +347,34 @@ class ByomDaemon:
     def read_token(self, name: str) -> str:
         return self.token_file(name).read_text(encoding="utf-8").strip()
 
+    def claim(self, name: str) -> bytes:
+        """This PROCESS's peer-bound proof key for one channel: claimed
+        once over the surface socket and kept (BY-C1). The credential
+        file carries no key material, so there is nothing else to hold.
+        """
+        credential = self.read_token(name)
+        cached = self._claimed.get(credential)
+        if cached is not None:
+            return cached
+        cred = parse_credential(credential)
+        surface = ("candidate" if cred["audience"] == "candidate"
+                   else "participant")
+        raw = _unix_call(self.run_dir / f"{surface}.sock",
+                         f"bpb1.{cred['channel_id']}", None)
+        need(raw is not None, f"channel claim got no reply for {name}")
+        reply = json.loads(raw)
+        need(reply.get("outcome") == "ok",
+             f"channel claim refused for {name}: {raw}")
+        key = bytes.fromhex(reply["result"]["proof_key"])
+        self._claimed[credential] = key
+        return key
+
     def proof(self, name: str, operation: str) -> str:
-        """A fresh channel proof for one call, minted from the current
-        credential file (re-read every time: a restart or a fence
-        advance rewrites it)."""
-        return mint_proof(self.read_token(name), operation)
+        """A fresh channel proof for one call, minted under this
+        process's claimed key from the current credential file (re-read
+        every time: a restart or a fence advance rewrites it)."""
+        credential = self.read_token(name)
+        return mint_proof(credential, self.claim(name), operation)
 
     def store_row(self, table: str, key_col: str, key: str) -> dict:
         """One row of byomd's OWN database, opened read-only beside the

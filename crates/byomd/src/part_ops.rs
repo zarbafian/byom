@@ -441,7 +441,7 @@ fn mandate_row_and_result(
     now: i64,
 ) -> Result<(Map<String, Value>, Value, Vec<Seat>), Problem> {
     let subject = mandate_subject(&minted.mandate_id, &scope_fields);
-    let (subject_digest, _secret) = store
+    let subject_digest = store
         .mint_object_digest(
             &format!(
                 "society-key:{}/object:{}",

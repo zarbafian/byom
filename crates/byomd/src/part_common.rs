@@ -163,7 +163,7 @@ pub fn prepare_trace(
     now: i64,
 ) -> Result<Value, Problem> {
     let trace_id = mint(store, "trace")?;
-    let (input_digest, _secret) = store
+    let input_digest = store
         .mint_object_digest(
             &format!("society-key:{society_id}/object:{trace_id}-input"),
             "bpp-preparation-input-v0",
@@ -182,7 +182,7 @@ pub fn prepare_trace(
         "dependency_set_ref": dependency_set_ref,
         "created_at": rfc3339_utc(now),
     });
-    let (trace_digest, _secret) = store
+    let trace_digest = store
         .mint_object_digest(
             &format!("society-key:{society_id}/object:{trace_id}"),
             "bpp-preparation-trace-v0",

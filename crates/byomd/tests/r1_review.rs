@@ -269,7 +269,127 @@ fn a_recovered_transaction_reproduces_every_byte() {
         )
         .unwrap();
     assert_eq!(seq, 1);
-    assert!(!occurred_at.is_empty() && secret.len() == 64);
+    assert!(!occurred_at.is_empty());
+    // BY-D2: the event row keeps NO raw copy of its secret — the one
+    // retained copy is the wrapped object_secrets row.
+    assert!(secret.is_empty(), "no raw event secret is persisted");
+    let wrapped: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM object_secrets WHERE tag = 'bpp-event-payload-v0'
+               AND state = 'live'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(wrapped >= 1, "the event secret is retained WRAPPED");
+}
+
+/// THE CONFIRMATION'S OWN PROBE: tamper the stored pending PAYLOAD and
+/// leave the `transition_digest` COLUMN intact. The R1 fix compared that
+/// column against the witness — two copies of the same number — and then
+/// applied the payload's effects, events and outbox unchecked. Finalize
+/// must recompute the digest FROM the payload, refuse, and seal.
+#[test]
+fn a_tampered_pending_payload_is_refused_even_with_an_intact_digest_column() {
+    let mut daemon = TestDaemon::start_with_env(
+        "r1-j2-tamper",
+        &[("BYOMD_ABORT", "after_witness:society_prepare")],
+    );
+    let incarnation = daemon.incarnation();
+    let prepare = json!({
+        "version": "0.2", "op": "society_prepare",
+        "meta": meta(&incarnation, "j2-tamper", None),
+        "home_authority_ref": "auth-home-1",
+        "proposed_charter_ref": "charter-draft-1",
+        "proposed_charter_digest": test_digest(0xa1),
+        "classification_binding_ref": "class-bind-1",
+        "classification_binding_digest": test_digest(0xa2),
+    });
+    // Crash between the witness receipt and SQL finalize: a durable
+    // witnessed entry plus an unfinalized pending row.
+    daemon.call_expect_death("governance", &prepare);
+
+    // The adversary edits the payload the recovery will apply — an EXTRA
+    // event smuggled into the witnessed transition — and touches nothing
+    // else: the digest column still holds the witnessed value.
+    let (txn_id, before): (String, String) = {
+        let conn = db(&daemon);
+        conn.query_row(
+            "SELECT transaction_id, transition_digest FROM authority_pending
+             WHERE state = 'prepared'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    };
+    {
+        let conn = db(&daemon);
+        let payload: String = conn
+            .query_row(
+                "SELECT payload FROM authority_pending WHERE transaction_id = ?1",
+                [&txn_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut payload: Value = serde_json::from_str(&payload).unwrap();
+        let mut smuggled = payload["events"][0].clone();
+        smuggled["event_id"] = json!("evt-smuggled");
+        smuggled["sequence"] = json!(99);
+        payload["events"].as_array_mut().unwrap().push(smuggled);
+        conn.execute(
+            "UPDATE authority_pending SET payload = ?2 WHERE transaction_id = ?1",
+            rusqlite::params![txn_id, payload.to_string()],
+        )
+        .unwrap();
+        // The digest COLUMN is untouched — that is the whole point.
+        let after: String = conn
+            .query_row(
+                "SELECT transition_digest FROM authority_pending WHERE transaction_id = ?1",
+                [&txn_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(after, before, "the stored digest column is intact");
+    }
+
+    daemon.restart(&[]);
+    // The endpoint refused: sealed, nothing applied.
+    let reply = daemon.call(
+        "projection",
+        &json!({"version": "0.2", "op": "society_show", "society_id": "soc-anything"}),
+    );
+    assert_eq!(
+        kind_of(&reply),
+        "endpoint_sealed",
+        "a payload that no longer hashes to the witnessed digest must seal: {reply}"
+    );
+    let conn = db(&daemon);
+    let events: i64 = conn
+        .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(events, 0, "no event of the tampered transition was applied");
+    let societies: i64 = conn
+        .query_row("SELECT COUNT(*) FROM societies", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        societies, 0,
+        "no effect of the tampered transition was applied"
+    );
+    let retained: i64 = conn
+        .query_row("SELECT COUNT(*) FROM idempotency_records", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(retained, 0, "no receipt was retained");
+    let state: String = conn
+        .query_row(
+            "SELECT state FROM authority_pending WHERE transaction_id = ?1",
+            [&txn_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_ne!(
+        state, "finalized",
+        "the tampered transition never finalized"
+    );
 }
 
 // --------------------------------------------------------------- BY-J3 ----
@@ -312,6 +432,130 @@ fn an_interior_audit_alteration_seals_at_startup() {
     assert_eq!(hello["outcome"], "ok", "{hello}");
 }
 
+/// THE CONFIRMATION'S OWN PROBE (a): a VALID, genuinely signed, OLDER
+/// checkpoint plus a tampered TAIL beyond it. The adversary appends a
+/// correctly re-chained audit record, so every interior hash still
+/// verifies and the checkpointed prefix still matches — the R1 fix
+/// accepted exactly this. Startup must seal.
+#[test]
+fn a_correctly_rechained_tail_beyond_the_checkpoint_seals() {
+    let mut daemon = TestDaemon::start("r1-j3-tail");
+    let (_sid, _cursor, _inc) = bootstrap_society(&daemon, "j3t");
+    daemon.stop();
+    let checkpoints_before =
+        std::fs::read_to_string(daemon.data_dir.join("authority-checkpoints.jsonl")).unwrap();
+    {
+        let conn = db(&daemon);
+        let (seq, prev): (i64, Vec<u8>) = conn
+            .query_row(
+                "SELECT seq, hash FROM audit ORDER BY seq DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        // A record the endpoint never wrote, chained EXACTLY as the
+        // verifier expects.
+        let seq = seq + 1;
+        let ts = 1_700_000_000i64;
+        let event = "endpoint.bootstrapped";
+        let detail = "forged: the adversary's own record";
+        let hash = audit_record_hash(seq, ts, event, detail, &prev);
+        conn.execute(
+            "INSERT INTO audit (seq, ts, event, detail, prev_hash, hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![seq, ts, event, detail, prev, hash],
+        )
+        .unwrap();
+    }
+    // The checkpoint file is UNTOUCHED: an older, valid, signed record.
+    assert_eq!(
+        std::fs::read_to_string(daemon.data_dir.join("authority-checkpoints.jsonl")).unwrap(),
+        checkpoints_before
+    );
+    daemon.restart(&[]);
+    let reply = daemon.call(
+        "projection",
+        &json!({"version": "0.2", "op": "society_show", "society_id": "soc-anything"}),
+    );
+    assert_eq!(
+        kind_of(&reply),
+        "endpoint_sealed",
+        "a re-chained tail beyond the checkpoint must seal: {reply}"
+    );
+}
+
+/// THE CONFIRMATION'S OWN PROBE (b): a checkpoint whose
+/// `journal_generation` disagrees with the witness/mirror head. It is
+/// appended through the real `Checkpoints` API under the real witness
+/// key, so it chains and signs perfectly — only the generation it claims
+/// is wrong. The R1 fix recorded that member and never read it.
+#[test]
+fn a_checkpoint_generation_that_disagrees_with_the_witness_head_seals() {
+    let mut daemon = TestDaemon::start("r1-j3-gen");
+    let (_sid, _cursor, _inc) = bootstrap_society(&daemon, "j3g");
+    daemon.stop();
+    {
+        let witness =
+            byom_store::witness::Witness::open(&daemon.data_dir.join("authority-witness.jsonl"))
+                .unwrap();
+        let head = witness.head().unwrap();
+        let checkpoints = byom_store::checkpoint::Checkpoints::open(
+            &daemon.data_dir.join("authority-checkpoints.jsonl"),
+        )
+        .unwrap();
+        let conn = db(&daemon);
+        // The exact current chain heads — the ledgers themselves are
+        // completely untouched.
+        let (audit_seq, audit_hash) =
+            byom_store::audit::head_of(&conn, byom_store::audit::AUDIT).unwrap();
+        let (erasure_seq, erasure_hash) =
+            byom_store::audit::head_of(&conn, byom_store::audit::ERASURE).unwrap();
+        checkpoints
+            .append(
+                &witness,
+                head + 7,
+                byom_store::checkpoint::ChainHead {
+                    seq: audit_seq,
+                    hash_hex: bpp_core::canonical::hex(&audit_hash),
+                },
+                byom_store::checkpoint::ChainHead {
+                    seq: erasure_seq,
+                    hash_hex: bpp_core::canonical::hex(&erasure_hash),
+                },
+            )
+            .unwrap();
+    }
+    daemon.restart(&[]);
+    let reply = daemon.call(
+        "projection",
+        &json!({"version": "0.2", "op": "society_show", "society_id": "soc-anything"}),
+    );
+    assert_eq!(
+        kind_of(&reply),
+        "endpoint_sealed",
+        "a checkpoint naming another journal generation must seal: {reply}"
+    );
+}
+
+/// The audit chain's record hash, recomputed independently here (the
+/// adversary's side of the tail probe): the verifier's exact
+/// construction over `(seq, ts, event, detail, prev)`.
+fn audit_record_hash(seq: i64, ts: i64, event: &str, detail: &str, prev: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&seq.to_be_bytes());
+    bytes.extend_from_slice(&ts.to_be_bytes());
+    bytes.extend_from_slice(&(event.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(event.as_bytes());
+    bytes.extend_from_slice(&(detail.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(detail.as_bytes());
+    bytes.extend_from_slice(prev);
+    let hex = bpp_core::canonical::sha256_hex(&bytes);
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
+}
+
 /// A rolled-back audit chain (fewer records than the witnessed
 /// checkpoint) seals too.
 #[test]
@@ -337,60 +581,99 @@ fn an_audit_chain_behind_its_checkpoint_seals() {
 
 // --------------------------------------------------------------- BY-C1 ----
 
-/// The candidate credential is a sender-constrained proof, not a bearer
-/// token: a proof copied out of one process fails in another same-UID
-/// process, and a proof minted for one operation does not authorize a
-/// different one.
+/// THE CONFIRMATION'S OWN PROBE: copy the credential file, hand it to a
+/// GENUINELY SEPARATE PROCESS, and let that process mint its own proof
+/// for its own pid. The R1 fix failed exactly here — the file exported
+/// the raw HMAC key, so the copier's proof verified and the pid binding
+/// was decoration. The copier must now be refused at the claim, refused
+/// with a proof minted under the holder's own leaked key, and the
+/// legitimate process must still work.
 #[test]
-fn a_copied_proof_fails_from_another_same_uid_process() {
+fn a_copied_credential_file_mints_nothing_in_a_separate_process() {
     let daemon = TestDaemon::start("r1-c1");
     let (_sid, _cursor, incarnation) = bootstrap_society(&daemon, "c1");
     let (offer_id, credential, subject) =
         make_offer(&daemon, &incarnation, "c1", "part-agent-1", &far_future());
 
+    // 0. The FILE itself carries no key material any more.
+    let body = credential.strip_prefix("bpk1.").expect("credential shape");
+    let bytes: Vec<u8> = (0..body.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&body[i..i + 2], 16).unwrap())
+        .collect();
+    let public: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        public.get("key").is_none(),
+        "the credential file must export no key: {public}"
+    );
+
+    // 1. This process is the legitimate holder: it claims the channel
+    //    and byomd issues a key bound to THIS pid/start.
+    let held = daemon.claim(&credential);
+
+    // 2. The adversary copies the file byte for byte to its own path and
+    //    a SEPARATE PROCESS reads the copy. It is also handed the
+    //    holder's issued key — a leak strictly stronger than a file copy.
+    let copy = daemon.data_dir.join("stolen-candidate.token");
+    std::fs::copy(
+        daemon
+            .data_dir
+            .join("channels")
+            .join(format!("candidate-{offer_id}.token")),
+        &copy,
+    )
+    .unwrap();
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "by_c1_copier_child_process",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("BYOM_C1_CREDENTIAL_COPY", &copy)
+        .env("BYOM_C1_RUN_DIR", &daemon.run_dir)
+        .env("BYOM_C1_LEAKED_KEY", bpp_core::canonical::hex(&held))
+        .env("BYOM_C1_HOLDER_PID", std::process::id().to_string())
+        .env("BYOM_C1_OFFER", &offer_id)
+        .env("BYOM_C1_INCARNATION", &incarnation)
+        .env("BYOM_C1_SUBJECT", subject.to_string())
+        .output()
+        .expect("spawn the copier process");
+    let stdout = String::from_utf8_lossy(&child.stdout).into_owned();
+    assert!(
+        child.status.success(),
+        "the copier process must be refused everywhere:\n{stdout}\n{}",
+        String::from_utf8_lossy(&child.stderr)
+    );
+    // The child REALLY ran: a filter that matched nothing also exits 0,
+    // and a probe that never ran proves nothing.
+    assert!(
+        stdout.contains("1 passed"),
+        "the copier probe did not execute: {stdout}"
+    );
+    // Nothing the copier did committed.
+    {
+        let conn = db(&daemon);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE kind = 'membership.accepted'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "the copier committed nothing");
+    }
+
+    // 3. The legitimate holder still works.
     let accept = json!({
         "version": "0.2", "op": "membership_accept",
         "meta": meta(&incarnation, "c1-accept", Some(1)),
         "offer_ref": offer_id,
         "subject_digest": subject,
     });
-    // A proof minted by ANOTHER process (a different pid/start time):
-    // this is exactly "a copied token from another same-UID process".
-    let foreign = byomd::channel::mint_proof(
-        &credential,
-        "membership_accept",
-        byomd::channel::Peer {
-            pid: std::process::id() as i32 + 1,
-            process_start: 1,
-        },
-        bpp_core::time::unix_now(),
-    )
-    .unwrap();
-    let stolen = daemon
-        .call_raw("candidate", Some(&foreign), &accept.to_string())
-        .unwrap();
-    assert_eq!(
-        kind_of(&stolen),
-        "forbidden",
-        "a proof bound to another process must not verify here: {stolen}"
-    );
-
-    // A proof for a DIFFERENT operation does not authorize this one.
-    let wrong_op = byomd::channel::mint_proof(
-        &credential,
-        "membership_refuse",
-        byomd::channel::Peer::current(),
-        bpp_core::time::unix_now(),
-    )
-    .unwrap();
-    let crossed = daemon
-        .call_raw("candidate", Some(&wrong_op), &accept.to_string())
-        .unwrap();
-    assert_eq!(kind_of(&crossed), "forbidden", "{crossed}");
-
-    // A proof is spent once: replaying the very same line is refused.
     let mine = byomd::channel::mint_proof(
         &credential,
+        &held,
         "membership_accept",
         byomd::channel::Peer::current(),
         bpp_core::time::unix_now(),
@@ -400,6 +683,8 @@ fn a_copied_proof_fails_from_another_same_uid_process() {
         .call_raw("candidate", Some(&mine), &accept.to_string())
         .unwrap();
     assert_eq!(first["outcome"], "ok", "{first}");
+
+    // A proof is spent once: replaying the very same line is refused.
     let replayed = daemon
         .call_raw("candidate", Some(&mine), &accept.to_string())
         .unwrap();
@@ -408,6 +693,20 @@ fn a_copied_proof_fails_from_another_same_uid_process() {
         "forbidden",
         "a spent proof nonce must not verify twice: {replayed}"
     );
+
+    // A proof for a DIFFERENT operation does not authorize this one.
+    let wrong_op = byomd::channel::mint_proof(
+        &credential,
+        &held,
+        "membership_refuse",
+        byomd::channel::Peer::current(),
+        bpp_core::time::unix_now(),
+    )
+    .unwrap();
+    let crossed = daemon
+        .call_raw("candidate", Some(&wrong_op), &accept.to_string())
+        .unwrap();
+    assert_eq!(kind_of(&crossed), "forbidden", "{crossed}");
 
     // The store keeps a VERIFIER, never a reusable credential.
     let conn = db(&daemon);
@@ -425,6 +724,104 @@ fn a_copied_proof_fails_from_another_same_uid_process() {
         !ops.contains(&"mandate_prepare".to_owned()),
         "the credential authorizes an EXACT operation set"
     );
+}
+
+/// The copier half of the BY-C1 probe: a REAL separate process (this
+/// test binary re-executed) that reads the copied credential file and
+/// tries, with its own pid, everything a thief can try. `#[ignore]` so
+/// only the probe above runs it.
+#[test]
+#[ignore]
+fn by_c1_copier_child_process() {
+    let Ok(copy) = std::env::var("BYOM_C1_CREDENTIAL_COPY") else {
+        return; // not the probe's child
+    };
+    let run_dir = std::path::PathBuf::from(std::env::var("BYOM_C1_RUN_DIR").unwrap());
+    let credential = std::fs::read_to_string(&copy).unwrap().trim().to_owned();
+    let offer_id = std::env::var("BYOM_C1_OFFER").unwrap();
+    let incarnation = std::env::var("BYOM_C1_INCARNATION").unwrap();
+    let subject: Value = serde_json::from_str(&std::env::var("BYOM_C1_SUBJECT").unwrap()).unwrap();
+
+    // (a) Claim with the copy: the channel is held by a LIVE process.
+    let claimed = byomd::channel::claim(&run_dir, &credential);
+    assert!(
+        claimed.is_err(),
+        "a copier must not be issued a proof key while the holder lives"
+    );
+
+    // (b) Mint with the holder's LEAKED key but this process's own pid —
+    //     the exact attack the reviewed build accepted.
+    let leaked = std::env::var("BYOM_C1_LEAKED_KEY").unwrap();
+    let mut key = [0u8; 32];
+    for (i, slot) in key.iter_mut().enumerate() {
+        *slot = u8::from_str_radix(&leaked[i * 2..i * 2 + 2], 16).unwrap();
+    }
+    let accept = json!({
+        "version": "0.2", "op": "membership_accept",
+        "meta": {
+            "request_id": "req-c1-child",
+            "idempotency_key": "idem-c1-child",
+            "expected_endpoint_incarnation": incarnation,
+            "expected_recovery_epoch": 0,
+            "expected_revision": 1,
+        },
+        "offer_ref": offer_id,
+        "subject_digest": subject,
+    })
+    .to_string();
+    let proof = byomd::channel::mint_proof(
+        &credential,
+        &key,
+        "membership_accept",
+        byomd::channel::Peer::current(),
+        bpp_core::time::unix_now(),
+    )
+    .unwrap();
+    let reply = child_call(&run_dir, "candidate", &proof, &accept);
+    assert_eq!(
+        reply["problem"]["kind"].as_str(),
+        Some("forbidden"),
+        "a leaked key must not mint in another process: {reply}"
+    );
+
+    // (c) And with the holder's pid claimed in the proof — byomd uses
+    //     the peer it OBSERVES, never the one the proof names.
+    let holder_pid: i32 = std::env::var("BYOM_C1_HOLDER_PID")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| std::os::unix::process::parent_id() as i32);
+    let spoof = byomd::channel::mint_proof(
+        &credential,
+        &key,
+        "membership_accept",
+        byomd::channel::Peer {
+            pid: holder_pid,
+            process_start: byomd::channel::process_start(holder_pid),
+        },
+        bpp_core::time::unix_now(),
+    )
+    .unwrap();
+    let reply = child_call(&run_dir, "candidate", &spoof, &accept);
+    assert_eq!(
+        reply["problem"]["kind"].as_str(),
+        Some("forbidden"),
+        "a proof naming the holder's pid must not verify from here: {reply}"
+    );
+}
+
+/// One raw request over a surface socket, from the child process.
+fn child_call(run_dir: &std::path::Path, surface: &str, preamble: &str, line: &str) -> Value {
+    use std::io::{BufRead as _, Write as _};
+    let mut stream =
+        std::os::unix::net::UnixStream::connect(run_dir.join(format!("{surface}.sock"))).unwrap();
+    stream
+        .write_all(format!("{preamble}\n{line}\n").as_bytes())
+        .unwrap();
+    let mut reply = String::new();
+    std::io::BufReader::new(stream)
+        .read_line(&mut reply)
+        .unwrap();
+    serde_json::from_str(reply.trim_end()).unwrap()
 }
 
 // --------------------------------------------------------------- BY-C2 ----
@@ -830,6 +1227,198 @@ fn destroying_one_object_secret_leaves_the_others_verifiable() {
             .unwrap();
         assert_eq!(n, 1);
     });
+}
+
+/// THE CONFIRMATION'S OWN PROBE: destroy ONE object's secret, then scan
+/// EVERY table and EVERY column of the database — plus the raw database,
+/// WAL and shm FILES — for those bytes. The R1 fix zeroed the wrapped
+/// row and left raw copies in `societies.preparation`,
+/// `authority_pending.payload` and `events.payload_secret`, so the
+/// "destroyed" secret was still readable and its digest reproducible.
+#[test]
+fn a_destroyed_secret_survives_nowhere_in_the_database_or_its_wal() {
+    let daemon = TestDaemon::start("r1-d2-scan");
+    let (society_id, _cursor, _inc) = bootstrap_society(&daemon, "d2x");
+    // Some events, so a per-event secret exists alongside the
+    // bootstrap-subject one.
+    let (_offer_id, _credential, _subject) = make_offer(
+        &daemon,
+        &daemon.incarnation(),
+        "d2x",
+        "part-agent-1",
+        &far_future(),
+    );
+
+    daemon.stop_and_take(|data_dir| {
+        let store = byom_store::Store::open(data_dir).unwrap();
+        let wrap = store.society_wrap_key(&society_id).unwrap();
+        // Every live object secret and its RAW value, unwrapped exactly
+        // as the store does — the confirmation's method: never grep for
+        // a plaintext, always re-derive the material that reproduces it.
+        let secrets: Vec<(String, String)> = {
+            let mut stmt = store
+                .conn()
+                .prepare(
+                    "SELECT key_ref, tag FROM object_secrets WHERE state = 'live' ORDER BY key_ref",
+                )
+                .unwrap();
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        let _ = &wrap;
+        let raw = |key_ref: &str| -> [u8; 32] {
+            // Each key ref names its own Society scope: unwrap under
+            // that scope's key, never a borrowed one.
+            let scope = byom_store::object_secrets::society_of(key_ref);
+            let wrap = store.society_wrap_key(&scope).unwrap();
+            byom_store::object_secrets::load(store.conn(), &wrap, key_ref)
+                .unwrap()
+                .unwrap_or_else(|| panic!("no live secret for {key_ref}"))
+        };
+        let victim = secrets
+            .iter()
+            .find(|(k, _)| k.contains("/object:bootstrap-subject"))
+            .expect("the bootstrap subject secret")
+            .0
+            .clone();
+        let survivor = secrets
+            .iter()
+            .find(|(k, t)| *k != victim && t == "bpp-preparation-input-v0")
+            .expect("another object")
+            .0
+            .clone();
+        let victim_secret = raw(&victim);
+        let survivor_secret = raw(&survivor);
+        assert_ne!(victim_secret, survivor_secret);
+
+        // Before: the victim is verifiable and its wrapped row is on
+        // disk. The survivor's wrapped row is the scan's SENSITIVITY
+        // CONTROL — if the sweep below cannot find that, it proves
+        // nothing about not finding the victim's.
+        assert!(store
+            .verify_object_digest(&victim, "bpp-bootstrap-subject-v0", &json!({}))
+            .unwrap()
+            .is_some());
+        let wrapped_of = |key_ref: &str| -> String {
+            store
+                .conn()
+                .query_row(
+                    "SELECT wrapped FROM object_secrets WHERE key_ref = ?1",
+                    [key_ref],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap()
+        };
+        let victim_wrapped = wrapped_of(&victim);
+        let survivor_wrapped = wrapped_of(&survivor);
+
+        assert!(store
+            .destroy_object_secret(&victim, bpp_core::time::unix_now())
+            .unwrap());
+
+        // 1. No column of any table holds those bytes — the whole DB is
+        //    enumerated, not a list somebody remembered to update.
+        let hex = bpp_core::canonical::hex(&victim_secret);
+        for (table, column, value) in every_text_value(store.conn()) {
+            assert!(
+                !value.to_ascii_lowercase().contains(&hex),
+                "{table}.{column} still holds the destroyed secret"
+            );
+        }
+        // 2. Nor do the FILES: database, WAL and shm, byte for byte.
+        let mut whole = Vec::new();
+        for name in ["byom.db", "byom.db-wal", "byom.db-shm"] {
+            let path = data_dir.join(name);
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            assert!(
+                !contains(&bytes, hex.as_bytes())
+                    && !contains(&bytes, &victim_secret)
+                    && !contains(&bytes, victim_wrapped.as_bytes()),
+                "{name} still holds the destroyed secret ({} bytes)",
+                bytes.len()
+            );
+            whole.extend_from_slice(&bytes);
+        }
+        // …and the sweep is SENSITIVE: it finds a live object's retained
+        // material in exactly the bytes it just searched.
+        assert!(
+            contains(&whole, survivor_wrapped.as_bytes()),
+            "the file scan cannot see retained secrets at all — it proves nothing"
+        );
+        // 3. The destroyed object is no longer verifiable; an unrelated
+        //    one still is, under its own retained secret.
+        assert!(store
+            .verify_object_digest(&victim, "bpp-bootstrap-subject-v0", &json!({}))
+            .unwrap()
+            .is_none());
+        let survivor_now = store
+            .verify_object_digest(&survivor, "bpp-preparation-input-v0", &json!({"x": 1}))
+            .unwrap()
+            .expect("the unrelated object stays verifiable");
+        assert_eq!(
+            survivor_now,
+            bpp_core::canonical::hex(&bpp_core::canonical::hmac_sha256(
+                &survivor_secret,
+                &bpp_core::canonical::tagged_canonical(
+                    "bpp-preparation-input-v0",
+                    &json!({"x": 1})
+                )
+                .unwrap()
+            )),
+            "the survivor's digest is reproducible from its own secret"
+        );
+        // 4. The destruction is journaled and re-checkpointed.
+        let n: i64 = store
+            .conn()
+            .query_row("SELECT COUNT(*) FROM erasure_journal", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    });
+}
+
+/// Every text-bearing value of every table: `(table, column, value)`.
+fn every_text_value(conn: &rusqlite::Connection) -> Vec<(String, String, String)> {
+    let tables: Vec<String> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )
+            .unwrap();
+        let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    };
+    let mut out = Vec::new();
+    for table in tables {
+        let columns: Vec<String> = {
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .unwrap();
+            let rows = stmt.query_map([], |r| r.get(1)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        for column in columns {
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT CAST(\"{column}\" AS TEXT) FROM \"{table}\""
+                ))
+                .unwrap();
+            let rows = stmt
+                .query_map([], |r| r.get::<_, Option<String>>(0))
+                .unwrap();
+            for value in rows.flatten().flatten() {
+                out.push((table.clone(), column.clone(), value));
+            }
+        }
+    }
+    out
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 // --------------------------------------------------------------- BY-P1 ----

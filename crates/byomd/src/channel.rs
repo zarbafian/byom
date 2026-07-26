@@ -1,39 +1,84 @@
-//! Sender-constrained channel proofs (BY-C1, DESIGN.md §2342-2358).
+//! Non-exportable, peer-bound channel proofs (BY-C1, DESIGN.md
+//! §2342-2358).
 //!
-//! The candidate and participant credentials used to be a PLAINTEXT
-//! REUSABLE BEARER TOKEN kept in SQLite and in a `0600` file: possession
-//! alone resolved the actor, so a copied token worked from any other
-//! same-UID process, for any operation, forever.
+//! # What you write (the whole client side)
 //!
-//! What the client now presents is a PROOF, not a token — a MAC over the
-//! exact binding of THIS call, computed under a channel proof key the
-//! client holds:
+//! ```no_run
+//! # use byomd::channel;
+//! # fn f(run_dir: &std::path::Path) -> Result<(), String> {
+//! let credential = std::fs::read_to_string(
+//!     "…/channels/candidate-offer-1.token").map_err(|e| e.to_string())?;
+//! // ONE claim per process: byomd observes this connection's SO_PEERCRED
+//! // and hands back a proof key that is useless in any other process.
+//! let key = channel::claim(run_dir, &credential)?;
+//! // then one fresh proof per call
+//! let proof = channel::mint_proof(&credential, &key, "membership_accept",
+//!                                 channel::Peer::current(),
+//!                                 bpp_core::time::unix_now());
+//! # let _ = proof; Ok(()) }
+//! ```
+//!
+//! # Why (the R1 confirmation's finding)
+//!
+//! The first fix made the wire credential a per-call PROOF instead of a
+//! bearer token, but the credential FILE still carried the raw HMAC key.
+//! A same-UID process that copied the file simply minted a proof naming
+//! its OWN pid, and the daemon — which derives the same key from the
+//! channel id alone — verified it. The pid binding was decoration.
+//!
+//! Now the file carries NO key material at all:
+//!
+//! ```text
+//! bpk1.<hex JSON {channel_id, audience, scope_ref, binding_ref, fence_epoch}>
+//! ```
+//!
+//! The minting secret stays endpoint-side. A client CLAIMS its channel
+//! over the surface socket (`bpb1.<channel_id>` as the preamble line,
+//! nothing else on the connection) and byomd answers with a proof key
+//! derived from the connection's kernel-observed peer:
+//!
+//! ```text
+//! proof key = hmac-sha-256(store "channel-proof-key" scope key,
+//!                          "<channel_id>|<peer pid>|<peer start time>")
+//! ```
+//!
+//! A channel is held by exactly ONE LIVE process: a claim from another
+//! peer while the holder is alive is refused, and only a dead holder's
+//! binding is taken over (the one-shot CLI case). Verification re-derives
+//! the key from the peer byomd OBSERVES, so a key that leaked to another
+//! process mints nothing there either.
+//!
+//! The presented proof is still the same MAC over the exact call:
 //!
 //! ```text
 //! bpx1.<channel_id>.<nonce hex>.<issued_at>.<mac hex>
-//! ```
-//!
-//! ```text
 //! mac = hmac-sha-256(proof key, JCS {
 //!     $domain: "bpp-channel-proof-v0",
 //!     audience, channel_id, scope_ref, operation, binding_ref,
 //!     fence_epoch, peer_pid, peer_process_start, nonce, issued_at })
 //! ```
 //!
-//! The proof is bound to the CONNECTION (the peer process's pid and its
-//! kernel start time, read from `SO_PEERCRED` and `/proc`), the exact
-//! offer/participant scope, the Manifestation/control binding, the
-//! current onboarding fence epoch, the audience, the exact operation and
-//! a short expiry, and each nonce is spent once. A proof copied out of
-//! one process therefore fails in another, and a proof for one operation
-//! does not authorize a different one.
+//! so it is additionally bound to the exact offer/participant scope, the
+//! Manifestation/control binding, the fence epoch, the audience, the
+//! exact operation and a short expiry, with each nonce spent once.
 //!
-//! What the store keeps is a VERIFIER reference — `proof_key_id` plus
-//! the binding a presented proof must commit to — never a credential a
-//! holder could replay. HONEST PROFILE LABEL: the developer profile has
-//! no asymmetric endpoint identity (§19), so the proof key is derived
-//! from a store scope key rather than being a public key; a reader of
-//! the same-UID database is inside the trust boundary either way.
+//! HONEST RESIDUAL (developer profile, §19). There is no UID separation,
+//! no attested process identity and no asymmetric endpoint identity here,
+//! so the ceiling is "one live claimant at a time":
+//!
+//! - a same-UID process that claims a channel BEFORE the legitimate
+//!   client does, or AFTER it exits, becomes the holder — the file names
+//!   the channel, it does not authenticate who may hold it;
+//! - a same-UID process can read the store root key out of the SQLite
+//!   file, or `ptrace` the holder, and derive keys directly.
+//!
+//! What is genuinely closed is the exported-secret class: a copied,
+//! backed-up, logged or transmitted credential file mints nothing, and a
+//! proof key issued to one process is worthless in another.
+
+use std::io::{BufRead as _, BufReader, Write as _};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
 
 use bpp_core::canonical::{hex, hmac_sha256, sha256_hex, tagged_canonical};
 use bpp_core::problem::Problem;
@@ -120,19 +165,127 @@ fn operations_of(surface: bpp_core::registry::Surface) -> Vec<String> {
     out
 }
 
-/// The per-channel proof key. Derived from a store scope key so no
-/// bearer credential is retained; the client holds the key in its
-/// `0600` channel file.
-pub fn proof_key(store: &Store, channel_id: &str) -> Result<[u8; 32], Problem> {
+/// The wire tag of a channel CLAIM line (the whole claim protocol).
+pub const CLAIM_PREFIX: &str = "bpb1.";
+
+/// The PEER-BOUND per-channel proof key: derived endpoint-side from a
+/// store scope key AND the kernel-observed peer, so the same channel
+/// yields a different key in every process. Nothing derivable from the
+/// credential file alone.
+pub fn proof_key(store: &Store, channel_id: &str, peer: Peer) -> Result<[u8; 32], Problem> {
     let root = store
         .scope_key("channel-proof-key")
         .map_err(|e| state::internal(&e.to_string()))?;
-    Ok(hmac_sha256(&root, channel_id.as_bytes()))
+    Ok(hmac_sha256(
+        &root,
+        format!("{channel_id}|{}|{}", peer.pid, peer.process_start).as_bytes(),
+    ))
 }
 
-/// The VERIFIER reference the store keeps for a proof key.
-pub fn key_id(key: &[u8; 32]) -> String {
-    sha256_hex(key)[..32].to_owned()
+/// Is this exact process still running? A recycled pid has a different
+/// kernel start time, so a stale binding never covers a new process.
+fn peer_alive(peer: Peer) -> bool {
+    std::path::Path::new(&format!("/proc/{}", peer.pid)).exists()
+        && process_start(peer.pid) == peer.process_start
+}
+
+/// The server side of a claim: binds the channel to THIS connection's
+/// peer and returns its proof key. Refused while a DIFFERENT live
+/// process holds the channel; a dead holder's binding is taken over.
+pub fn claim_for_peer(
+    store: &Store,
+    channel_id: &str,
+    peer: Peer,
+    now: i64,
+) -> Result<[u8; 32], Problem> {
+    let credential = rows::get_row(
+        store.conn(),
+        "channel_credentials",
+        "channel_id",
+        channel_id,
+    )
+    .map_err(|e| state::internal(&e.to_string()))?
+    .ok_or_else(state::forbidden)?;
+    if rows::str_of(&credential, "state") != "open" {
+        return Err(state::forbidden());
+    }
+    let held: Option<(i64, i64)> = store
+        .conn()
+        .query_row(
+            "SELECT peer_pid, peer_start FROM channel_bindings WHERE channel_id = ?1",
+            [channel_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    if let Some((pid, start)) = held {
+        let holder = Peer {
+            pid: pid as i32,
+            process_start: start.max(0) as u64,
+        };
+        if holder != peer && peer_alive(holder) {
+            // One live holder per channel: a copier of the credential
+            // file cannot take the channel from a running client.
+            return Err(state::forbidden());
+        }
+    }
+    store
+        .conn()
+        .execute(
+            "INSERT INTO channel_bindings (channel_id, peer_pid, peer_start, bound_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(channel_id) DO UPDATE SET
+                 peer_pid = excluded.peer_pid,
+                 peer_start = excluded.peer_start,
+                 bound_at = excluded.bound_at",
+            rusqlite::params![channel_id, peer.pid, peer.process_start as i64, now],
+        )
+        .map_err(|e| state::internal(&e.to_string()))?;
+    proof_key(store, channel_id, peer)
+}
+
+/// The client side of a claim: one connection carrying only
+/// `bpb1.<channel_id>`, answered with this process's proof key.
+/// `socket_dir` is byomd's runtime directory.
+pub fn claim(socket_dir: &Path, credential_line: &str) -> Result<[u8; 32], String> {
+    let credential =
+        parse_credential(credential_line).ok_or("not a byom channel credential file")?;
+    let surface = match credential.audience.as_str() {
+        AUDIENCE_CANDIDATE => "candidate",
+        _ => "participant",
+    };
+    let path = socket_dir.join(format!("{surface}.sock"));
+    let mut stream = UnixStream::connect(&path)
+        .map_err(|e| format!("claim {}: {e} (is byomd running?)", path.display()))?;
+    stream
+        .write_all(format!("{CLAIM_PREFIX}{}\n", credential.channel_id).as_bytes())
+        .map_err(|e| format!("claim write: {e}"))?;
+    let mut reply = String::new();
+    BufReader::new(stream)
+        .read_line(&mut reply)
+        .map_err(|e| format!("claim read: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(reply.trim_end()).map_err(|e| format!("claim reply: {e}"))?;
+    if parsed["outcome"] != "ok" {
+        return Err(format!("channel claim refused: {parsed}"));
+    }
+    parsed["result"]["proof_key"]
+        .as_str()
+        .and_then(unhex32)
+        .ok_or_else(|| format!("claim reply carries no proof key: {parsed}"))
+}
+
+/// The VERIFIER reference the store keeps for a channel: a digest of the
+/// channel's key root, NOT of any per-peer proof key (those are minted
+/// per claiming process and never stored).
+pub fn channel_key_id(store: &Store, channel_id: &str) -> Result<String, Problem> {
+    let root = store
+        .scope_key("channel-proof-key")
+        .map_err(|e| state::internal(&e.to_string()))?;
+    Ok(sha256_hex(&hmac_sha256(
+        &root,
+        format!("verifier|{channel_id}").as_bytes(),
+    ))[..32]
+        .to_owned())
 }
 
 /// The canonical proof preimage — identical on both sides.
@@ -168,9 +321,10 @@ fn preimage(
 
 /// The credential file a client reads: `bpk1.<hex JSON>` — one
 /// visible-ASCII line, `0600`, that never opens a JSON object (byomd
-/// frames the participant preamble by exactly that rule). It carries the
-/// PUBLIC binding a proof must commit to plus the client's proof key, so
-/// the client can mint a proof without a second round trip.
+/// frames the participant preamble by exactly that rule). It carries ONLY
+/// the PUBLIC binding a proof must commit to: NO key material, so the
+/// file's bytes are not a credential and a copy of them mints nothing
+/// (BY-C1). The proof key is claimed over the socket, per process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credential {
     pub channel_id: String,
@@ -178,7 +332,6 @@ pub struct Credential {
     pub scope_ref: String,
     pub binding_ref: String,
     pub fence_epoch: u64,
-    pub key: [u8; 32],
 }
 
 pub fn credential_line(
@@ -187,7 +340,6 @@ pub fn credential_line(
     scope_ref: &str,
     binding_ref: &str,
     fence_epoch: u64,
-    key: &[u8; 32],
 ) -> String {
     let body = json!({
         "channel_id": channel_id,
@@ -195,7 +347,6 @@ pub fn credential_line(
         "scope_ref": scope_ref,
         "binding_ref": binding_ref,
         "fence_epoch": fence_epoch,
-        "key": hex(key),
     })
     .to_string();
     format!("bpk1.{}", hex(body.as_bytes()))
@@ -218,13 +369,20 @@ pub fn parse_credential(line: &str) -> Option<Credential> {
         scope_ref: value["scope_ref"].as_str()?.to_owned(),
         binding_ref: value["binding_ref"].as_str()?.to_owned(),
         fence_epoch: value["fence_epoch"].as_u64()?,
-        key: unhex32(value["key"].as_str()?)?,
     })
 }
 
 /// Mints one proof for the exact call (the CLIENT side; exported so the
-/// CLI, the MCP bridge and the tests all speak one construction).
-pub fn mint_proof(credential_line: &str, operation: &str, peer: Peer, now: i64) -> Option<String> {
+/// CLI, the MCP bridge and the tests all speak one construction). `key`
+/// is the peer-bound key this process CLAIMED — the file alone cannot
+/// mint.
+pub fn mint_proof(
+    credential_line: &str,
+    key: &[u8; 32],
+    operation: &str,
+    peer: Peer,
+    now: i64,
+) -> Option<String> {
     let credential = parse_credential(credential_line)?;
     let nonce = nonce();
     let bytes = preimage(
@@ -242,7 +400,7 @@ pub fn mint_proof(credential_line: &str, operation: &str, peer: Peer, now: i64) 
     Some(format!(
         "{PROOF_PREFIX}{}.{nonce}.{now}.{}",
         credential.channel_id,
-        hex(&hmac_sha256(&credential.key, &bytes))
+        hex(&hmac_sha256(key, &bytes))
     ))
 }
 
@@ -307,10 +465,26 @@ pub fn verify(
     if !operations.iter().any(|o| o == operation) {
         return Err(state::forbidden());
     }
-    let key = proof_key(store, channel_id)?;
-    if key_id(&key) != rows::str_of(&credential, "proof_key_id") {
+    // The verifying key is re-derived from the peer byomd OBSERVES on
+    // THIS connection (BY-C1): a key issued to another process — or a
+    // copied credential file, which carries none — cannot produce this
+    // MAC. The channel must also still be held by that exact peer.
+    let held: Option<(i64, i64)> = store
+        .conn()
+        .query_row(
+            "SELECT peer_pid, peer_start FROM channel_bindings WHERE channel_id = ?1",
+            [channel_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    match held {
+        Some((pid, start)) if pid == peer.pid as i64 && start == peer.process_start as i64 => {}
+        _ => return Err(state::forbidden()),
+    }
+    if channel_key_id(store, channel_id)? != rows::str_of(&credential, "proof_key_id") {
         return Err(state::forbidden());
     }
+    let key = proof_key(store, channel_id, peer)?;
     let bytes = preimage(
         audience,
         channel_id,
@@ -380,10 +554,14 @@ mod tests {
     #[test]
     fn a_proof_is_bound_to_its_peer_and_operation() {
         let key = [3u8; 32];
-        let line = credential_line("chan-1", AUDIENCE_CANDIDATE, "offer-1", "manif-1", 1, &key);
+        let line = credential_line("chan-1", AUDIENCE_CANDIDATE, "offer-1", "manif-1", 1);
         let credential = parse_credential(&line).unwrap();
         assert_eq!(credential.channel_id, "chan-1");
-        assert_eq!(credential.key, key);
+        assert!(
+            !line.contains(&hex(&key))
+                && !parse_body(&line).as_object().unwrap().contains_key("key"),
+            "the credential FILE carries no key material (BY-C1): {line}"
+        );
         assert!(!line.starts_with('{'), "never frames as a request");
         let peer = Peer {
             pid: 4242,
@@ -417,6 +595,15 @@ mod tests {
         assert_ne!(mine, mac(other_peer, "membership_accept"));
         // A different operation is a different proof.
         assert_ne!(mine, mac(peer, "membership_refuse"));
+    }
+
+    fn parse_body(line: &str) -> serde_json::Value {
+        let body = line.trim().strip_prefix("bpk1.").unwrap();
+        let bytes: Vec<u8> = (0..body.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&body[i..i + 2], 16).unwrap())
+            .collect();
+        serde_json::from_slice(&bytes).unwrap()
     }
 
     #[test]

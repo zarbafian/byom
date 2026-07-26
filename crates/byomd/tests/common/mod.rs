@@ -20,6 +20,11 @@ pub struct TestDaemon {
     child: Option<Child>,
     pub data_dir: PathBuf,
     pub run_dir: PathBuf,
+    /// The peer-bound proof keys this PROCESS claimed, per credential
+    /// (BY-C1). A real client claims once while its channel is open and
+    /// keeps the key — which is what lets the exact refusal still replay
+    /// through a channel that has since closed (BY-C2).
+    claimed: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
 }
 
 fn fresh_dir(tag: &str, which: &str) -> PathBuf {
@@ -70,6 +75,7 @@ impl TestDaemon {
             child: Some(child),
             data_dir,
             run_dir,
+            claimed: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
         daemon.wait_sockets();
         daemon
@@ -143,7 +149,7 @@ impl TestDaemon {
             .set_read_timeout(Some(Duration::from_secs(20)))
             .unwrap();
         if let Some(token) = token {
-            let preamble = mint_channel_proof(token, line);
+            let preamble = self.mint_channel_proof(token, line);
             stream
                 .write_all(format!("{preamble}\n").as_bytes())
                 .map_err(|e| format!("write token: {e}"))?;
@@ -160,6 +166,51 @@ impl TestDaemon {
             return Err("connection closed without reply".to_owned());
         }
         serde_json::from_str(reply.trim_end()).map_err(|e| format!("reply parse: {e}"))
+    }
+
+    /// Mints the per-call channel proof a real client presents: CLAIM
+    /// the channel once for this process (BY-C1 — the credential file
+    /// carries no key material), then MAC the exact call under the
+    /// peer-bound key byomd issued. A raw (non-credential) preamble is
+    /// passed through verbatim so negative tests can present garbage.
+    pub fn mint_channel_proof(&self, credential: &str, request_line: &str) -> String {
+        if !credential.starts_with("bpk1.") {
+            return credential.to_owned();
+        }
+        let op = serde_json::from_str::<Value>(request_line)
+            .ok()
+            .and_then(|v| v["op"].as_str().map(str::to_owned))
+            .unwrap_or_default();
+        let key = self.claim(credential);
+        byomd::channel::mint_proof(
+            credential,
+            &key,
+            &op,
+            byomd::channel::Peer::current(),
+            bpp_core::time::unix_now(),
+        )
+        .unwrap_or_else(|| panic!("mint proof for {op}"))
+    }
+
+    /// This process's peer-bound proof key for one channel credential,
+    /// claimed once and kept.
+    pub fn claim(&self, credential: &str) -> [u8; 32] {
+        let mut held = self.claimed.lock().unwrap();
+        if let Some(key) = held.get(credential) {
+            return *key;
+        }
+        // A channel this process may not claim (closed, or held by
+        // another live process) leaves the client with NO key: it can
+        // only present an unverifiable proof, which byomd refuses. That
+        // is the honest client behaviour, not a harness panic.
+        let key = byomd::channel::claim(&self.run_dir, credential).unwrap_or([0u8; 32]);
+        held.insert(credential.to_owned(), key);
+        key
+    }
+
+    /// The raw claim outcome (negative tests).
+    pub fn try_claim(&self, credential: &str) -> Result<[u8; 32], String> {
+        byomd::channel::claim(&self.run_dir, credential)
     }
 
     pub fn call(&self, surface: &str, request: &Value) -> Value {
@@ -336,26 +387,6 @@ pub fn read_candidate_token(daemon: &TestDaemon, offer_id: &str) -> String {
         .unwrap_or_else(|e| panic!("read token {}: {e}", path.display()))
         .trim()
         .to_owned()
-}
-
-/// Mints the per-call channel proof a real client presents. A raw
-/// (non-credential) preamble is passed through verbatim so negative
-/// tests can present garbage.
-pub fn mint_channel_proof(credential: &str, request_line: &str) -> String {
-    if !credential.starts_with("bpk1.") {
-        return credential.to_owned();
-    }
-    let op = serde_json::from_str::<Value>(request_line)
-        .ok()
-        .and_then(|v| v["op"].as_str().map(str::to_owned))
-        .unwrap_or_default();
-    byomd::channel::mint_proof(
-        credential,
-        &op,
-        byomd::channel::Peer::current(),
-        bpp_core::time::unix_now(),
-    )
-    .unwrap_or_else(|| panic!("mint proof for {op}"))
 }
 
 /// The sole Society of a test daemon, read from its database (the

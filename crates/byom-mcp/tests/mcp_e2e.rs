@@ -106,8 +106,13 @@ impl DaemonProc {
             // A channel credential presents a FRESH sender-constrained
             // proof per call (BY-C1), exactly as a real client does.
             let preamble = if token.starts_with("bpk1.") {
+                // CLAIM the channel for this process, then MAC the exact
+                // call under the peer-bound key byomd issued (BY-C1):
+                // the credential file itself carries no key material.
+                let key = byomd::channel::claim(&self.run_dir, token).expect("claim channel");
                 byomd::channel::mint_proof(
                     token,
+                    &key,
                     request["op"].as_str().unwrap_or_default(),
                     byomd::channel::Peer::current(),
                     bpp_core::time::unix_now(),
@@ -301,20 +306,23 @@ fn admit_participant(
 }
 
 /// The §11.1 mandate chain before any non-pledged ActivityStream:
-/// prepare (participant), assent (governance seat), issue (governance).
+/// prepare (the AGENT, over its own MCP session), assent (governance
+/// seat), issue (governance).
+///
+/// The prepare runs through the agent's MCP server rather than from this
+/// test process, because a byom channel is held by exactly ONE LIVE
+/// process (BY-C1): the agent's session is the holder, so the harness
+/// must not claim the same participant channel behind its back.
 fn issue_mandate(
     daemon: &DaemonProc,
     incarnation: &str,
-    agent_token: &str,
+    agent: &mut McpServer,
     participant: &str,
     purpose_ref: &str,
 ) -> String {
-    let prepared = daemon.expect_ok(
-        "participant",
-        Some(agent_token),
-        &json!({
-            "version": "0.2", "op": "mandate_prepare",
-            "meta": meta(incarnation, "e2e-mprep", None),
+    let prepared = agent.call_ok(
+        "byom_mandate_prepare",
+        json!({
             "grantee_participant_ref": participant,
             "purpose_ref": purpose_ref,
             "allowed_operations": ["activity_open", "continuation_write",
@@ -693,13 +701,6 @@ fn candidate_accept_then_participant_work_over_mcp() {
         "{text}"
     );
     drop(candidate);
-    let mandate_id = issue_mandate(
-        &daemon,
-        &incarnation,
-        &agent_token,
-        participant,
-        "purpose-explore-1",
-    );
 
     // -- participant profile: the admitted agent's sender-constrained
     //    channel --
@@ -710,6 +711,13 @@ fn candidate_accept_then_participant_work_over_mcp() {
     );
     agent.initialize();
     assert_eq!(agent.tools().len(), 34, "exactly the 34 participant tools");
+    let mandate_id = issue_mandate(
+        &daemon,
+        &incarnation,
+        &mut agent,
+        participant,
+        "purpose-explore-1",
+    );
 
     // Mutation: activity_open under the mandate (create-class meta,
     // participant socket, token preamble).
@@ -759,6 +767,48 @@ fn candidate_accept_then_participant_work_over_mcp() {
     assert_eq!(shown["result"]["kind"], "exploration");
     assert_eq!(shown["result"]["participant_ref"], participant);
     assert_eq!(shown["result"]["revision"].as_u64(), Some(1));
+
+    // MCP-1, THE CONFIRMATION'S OWN PROBE: a LOST COMMITTED REPLY on an
+    // update whose `expected_revision` the bridge DERIVES from live
+    // state. `activity_hold` reads the stream's revision from
+    // `activity_show`; the hold commits and moves it, so the retry
+    // derives a DIFFERENT expected_revision for the same logical call.
+    // The R1 fix hashed that derived CAS token into the covered request,
+    // so the retry answered `idempotency_mismatch` — the one situation
+    // the retained receipt exists for. (The earlier test used
+    // `membership_accept`, whose derivation is the constant 1, and so
+    // never exercised this at all.)
+    let hold_args = json!({"activity_stream_ref": stream_id, "generation": 1,
+                           "hold_reason_ref": "reason-pause-1"});
+    let held = agent.call_ok("byom_activity_hold", hold_args.clone());
+    assert_eq!(held["result"]["state"], "held", "{held}");
+    // The commit moved the revision the bridge derives from.
+    let moved = agent.call_ok(
+        "byom_activity_show",
+        json!({"activity_stream_ref": stream_id}),
+    );
+    assert_eq!(
+        moved["result"]["revision"].as_u64(),
+        Some(2),
+        "the derived CAS token is now different: {moved}"
+    );
+    // The reply above stands in for the one that was lost: the caller
+    // retries the IDENTICAL tool call.
+    let retried_hold = agent.call_ok("byom_activity_hold", hold_args);
+    assert_eq!(
+        retried_hold, held,
+        "the retry of a lost committed reply must replay the SAME receipt"
+    );
+    // Exactly one hold committed.
+    let after = agent.call_ok(
+        "byom_activity_show",
+        json!({"activity_stream_ref": stream_id}),
+    );
+    assert_eq!(
+        after["result"]["revision"].as_u64(),
+        Some(2),
+        "one logical call, one committed effect: {after}"
+    );
 
     // Read: society_show through the same profile.
     let society = agent.call_ok("byom_society_show", json!({"society_id": society_id}));

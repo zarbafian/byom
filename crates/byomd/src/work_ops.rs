@@ -77,7 +77,7 @@ pub fn endeavor_propose(
         "budget_account_set_ref": req.budget_account_set_ref,
         "deadline": opt_json(&req.deadline),
     });
-    let (subject_digest, _secret) = store
+    let subject_digest = store
         .mint_object_digest(
             &format!("society-key:{}/object:{endeavor_id}", caller.society_id),
             "bpp-endeavor-subject-v0",
@@ -859,7 +859,7 @@ pub fn pledge_propose(
         serde_json::to_value(&req.cancellation_terms).unwrap_or(Value::Null),
         &req.dependency_refs,
     );
-    let (terms_digest, _secret) = store
+    let terms_digest = store
         .mint_object_digest(
             &format!("society-key:{}/object:{proposal_id}", caller.society_id),
             "bpp-pledge-terms-v0",
@@ -1027,7 +1027,7 @@ pub fn pledge_amend(
         serde_json::to_value(&req.cancellation_terms).unwrap_or(Value::Null),
         &req.dependency_refs,
     );
-    let (terms_digest, _secret) = store
+    let terms_digest = store
         .mint_object_digest(
             &format!("society-key:{}/object:{proposal_id}", caller.society_id),
             "bpp-pledge-terms-v0",
@@ -1953,7 +1953,7 @@ pub fn charter_propose(
         "charter_proposal_id": proposal_id,
         "restatement": restatement,
     });
-    let (subject_digest, _secret) = store
+    let subject_digest = store
         .mint_object_digest(
             &format!("society-key:{}/object:{proposal_id}", caller.society_id),
             "bpp-charter-subject-v0",

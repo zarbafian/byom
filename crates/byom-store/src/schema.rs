@@ -12,9 +12,11 @@ use rusqlite::Connection;
 /// - `events` are dense per Society: `UNIQUE(society_id, sequence)` with
 ///   the allocation head on the `societies` row; sequences are allocated
 ///   at journal finalize so aborted/abandoned transactions consume none.
-/// - `payload_secret` is the per-event `local_erasure_safe` object
-///   secret (PROFILE §6): kept in the same same-UID store under the
-///   developer profile, so digests stay locally verifiable.
+/// - `payload_secret` is VESTIGIAL from V6 on (BY-D2): it used to hold a
+///   RAW copy of the per-event `local_erasure_safe` secret, which meant
+///   destroying that secret erased nothing. The one retained copy is now
+///   the wrapped `object_secrets` row; this column is written empty and
+///   swept on destruction.
 /// - `idempotency_records` are keyed by the ratified idempotency-domain
 ///   digest (PROFILE §5): the domain already covers actor binding,
 ///   operation, incarnation, Society, epoch, and key.
@@ -747,7 +749,31 @@ ALTER TABLE participant_channels ADD COLUMN closed_by_operation TEXT;
 ALTER TABLE participant_channels ADD COLUMN closed_by_domain_digest TEXT;
 "#;
 
-const MIGRATIONS: [&str; 5] = [V1, V2, V3, V4, V5];
+/// Version 6: the R1 confirmation wave (reviews/2026-07-26-r1-confirmation.md).
+///
+/// Recorded shape notes:
+/// - `channel_bindings` is the one LIVE HOLDER of a channel (BY-C1). The
+///   credential file carries no key material any more; a client claims
+///   its channel over the surface socket and byomd issues a proof key
+///   bound to the connection's kernel-observed `(pid, start time)`. A
+///   claim from another peer is refused while the holder is alive, so a
+///   COPIED credential file mints nothing.
+/// - `events.payload_secret` stops carrying a RAW copy of the per-event
+///   `local_erasure_safe` secret (BY-D2): the only retained copy is the
+///   wrapped `object_secrets` row, so destroying that row destroys the
+///   secret everywhere. Existing rows are blanked by the migration.
+const V6: &str = r#"
+CREATE TABLE channel_bindings (
+    channel_id TEXT PRIMARY KEY,
+    peer_pid   INTEGER NOT NULL,
+    peer_start INTEGER NOT NULL,
+    bound_at   INTEGER NOT NULL
+) STRICT;
+
+UPDATE events SET payload_secret = '';
+"#;
+
+const MIGRATIONS: [&str; 6] = [V1, V2, V3, V4, V5, V6];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {
@@ -759,7 +785,12 @@ pub enum SchemaError {
 /// journal mode (`wal` on disk, `memory` in memory).
 pub fn open_and_migrate(conn: &Connection) -> Result<String, SchemaError> {
     let journal_mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
-    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;")?;
+    // `secure_delete` zeroes freed content instead of leaving it in the
+    // file's free pages: destroying a secret (BY-D2) must not leave its
+    // bytes recoverable from the database file.
+    conn.execute_batch(
+        "PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;",
+    )?;
     let mut version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     while (version as usize) < MIGRATIONS.len() {
         let step = MIGRATIONS[version as usize];

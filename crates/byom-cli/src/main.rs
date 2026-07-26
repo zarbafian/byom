@@ -207,7 +207,8 @@ fn run() -> Result<(), String> {
             print_reply(&reply)?;
             if let Some(offer_id) = reply["result"]["offer_id"].as_str() {
                 eprintln!(
-                    "candidate channel credential file (proof key, 0600): \
+                    "candidate channel credential file (public binding only, 0600; \
+                     the holder claims its peer-bound proof key over the socket): \
                      <data-dir>/channels/candidate-{offer_id}.token"
                 );
             }

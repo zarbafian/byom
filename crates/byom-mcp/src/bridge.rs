@@ -53,6 +53,7 @@
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
+use std::sync::OnceLock;
 
 use bpp_core::canonical::{jcs, sha256_hex};
 use bpp_core::registry::{OpClass, Surface};
@@ -87,6 +88,10 @@ pub struct Bridge {
     /// an ambiguous transport retry of the same tool call reuses the
     /// same idempotency key instead of minting a second command.
     session_salt: String,
+    /// The peer-bound proof key this PROCESS claimed for its channel
+    /// (BY-C1). Claimed once, on first use; the credential file itself
+    /// carries no key material, so nothing here can be copied out.
+    proof_key: OnceLock<[u8; 32]>,
 }
 
 impl Bridge {
@@ -133,6 +138,7 @@ impl Bridge {
             token,
             society,
             session_salt,
+            proof_key: OnceLock::new(),
         }
     }
 
@@ -405,17 +411,28 @@ impl Bridge {
 
 impl Bridge {
     /// Mints the per-call proof for the surface's channel credential.
-    /// The daemon rebuilds the same preimage from what it OBSERVES, so a
-    /// proof copied to another process does not verify there.
+    /// The proof key is CLAIMED once per process (BY-C1): byomd issues
+    /// it bound to this connection's kernel-observed peer, so neither
+    /// the credential file nor this key is usable anywhere else.
     fn proof_for(&self, credential: &str, body: &Value) -> Result<String, BridgeError> {
         let operation = body["op"].as_str().unwrap_or_default();
+        if self.proof_key.get().is_none() {
+            let key = channel::claim(&socket::socket_dir(), credential)
+                .map_err(|e| BridgeError::Io(format!("could not claim the byom channel: {e}")))?;
+            let _ = self.proof_key.set(key);
+        }
+        let key = self
+            .proof_key
+            .get()
+            .ok_or_else(|| BridgeError::Io("channel claim lost".to_owned()))?;
         channel::mint_proof(
             credential,
+            key,
             operation,
             Peer::current(),
             bpp_core::time::unix_now(),
         )
-        .ok_or_else(|| BridgeError::Io("channel credential is not a byom proof key".to_owned()))
+        .ok_or_else(|| BridgeError::Io("channel credential is not a byom credential".to_owned()))
     }
 }
 

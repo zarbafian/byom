@@ -148,14 +148,14 @@ pub fn society_prepare(
     subject.insert("root_budget_account_set_ref".into(), json!(budget_root));
     let subject = Value::Object(subject);
 
-    let (subject_digest, subject_secret) = store
+    let subject_digest = store
         .mint_object_digest(
             &format!("society-key:{society_id}/object:bootstrap-subject"),
             "bpp-bootstrap-subject-v0",
             &subject,
         )
         .map_err(|e| state::internal(&e.to_string()))?;
-    let (input_digest, _input_secret) = store
+    let input_digest = store
         .mint_object_digest(
             &format!("society-key:{society_id}/object:prepare-input"),
             "bpp-preparation-input-v0",
@@ -244,7 +244,7 @@ pub fn society_prepare(
         "dependency_set_ref": "deps-genesis",
         "created_at": created_at,
     });
-    let (trace_digest, _trace_secret) = store
+    let trace_digest = store
         .mint_object_digest(
             &format!("society-key:{society_id}/object:{trace_id}"),
             "bpp-preparation-trace-v0",
@@ -256,7 +256,6 @@ pub fn society_prepare(
     let preparation = json!({
         "preparation_ref": preparation_ref,
         "subject": subject,
-        "subject_secret": subject_secret,
         "subject_digest": digest_json(&subject_digest),
         "sovereign_seat_set": [sovereign_seat],
         "charter_revision_id": charter_revision_id,
@@ -520,6 +519,13 @@ pub fn society_bootstrap(
     let store_incarnation = store
         .incarnation()
         .map_err(|e| state::internal(&e.to_string()))?;
+    // BY-D2: the prepared subject's secret is NOT copied into the
+    // Society row any more. Its one retained copy is the wrapped
+    // `object_secrets` row, unwrapped here under the Society key — so
+    // destroying that row really destroys it.
+    let wrap_key = store
+        .society_wrap_key(&req.society_id)
+        .map_err(|e| state::internal(&e.to_string()))?;
     let bytes = run(store, scope, now, hooks, move |conn, _| {
         let society = rows::get_society(conn, &req.society_id)
             .map_err(db_err)?
@@ -543,17 +549,19 @@ pub fn society_bootstrap(
         }
         // The server recomputes the exact prepared subject digest; the
         // sovereign confirms exactly what was prepared.
-        let secret_hex = preparation["subject_secret"].as_str().unwrap_or_default();
-        let secret = unhex(secret_hex).ok_or_else(|| state::internal("corrupt preparation"))?;
+        let key_ref = format!(
+            "society-key:{}/object:bootstrap-subject",
+            society.society_id
+        );
+        let secret = byom_store::object_secrets::load(conn, &wrap_key, &key_ref)
+            .map_err(|e| state::internal(&e.to_string()))?
+            .ok_or_else(|| state::internal("the prepared subject's secret is destroyed"))?;
         let preimage = tagged_canonical("bpp-bootstrap-subject-v0", &preparation["subject"])
             .map_err(|e| state::internal(&e.to_string()))?;
         // The COMPLETE canonical DigestRef must match (BY-D1): class,
         // algorithm, key reference and value together.
         let recomputed = bpp_core::digest::DigestRef::local_erasure_safe(
-            &format!(
-                "society-key:{}/object:bootstrap-subject",
-                society.society_id
-            ),
+            &key_ref,
             hex(&hmac_sha256(&secret, &preimage)),
         );
         if !req.subject_digest.same_ref(&recomputed) {
@@ -809,16 +817,6 @@ pub fn society_effect_row(s: &rows::SocietyRow) -> Map<String, Value> {
     ])
 }
 
-fn unhex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
-        .collect()
-}
-
 // -------------------------------------------------- membership_offer ----
 
 pub fn membership_offer(
@@ -841,8 +839,7 @@ pub fn membership_offer(
     // The candidate credential is a sender-constrained PROOF key, never
     // a reusable bearer token (BY-C1): the store keeps only the verifier
     // reference and the binding a presented proof must commit to.
-    let proof_key = channel::proof_key(store, &channel_id)?;
-    let proof_key_id = channel::key_id(&proof_key);
+    let proof_key_id = channel::channel_key_id(store, &channel_id)?;
     let offer_event = mint(store, "evt")?;
     let participant_event = mint(store, "evt")?;
     let manifestation_event = mint(store, "evt")?;
@@ -1146,8 +1143,7 @@ pub fn participant_admit(
 
     let standing_id = mint(store, "standing")?;
     let participant_channel_id = mint(store, "chan")?;
-    let participant_proof_key_id =
-        channel::key_id(&channel::proof_key(store, &participant_channel_id)?);
+    let participant_proof_key_id = channel::channel_key_id(store, &participant_channel_id)?;
     let admit_event = mint(store, "evt")?;
     let standing_event = mint(store, "evt")?;
     let channel_event = mint(store, "evt")?;
@@ -1876,16 +1872,16 @@ pub fn ensure_channel_files(store: &Store) {
     for (channel_id, path, channel_state, audience, scope_ref, binding_ref, fence) in credentials {
         let path = std::path::PathBuf::from(path);
         if channel_state == "open" {
-            let Ok(key) = channel::proof_key(store, &channel_id) else {
-                continue;
-            };
+            // The file names the channel and its public binding; it
+            // carries NO key material (BY-C1), so copying it mints
+            // nothing — the holder claims its peer-bound key over the
+            // socket.
             let line = channel::credential_line(
                 &channel_id,
                 &audience,
                 &scope_ref,
                 &binding_ref,
                 fence.max(0) as u64,
-                &key,
             );
             let current = std::fs::read_to_string(&path).unwrap_or_default();
             if current.trim() != line {
