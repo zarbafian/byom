@@ -1,0 +1,50 @@
+{
+  "name": "ops/episode-claim-request-half-context-pair-invalid",
+  "description": "\u03945: the optional Kovee ContextAssembly ref/digest pair is all-or-none (frozen byom-episode-binding oneOf)",
+  "input": {
+    "schema": "episode-claim-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_claim",
+      "meta": {
+        "request_id": "req-clm-2",
+        "idempotency_key": "idem-clm-2",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "holder_runtime_binding": "kovee-worker-1",
+      "claim_subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-d",
+        "value_hex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "lease_ttl_seconds": 300,
+      "kovee_invocation_ref": "kovee-inv-1",
+      "kovee_invocation_fence": 7,
+      "stable_binding_key": "bindkey-ep-0001-att-2",
+      "context_manifest_ref": "ctxman-1",
+      "context_manifest_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-e",
+        "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "context_source_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "mandate_use_refs": [
+        "muse-1"
+      ],
+      "allowed_local_commitments": [],
+      "kovee_context_assembly_ref": "kovee-assembly-1"
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "ops/usage-report-request-worker-valid",
+  "description": "a worker report is EVIDENCE and carries no settlement member (family contract L33)",
+  "input": {
+    "schema": "usage-report-request",
+    "value": {
+      "version": "0.2",
+      "op": "usage_report",
+      "meta": {
+        "request_id": "req-urp-1",
+        "idempotency_key": "idem-urp-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "source": "worker_report",
+      "stable_report_key": "urepkey-1",
+      "quantities": [
+        {
+          "dimension": "unit",
+          "unit": "unit",
+          "amount": 140
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

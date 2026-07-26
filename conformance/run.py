@@ -311,6 +311,30 @@ B03_SCHEMAS = {
         "external-command-terminalize-result"),
 }
 
+# ---------------------------------------- B0.4 runtime/episode bundle ----
+# B3 slice 2 (C2 `byom_governed_work_v1` runtime surface): the §14.6
+# `runtime` family byom implements daemon-side, plus the two R38
+# reconciliation seats. Their registry rows live in the SAME
+# spec/registry.json and carry `bundle: "B0.4"`; each publishes its closed
+# request/result pair under spec/schemas/ops/. `episode_request` is the
+# participant entry point and already belongs to the B0.1 sheet, so it is
+# NOT repeated here.
+B04_RUNTIME = ("placement_admit", "episode_claim", "episode_start",
+               "checkpoint_commit", "episode_yield", "episode_complete",
+               "episode_fail", "usage_report", "effect_outcome_admit",
+               "effect_reconcile", "budget_reconcile")
+# Every B0.4 op is a mutation: the runtime surface holds no reads.
+B04_READS = frozenset()
+# The surface each B0.4 row must bind, from the §14.7 registry table.
+B04_SURFACES = {
+    "placement_admit": "runtime", "episode_claim": "runtime",
+    "episode_start": "runtime", "checkpoint_commit": "runtime",
+    "episode_yield": "runtime", "episode_complete": "runtime",
+    "episode_fail": "runtime", "usage_report": "runtime",
+    "effect_outcome_admit": "runtime", "effect_reconcile": "governance",
+    "budget_reconcile": "governance",
+}
+
 # Named non-callable kernel/server transitions that may appear as a
 # descriptor `via` (§14.8, spec/README.md). `standing_replacement` is the
 # gap-note G12 name for the Standing row's operation-less 'replacement';
@@ -1495,13 +1519,15 @@ class Runner:
                 self.fail(f"{where}: {op} rows disagree on request_schema")
             info["rows"] += 1
         reg_ops = set(self.op_class)
-        sheet_ops = set(SLICE_OPS) | set(B03_HOST_INTEGRATION)
+        sheet_ops = (set(SLICE_OPS) | set(B03_HOST_INTEGRATION)
+                     | set(B04_RUNTIME))
         for op in sorted(sheet_ops - reg_ops):
             self.fail(f"registry: sheet op {op} has no registry row "
                       "(missing surface binding)")
         for op in sorted(reg_ops - sheet_ops):
-            self.fail(f"registry: row for {op} is not a B0.1 sheet or B0.3 "
-                      "host-integration op (extra surface binding)")
+            self.fail(f"registry: row for {op} is not a B0.1 sheet, B0.3 "
+                      "host-integration, or B0.4 runtime op (extra surface "
+                      "binding)")
         for op in sorted(reg_ops & sheet_ops):
             surfaces = self.op_surfaces[op]
             if op in G35_DUAL:
@@ -1514,7 +1540,8 @@ class Runner:
             elif len(surfaces) != 1:
                 self.fail(f"registry: op {op} must carry exactly one "
                           f"surface row, got {sorted(surfaces)}")
-            want_read = op in SLICE_READS or op in B03_READS
+            want_read = (op in SLICE_READS or op in B03_READS
+                         or op in B04_READS)
             if (self.op_class[op] == "read") != want_read:
                 self.fail(f"registry: {op} class {self.op_class[op]!r} "
                           "disagrees with the read set")
@@ -1672,6 +1699,62 @@ class Runner:
                 self.fail(f"b0.3: {want_req} member schema(s) {drift} are "
                           f"not byte-identical to {frozen_args[op]}")
                 continue
+            covered += 1
+        return covered
+
+    def check_runtime_bundle(self) -> int:
+        """B0.4 (B3 slice 2): every runtime/reconciliation row publishes its
+        closed request/result pair, binds the §14.7 surface, restates the
+        envelope with the right op const and RT-01 meta class, and — for the
+        nine runtime-surface Episode/effect commands — REQUIRES BOTH fence
+        members. A command shape that could carry one fence alone is the
+        committed negative of family contract L21, so the runner refuses to
+        accept a schema that omits either."""
+        dual_fence_ops = {"episode_start", "checkpoint_commit", "episode_yield",
+                          "episode_complete", "episode_fail", "usage_report",
+                          "effect_outcome_admit"}
+        covered = 0
+        for op in B04_RUNTIME:
+            if op not in ALL_CATALOG_OPS:
+                self.fail(f"b0.4: {op} is not a §14.6 catalog operation")
+                continue
+            base = op.replace("_", "-")
+            want_surface = B04_SURFACES[op]
+            if self.op_surfaces.get(op) != {want_surface}:
+                self.fail(f"b0.4: {op} must bind exactly the {want_surface} "
+                          f"surface, got {sorted(self.op_surfaces.get(op, ()))}")
+                continue
+            reg_req = self.op_req_schema.get(op)
+            if reg_req != f"{base}-request":
+                self.fail(f"b0.4: registry request_schema for {op} is "
+                          f"{reg_req!r}, expected {base}-request")
+                continue
+            request = self.schemas.get(f"{base}-request")
+            result = self.schemas.get(f"{base}-result")
+            if request is None or result is None:
+                self.fail(f"b0.4: op {op} is missing its {base}-request/"
+                          f"{base}-result schema pair")
+                continue
+            op_const = (request.get("properties", {})
+                        .get("op", {}).get("const"))
+            if op_const != op:
+                self.fail(f"b0.4: {base}-request op const is {op_const!r}, "
+                          f"expected {op!r}")
+                continue
+            cls = self.op_class.get(op, "create")
+            if not self._meta_class_ok(op, cls, request, f"{base}-request"):
+                continue
+            if op in dual_fence_ops:
+                required = set(request.get("required", []))
+                missing = {"episode_ref", "generation", "byom_attempt_ref",
+                           "byom_fence_epoch",
+                           "kovee_invocation_fence"} - required
+                if missing:
+                    self.fail(f"b0.4: {base}-request does not REQUIRE the dual "
+                              f"fence members {sorted(missing)} (family "
+                              "contract L21: a mutation carrying one fence is "
+                              "the committed negative vector)")
+                    continue
             covered += 1
         return covered
 
@@ -2860,6 +2943,7 @@ class Runner:
         registry = self.check_registry()
         covered = self.check_bundle()
         host = self.check_host_integration_bundle()
+        runtime = self.check_runtime_bundle()
         successors = self.check_successor_schemas()
         gw = self.check_governed_work()
         mcp = self.check_mcp_tools()
@@ -2883,6 +2967,9 @@ class Runner:
         print(f"b0.3:     {host}/{len(B03_HOST_INTEGRATION)} host-integration "
               "rows (C2 byom side): envelope + frozen governed-work "
               "arguments member-for-member, frozen record as result")
+        print(f"b0.4:     {runtime}/{len(B04_RUNTIME)} runtime/reconciliation "
+              "rows (B3 slice 2): §14.7 surface, envelope + RT-01 meta "
+              "class, dual fences required on every protected command")
         print(f"descriptors: {desc['files']} machines "
               f"({desc['kovee']} kovee-owned), {desc['states']} "
               f"states, {desc['transitions']} transitions — "
@@ -2942,9 +3029,13 @@ LIVE_CONTINUATION_OPS = frozenset({"events_read", "events_wait",
 # answer on any mutation-capable socket; pre_auth on every socket).
 LIVE_SURFACE_SOCKET = {
     "participant": "participant", "governance": "governance",
-    "candidate": "candidate", "projection": "projection",
+    "candidate": "candidate", "runtime": "runtime",
+    "projection": "projection",
     "originating": "participant", "pre_auth": "governance",
 }
+# Sockets that take a mandatory channel-token preamble line before the
+# request (the candidate offer credential; the runtime workload token).
+LIVE_PREAMBLE_SOCKETS = frozenset({"candidate", "runtime"})
 
 
 def _live_call(run_dir: Path, sock_name: str, line: str) -> dict:
@@ -2953,7 +3044,7 @@ def _live_call(run_dir: Path, sock_name: str, line: str) -> dict:
     s.settimeout(30)
     s.connect(str(run_dir / f"{sock_name}.sock"))
     payload = b""
-    if sock_name == "candidate":
+    if sock_name in LIVE_PREAMBLE_SOCKETS:
         payload += b"\n"  # empty channel-token preamble
     payload += line.encode("utf-8") + b"\n"
     s.sendall(payload)
@@ -2995,7 +3086,8 @@ def run_live(spec_dir: Path) -> int:
     failures = 0
     try:
         deadline = time.time() + 15
-        surfaces = ("governance", "candidate", "participant", "projection")
+        surfaces = ("governance", "candidate", "participant", "runtime",
+                    "projection")
         while True:
             if all((run_dir / f"{s}.sock").exists() for s in surfaces):
                 try:

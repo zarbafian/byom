@@ -1,0 +1,62 @@
+{
+  "name": "ops/placement-admit-request-valid",
+  "description": "stage 4: the narrow Kovee placement adapter admits the placement and reports a NARROWED (200 <= 256) subordinate reservation pinned to its exact parent \u00a711.4 item (R33; family contract L31-L32)",
+  "input": {
+    "schema": "placement-admit-request",
+    "value": {
+      "version": "0.2",
+      "op": "placement_admit",
+      "meta": {
+        "request_id": "req-plc-1",
+        "idempotency_key": "idem-plc-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "resource_allocation_ref": "alloc-wake-0001-r1",
+      "resource_allocation_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-a",
+        "value_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "kovee_placement_ref": "kovee-placement-1",
+      "kovee_placement_revision": 1,
+      "kovee_placement_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "source_binding_epoch": 3,
+      "selected_manifestation_ref": "manif-1",
+      "kovee_invocation_ref": "kovee-inv-1",
+      "kovee_fence_epoch": 7,
+      "subordinate_reservation": {
+        "stable_external_reservation_key": "sub-alloc-wake-0001-r1",
+        "outcome": "confirmed",
+        "subordinate_reservation_ref": "kovee-sub-1",
+        "revision": 1,
+        "digest": {
+          "class": "portable_public",
+          "algorithm": "sha-256",
+          "value_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "items": [
+          {
+            "kovee_account_ref": "kovee-acct-1",
+            "dimension": "unit",
+            "unit": "unit",
+            "amount": 200,
+            "parent_account_ref": "mandate-ceiling-1",
+            "parent_account_revision": 1,
+            "parent_dimension": "unit",
+            "parent_unit": "unit",
+            "parent_worst_case_amount": 256
+          }
+        ]
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

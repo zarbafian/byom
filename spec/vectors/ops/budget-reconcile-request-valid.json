@@ -1,0 +1,24 @@
+{
+  "name": "ops/budget-reconcile-request-valid",
+  "description": "the R38 seat: the only release out of an uncertain bridge (family contract L33)",
+  "input": {
+    "schema": "budget-reconcile-request",
+    "value": {
+      "version": "0.2",
+      "op": "budget_reconcile",
+      "meta": {
+        "request_id": "req-brc-1",
+        "idempotency_key": "idem-brc-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "external_budget_bridge_ref": "bridge-alloc-wake-0001-r1",
+      "stable_external_reservation_key": "sub-alloc-wake-0001-r1",
+      "fresh_challenge_ref": "challenge-2",
+      "reason_ref": "reason-transport-loss"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

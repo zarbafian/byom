@@ -7,6 +7,7 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 pub mod kovee;
+pub mod runtime;
 
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::UnixStream;
@@ -83,7 +84,13 @@ impl TestDaemon {
 
     fn wait_sockets(&self) {
         let deadline = Instant::now() + Duration::from_secs(15);
-        let surfaces = ["governance", "candidate", "participant", "projection"];
+        let surfaces = [
+            "governance",
+            "candidate",
+            "participant",
+            "runtime",
+            "projection",
+        ];
         'outer: loop {
             for s in surfaces {
                 let path = self.run_dir.join(format!("{s}.sock"));

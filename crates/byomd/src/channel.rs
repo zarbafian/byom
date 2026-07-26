@@ -153,6 +153,11 @@ fn operations_of(surface: bpp_core::registry::Surface) -> Vec<String> {
         .iter()
         .chain(crate::reads::SLICE2_OPS.iter())
         .chain(crate::reads::SLICE2_RECOVERY_OPS.iter())
+        // B3 slice 2: `episode_request` is the participant entry point of
+        // the four-stage activation, so a participant credential
+        // authorizes it. The runtime-surface commands are NOT here —
+        // a runtime identity never crosses to participant (§14.7).
+        .chain(crate::reads::RUNTIME_OPS.iter())
         .filter(|op| {
             bpp_core::registry::lookup(op, surface).is_some()
                 || bpp_core::registry::lookup(op, bpp_core::registry::Surface::Originating)

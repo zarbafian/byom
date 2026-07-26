@@ -1,0 +1,45 @@
+{
+  "name": "ops/usage-report-request-meter-valid",
+  "description": "the trusted-meter arm carries the COMPLETE measured-settlement group; only the narrow meter channel may present it (\u00a711.4)",
+  "input": {
+    "schema": "usage-report-request",
+    "value": {
+      "version": "0.2",
+      "op": "usage_report",
+      "meta": {
+        "request_id": "req-urp-2",
+        "idempotency_key": "idem-urp-2",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "source": "trusted_meter",
+      "stable_report_key": "urepkey-2",
+      "quantities": [
+        {
+          "dimension": "unit",
+          "unit": "unit",
+          "amount": 140
+        }
+      ],
+      "meter_ref": "meter-kovee-1",
+      "meter_attestation_ref": "attest-1",
+      "pricing_revision_ref": "pricing-1",
+      "stable_settlement_key": "setkey-1",
+      "charged_quantities": [
+        {
+          "dimension": "unit",
+          "unit": "unit",
+          "amount": 140
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -108,6 +108,30 @@ pub const HOST_INTEGRATION_OPS: [&str; 3] = [
     "external_command_terminalize",
 ];
 
+/// The B3 slice-2 runtime bundle (C2 `byom_governed_work_v1`; §11.1-§11.4,
+/// §13.2; registry R29/R30/R33/R35/R38): the four-stage activation's
+/// participant entry point, the runtime-surface Episode lease commands,
+/// measured usage, and the two reconciliation seats. Advertised as its own
+/// feature bundle: a client either speaks the whole runtime seam or none
+/// of it (§16.6 all-or-nothing compatibility).
+pub const RUNTIME_OPS: [&str; 11] = [
+    "episode_request",
+    "placement_admit",
+    "episode_claim",
+    "episode_start",
+    "checkpoint_commit",
+    "episode_yield",
+    "episode_complete",
+    "episode_fail",
+    "usage_report",
+    "effect_outcome_admit",
+    "effect_reconcile",
+];
+
+/// The §11.4 budget reconciliation seat (R38), advertised with the
+/// runtime bundle it releases holds for.
+pub const BUDGET_OPS: [&str; 1] = ["budget_reconcile"];
+
 /// Is the operation implemented by THIS daemon (the honest feature_info
 /// set and the conformance live-replay contract)?
 pub fn implemented(op: &str) -> bool {
@@ -115,6 +139,8 @@ pub fn implemented(op: &str) -> bool {
         || SLICE2_OPS.contains(&op)
         || SLICE2_RECOVERY_OPS.contains(&op)
         || HOST_INTEGRATION_OPS.contains(&op)
+        || RUNTIME_OPS.contains(&op)
+        || BUDGET_OPS.contains(&op)
         || op == "events_read"
 }
 
@@ -173,6 +199,14 @@ pub fn feature_info(store: &Store) -> Result<Vec<u8>, Problem> {
         json!({
             "feature": "byom_governed_work_v1",
             "operations": HOST_INTEGRATION_OPS,
+        }),
+        json!({
+            "feature": "byom_governed_work_v1:runtime",
+            "operations": RUNTIME_OPS.to_vec(),
+        }),
+        json!({
+            "feature": "byom_governed_work_v1:budget-reconciliation",
+            "operations": BUDGET_OPS,
         }),
         json!({
             "feature": "b0.1-events-recovery-core",

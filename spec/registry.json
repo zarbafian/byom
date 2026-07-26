@@ -2,7 +2,7 @@
   "registry": "byom-bpp-operations",
   "version": "0.1.0",
   "bundle": "B0.1 + B0.3 (host integration)",
-  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md §14.6 catalog + §14.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md §2.0; dual-surface split per gap note G35 (RT-12); B0.3 host-integration rows R39/R40/R42 per DESIGN.md §16.3 and design/2026-07-25-family-contract.md §2.0 (their result_schema names the FROZEN spec/governed-work/ record, so the wire is the C2 contract itself, never a fork)",
+  "source": "plan/sheets/B0.1.md family lists (bundle freeze source) + DESIGN.md \u00a714.6 catalog + \u00a714.7 registry bindings R1-R41 via design/2026-07-25-family-contract.md \u00a72.0; dual-surface split per gap note G35 (RT-12); B0.3 host-integration rows R39/R40/R42 per DESIGN.md \u00a716.3 and design/2026-07-25-family-contract.md \u00a72.0 (their result_schema names the FROZEN spec/governed-work/ record, so the wire is the C2 contract itself, never a fork)",
   "description": "Machine-readable (operation,surface) registry for the complete B0.1 bundle: exactly one row per (operation,surface) pair. The four G35 dual-surface operations (mandate_position, act_intent_position, act_intent_finalize, act_intent_cancel) carry exactly two rows each (participant + governance); every other operation exactly one. class read: never mutates, no MutationMeta; class create: mutation with the closed create meta (no expected_revision member); class update: current-head CAS mutation whose closed update meta REQUIRES meta.expected_revision (RT-01). request_schema/result_schema name the committed schema files this registry freezes to - the -v2 names are the immutable G10/G31 successor publications (RT-06). conformance/run.py derives its bundle, meta-class, surface, and MCP checks from these rows and fails on any extra/missing surface binding.",
   "operations": [
     {
@@ -754,6 +754,116 @@
       "bundle": "B0.3",
       "request_schema": "external-command-terminalize-request",
       "result_schema": "external-command-terminalize-result"
+    },
+    {
+      "operation": "placement_admit",
+      "surface": "runtime",
+      "binding": "R33",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "placement-admit-request",
+      "result_schema": "placement-admit-result"
+    },
+    {
+      "operation": "episode_claim",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "episode-claim-request",
+      "result_schema": "episode-claim-result"
+    },
+    {
+      "operation": "episode_start",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "update",
+      "bundle": "B0.4",
+      "request_schema": "episode-start-request",
+      "result_schema": "episode-start-result"
+    },
+    {
+      "operation": "checkpoint_commit",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "checkpoint-commit-request",
+      "result_schema": "checkpoint-commit-result"
+    },
+    {
+      "operation": "episode_yield",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "update",
+      "bundle": "B0.4",
+      "request_schema": "episode-yield-request",
+      "result_schema": "episode-yield-result"
+    },
+    {
+      "operation": "episode_complete",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "update",
+      "bundle": "B0.4",
+      "request_schema": "episode-complete-request",
+      "result_schema": "episode-complete-result"
+    },
+    {
+      "operation": "episode_fail",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "update",
+      "bundle": "B0.4",
+      "request_schema": "episode-fail-request",
+      "result_schema": "episode-fail-result"
+    },
+    {
+      "operation": "usage_report",
+      "surface": "runtime",
+      "binding": "R30",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "usage-report-request",
+      "result_schema": "usage-report-result"
+    },
+    {
+      "operation": "effect_outcome_admit",
+      "surface": "runtime",
+      "binding": "R35",
+      "family": "runtime",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "effect-outcome-admit-request",
+      "result_schema": "effect-outcome-admit-result"
+    },
+    {
+      "operation": "effect_reconcile",
+      "surface": "governance",
+      "binding": "R38",
+      "family": "recovery",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "effect-reconcile-request",
+      "result_schema": "effect-reconcile-result"
+    },
+    {
+      "operation": "budget_reconcile",
+      "surface": "governance",
+      "binding": "R38",
+      "family": "budgets",
+      "class": "create",
+      "bundle": "B0.4",
+      "request_schema": "budget-reconcile-request",
+      "result_schema": "budget-reconcile-result"
     }
   ]
 }

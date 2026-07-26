@@ -1,0 +1,28 @@
+{
+  "name": "ops/episode-yield-request-valid",
+  "description": "a VOLUNTARY yield: the head moves to lease_yielding and becomes re-claimable without any clock (\u00a714.8)",
+  "input": {
+    "schema": "episode-yield-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_yield",
+      "meta": {
+        "request_id": "req-yld-1",
+        "idempotency_key": "idem-yld-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 2
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "target_state": "waiting",
+      "reason_ref": "reason-dependency-1"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "ops/episode-complete-request-missing-expected-revision-invalid",
+  "description": "RT-01: episode_complete is update-classed (the lease-head CAS), so its closed update meta REQUIRES meta.expected_revision",
+  "input": {
+    "schema": "episode-complete-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_complete",
+      "meta": {
+        "request_id": "req-cmp-2",
+        "idempotency_key": "idem-cmp-2",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "output_refs": [],
+      "evidence_refs": [],
+      "usage_report_refs": []
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

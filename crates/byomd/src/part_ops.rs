@@ -1673,6 +1673,37 @@ pub fn continuation_write(
         ) {
             return Err(state::stale_binding("activity is terminal"));
         }
+        // §11.3: a STALE Episode/Manifestation may retain its bytes as
+        // local diagnostic evidence but cannot advance the head. When the
+        // writer cites an Episode it must present that Episode's CURRENT
+        // Byom lease fence; a superseded attempt is refused here, before
+        // any CAS.
+        if let Some(episode_ref) = &req.episode_ref {
+            let episode = rows::get_row(conn, "episodes", "episode_id", episode_ref)
+                .map_err(db_err)?
+                .ok_or_else(state::not_found)?;
+            if rows::str_of(&episode, "activity_stream_ref") != req.activity_stream_ref
+                || rows::u64_of(&episode, "generation") != req.generation
+            {
+                return Err(state::stale_binding(
+                    "the cited Episode does not belong to this ActivityStream generation",
+                ));
+            }
+            let fence = req.byom_fence_epoch.ok_or_else(|| {
+                state::invalid("citing an Episode requires its byom_fence_epoch (§11.3)")
+            })?;
+            let lease = rows::get_row(conn, "episode_lease_heads", "episode_id", episode_ref)
+                .map_err(db_err)?
+                .ok_or_else(|| {
+                    crate::episode_ops::stale_lease("the cited Episode holds no lease")
+                })?;
+            if rows::u64_of(&lease, "byom_fence_epoch") != fence {
+                return Err(crate::episode_ops::stale_lease(
+                    "stale byom_fence_epoch: a superseded Episode attempt may keep its bytes as \
+                     local evidence but cannot append a continuation (§11.3)",
+                ));
+            }
+        }
         let head_revision = rows::u64_of(&activity, "continuation_head_revision");
         if req.expected_head_revision != head_revision {
             return Err(

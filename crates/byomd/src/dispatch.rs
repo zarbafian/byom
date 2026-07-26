@@ -29,7 +29,10 @@ use crate::channel::Peer;
 use crate::part_common::{self, Caller};
 use crate::socket::SocketSurface;
 use crate::state;
-use crate::{cand_ops, gov_authority, gov_ops, host_ops, host_recovery, part_ops, reads, work_ops};
+use crate::{
+    cand_ops, effect_ops, episode_ops, gov_authority, gov_ops, host_ops, host_recovery, part_ops,
+    reads, work_ops,
+};
 
 /// A crash-honesty instruction from the environment
 /// (`BYOMD_ABORT=<phase>:<op>`): abort the process, or inject a witness
@@ -50,7 +53,7 @@ impl AbortSpec {
         })
     }
 
-    fn hooks_for(&self, op: &str) -> CrashHooks {
+    pub fn hooks_for(&self, op: &str) -> CrashHooks {
         if self.op != op {
             return CrashHooks::NONE;
         }
@@ -68,7 +71,19 @@ impl AbortSpec {
     }
 }
 
-/// The daemon: one store (journal driver + SQLite) behind a mutex, four
+/// The crash hooks for a named INTERNAL transition — `activation_admit`,
+/// `resource_allocate`, or the `server_time` sweep. Those are §11.1/§14.8
+/// kernel and server transitions, not callable operations, so no request
+/// op names them; a crash cell targets them by their transition name and
+/// this re-derives the hooks from the environment. Test-only, exactly like
+/// `AbortSpec` itself.
+pub fn internal_hooks(operation: &str) -> CrashHooks {
+    AbortSpec::from_env()
+        .map(|a| a.hooks_for(operation))
+        .unwrap_or(CrashHooks::NONE)
+}
+
+/// The daemon: one store (journal driver + SQLite) behind a mutex, five
 /// dispatch surfaces.
 pub struct Daemon {
     store: Mutex<Store>,
@@ -128,7 +143,12 @@ impl Daemon {
         // directly (tokens never start with `{`).
         let mut line = String::new();
         let token = match surface {
-            SocketSurface::Candidate => {
+            // The candidate and RUNTIME sockets present their scoped
+            // channel token as a mandatory transport preamble line: the
+            // closed per-operation request schemas carry no credential
+            // member (§7.4/§14.3, reused for the R30/R33/R35 workload
+            // identity).
+            SocketSurface::Candidate | SocketSurface::Runtime => {
                 let mut token_line = String::new();
                 let mut limited = (&mut reader).take(4096);
                 limited.read_line(&mut token_line)?;
@@ -369,6 +389,9 @@ impl Daemon {
             SocketSurface::Participant => {
                 self.dispatch_participant(&raw, token.unwrap_or_default(), peer, now, hooks)
             }
+            SocketSurface::Runtime => {
+                self.dispatch_runtime(&raw, token.unwrap_or_default(), now, hooks)
+            }
             SocketSurface::Projection => {
                 self.dispatch_projection(&raw, token.unwrap_or_default(), now)
             }
@@ -439,7 +462,10 @@ impl Daemon {
                     Err(_) => Err(state::forbidden()),
                 }
             }
-            SocketSurface::Projection => Err(state::forbidden_surface()),
+            // The runtime surface never recovers another actor's
+            // retained results: its workload identity is bound to one
+            // exact Episode, not to an originating channel class.
+            SocketSurface::Runtime | SocketSurface::Projection => Err(state::forbidden_surface()),
         }
     }
 
@@ -563,6 +589,19 @@ impl Daemon {
                 let req =
                     ops::CharterFinalizeRequest::parse(body).map_err(|e| state::invalid(&e))?;
                 gov_authority::charter_finalize(&mut store, &req, body, now, hooks)
+            }
+            // The two R38 reconciliation seats: the ONLY paths that
+            // release an uncertain hold or record a local consequence
+            // for an ambiguous host fact.
+            "budget_reconcile" => {
+                let req =
+                    ops::BudgetReconcileRequest::parse(body).map_err(|e| state::invalid(&e))?;
+                episode_ops::budget_reconcile(&mut store, &req, body, now, hooks)
+            }
+            "effect_reconcile" => {
+                let req =
+                    ops::EffectReconcileRequest::parse(body).map_err(|e| state::invalid(&e))?;
+                effect_ops::effect_reconcile(&mut store, &req, body, now, hooks)
             }
             _ => Err(feature_unavailable()),
         }
@@ -812,6 +851,10 @@ impl Daemon {
                 let req = ops::WakeIntentWithdrawRequest::parse(body).map_err(invalid)?;
                 part_ops::wake_intent_withdraw(&mut store, &caller, &req, body, now, hooks)
             }
+            "episode_request" => {
+                let req = ops::EpisodeRequestRequest::parse(body).map_err(invalid)?;
+                episode_ops::episode_request(&mut store, &caller, &req, body, now, hooks)
+            }
             "continuation_write" => {
                 let req = ops::ContinuationWriteRequest::parse(body).map_err(invalid)?;
                 part_ops::continuation_write(&mut store, &caller, &req, body, now, hooks)
@@ -823,6 +866,67 @@ impl Daemon {
             "charter_propose" => {
                 let req = ops::CharterProposeRequest::parse(body).map_err(invalid)?;
                 work_ops::charter_propose(&mut store, &caller, &req, body, now, hooks)
+            }
+            _ => Err(feature_unavailable()),
+        }
+    }
+
+    /// The RUNTIME surface (§14.5): Episode claim/start/checkpoint/
+    /// yield/result, measured usage, effect-outcome admission, and the
+    /// narrow Kovee placement adapter. Society admission, proposal
+    /// positions, pledge assent, and charter or Mandate issue are
+    /// explicitly absent — the registry rows, not this code, decide.
+    /// Every operation authenticates through the episode- or
+    /// allocation-scoped workload token in the transport preamble.
+    fn dispatch_runtime(
+        &self,
+        raw: &RawRequest,
+        token: &str,
+        now: i64,
+        hooks: CrashHooks,
+    ) -> Result<Vec<u8>, Problem> {
+        let body = &raw.body;
+        // The closed request shape is checked FIRST: a malformed body is
+        // `invalid` regardless of workload state.
+        runtime_shape_check(&raw.op, body)?;
+        let mut store = self.lock_store()?;
+        let invalid = |e: String| state::invalid(&e);
+        match raw.op.as_str() {
+            "placement_admit" => {
+                let req = ops::PlacementAdmitRequest::parse(body).map_err(invalid)?;
+                episode_ops::placement_admit(&mut store, token, &req, body, now, hooks)
+            }
+            "episode_claim" => {
+                let req = ops::EpisodeClaimRequest::parse(body).map_err(invalid)?;
+                episode_ops::episode_claim(&mut store, token, &req, body, now, hooks)
+            }
+            "episode_start" => {
+                let req = ops::EpisodeStartRequest::parse(body).map_err(invalid)?;
+                episode_ops::episode_start(&mut store, token, &req, body, now, hooks)
+            }
+            "checkpoint_commit" => {
+                let req = ops::CheckpointCommitRequest::parse(body).map_err(invalid)?;
+                episode_ops::checkpoint_commit(&mut store, token, &req, body, now, hooks)
+            }
+            "episode_yield" => {
+                let req = ops::EpisodeYieldRequest::parse(body).map_err(invalid)?;
+                episode_ops::episode_yield(&mut store, token, &req, body, now, hooks)
+            }
+            "episode_complete" => {
+                let req = ops::EpisodeCompleteRequest::parse(body).map_err(invalid)?;
+                episode_ops::episode_complete(&mut store, token, &req, body, now, hooks)
+            }
+            "episode_fail" => {
+                let req = ops::EpisodeFailRequest::parse(body).map_err(invalid)?;
+                episode_ops::episode_fail(&mut store, token, &req, body, now, hooks)
+            }
+            "usage_report" => {
+                let req = ops::UsageReportRequest::parse(body).map_err(invalid)?;
+                episode_ops::usage_report(&mut store, token, &req, body, now, hooks)
+            }
+            "effect_outcome_admit" => {
+                let req = ops::EffectOutcomeAdmitRequest::parse(body).map_err(invalid)?;
+                effect_ops::effect_outcome_admit(&mut store, token, &req, body, now, hooks)
             }
             _ => Err(feature_unavailable()),
         }
@@ -950,6 +1054,7 @@ fn participant_shape_check(op: &str, body: &Value) -> Result<(), Problem> {
         "wake_intent_withdraw" => ops::WakeIntentWithdrawRequest::parse(body)
             .map(drop)
             .map_err(e),
+        "episode_request" => ops::EpisodeRequestRequest::parse(body).map(drop).map_err(e),
         "continuation_write" => ops::ContinuationWriteRequest::parse(body)
             .map(drop)
             .map_err(e),
@@ -957,6 +1062,32 @@ fn participant_shape_check(op: &str, body: &Value) -> Result<(), Problem> {
             .map(drop)
             .map_err(e),
         "charter_propose" => ops::CharterProposeRequest::parse(body).map(drop).map_err(e),
+        _ => Ok(()),
+    }
+}
+
+/// Parses (and discards) the closed runtime-surface request shape — run
+/// before workload-token resolution so shape errors answer
+/// deterministically as `invalid` (and a mutation carrying only ONE of
+/// the DUAL fences is refused here, family contract L21).
+fn runtime_shape_check(op: &str, body: &Value) -> Result<(), Problem> {
+    let e = |e: String| state::invalid(&e);
+    match op {
+        "placement_admit" => ops::PlacementAdmitRequest::parse(body).map(drop).map_err(e),
+        "episode_claim" => ops::EpisodeClaimRequest::parse(body).map(drop).map_err(e),
+        "episode_start" => ops::EpisodeStartRequest::parse(body).map(drop).map_err(e),
+        "checkpoint_commit" => ops::CheckpointCommitRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "episode_yield" => ops::EpisodeYieldRequest::parse(body).map(drop).map_err(e),
+        "episode_complete" => ops::EpisodeCompleteRequest::parse(body)
+            .map(drop)
+            .map_err(e),
+        "episode_fail" => ops::EpisodeFailRequest::parse(body).map(drop).map_err(e),
+        "usage_report" => ops::UsageReportRequest::parse(body).map(drop).map_err(e),
+        "effect_outcome_admit" => ops::EffectOutcomeAdmitRequest::parse(body)
+            .map(drop)
+            .map_err(e),
         _ => Ok(()),
     }
 }

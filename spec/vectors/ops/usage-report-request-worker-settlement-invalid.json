@@ -1,0 +1,44 @@
+{
+  "name": "ops/usage-report-request-worker-settlement-invalid",
+  "description": "participant and worker reports are EVIDENCE, not meters: a worker_report presenting a settlement group is refused (\u00a711.4, L33)",
+  "input": {
+    "schema": "usage-report-request",
+    "value": {
+      "version": "0.2",
+      "op": "usage_report",
+      "meta": {
+        "request_id": "req-urp-3",
+        "idempotency_key": "idem-urp-3",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "source": "worker_report",
+      "stable_report_key": "urepkey-3",
+      "quantities": [
+        {
+          "dimension": "unit",
+          "unit": "unit",
+          "amount": 140
+        }
+      ],
+      "meter_ref": "meter-forged-1",
+      "meter_attestation_ref": "attest-forged",
+      "stable_settlement_key": "setkey-3",
+      "charged_quantities": [
+        {
+          "dimension": "unit",
+          "unit": "unit",
+          "amount": 140
+        }
+      ]
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

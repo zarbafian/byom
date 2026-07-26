@@ -150,9 +150,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_registry_freezes_the_two_bundles() {
-        // 80 B0.1 rows + the 3 B0.3 host-integration rows (R39/R40/R42).
-        assert_eq!(all_rows().len(), 83);
+    fn the_runtime_bundle_binds_the_runtime_surface_only() {
+        // B0.4 (B3 slice 2): the nine runtime-surface Episode/effect
+        // commands answer ONLY on the runtime surface, and the two R38
+        // reconciliation seats ONLY on governance. A runtime identity
+        // never crosses to participant or governance (§14.7).
+        for op in [
+            "placement_admit",
+            "episode_claim",
+            "episode_start",
+            "checkpoint_commit",
+            "episode_yield",
+            "episode_complete",
+            "episode_fail",
+            "usage_report",
+            "effect_outcome_admit",
+        ] {
+            assert!(lookup(op, Surface::Runtime).is_some(), "{op}");
+            assert!(lookup(op, Surface::Participant).is_none(), "{op}");
+            assert!(lookup(op, Surface::Governance).is_none(), "{op}");
+        }
+        for op in ["effect_reconcile", "budget_reconcile"] {
+            assert!(lookup(op, Surface::Governance).is_some(), "{op}");
+            assert!(lookup(op, Surface::Runtime).is_none(), "{op}");
+            assert!(lookup(op, Surface::Participant).is_none(), "{op}");
+        }
+        // Only the Participant channel authors a WakeIntent or requests
+        // an Episode: arrival, attention ranking, a host cron, or a model
+        // score reach no row at all (§11.1).
+        for op in ["wake_intent_submit", "episode_request"] {
+            assert!(lookup(op, Surface::Participant).is_some(), "{op}");
+            assert!(lookup(op, Surface::Runtime).is_none(), "{op}");
+            assert!(lookup(op, Surface::Governance).is_none(), "{op}");
+        }
+    }
+
+    #[test]
+    fn the_registry_freezes_the_three_bundles() {
+        // 80 B0.1 rows + 3 B0.3 host-integration rows (R39/R40/R42) + the
+        // 11 B0.4 runtime/reconciliation rows (R30/R33/R35/R38).
+        assert_eq!(all_rows().len(), 94);
         for (op, surface, class) in [
             ("kovee_endeavor_form", Surface::Governance, OpClass::Create),
             (

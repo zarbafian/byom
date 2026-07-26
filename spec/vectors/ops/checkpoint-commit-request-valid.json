@@ -1,0 +1,33 @@
+{
+  "name": "ops/checkpoint-commit-request-valid",
+  "description": "one immutable EpisodeAttemptEvent under both fences and the expected lease revision (R30)",
+  "input": {
+    "schema": "checkpoint-commit-request",
+    "value": {
+      "version": "0.2",
+      "op": "checkpoint_commit",
+      "meta": {
+        "request_id": "req-ckp-1",
+        "idempotency_key": "idem-ckp-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "expected_lease_revision": 2,
+      "checkpoint_ref": "ckpt-1",
+      "checkpoint_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-2",
+        "value_hex": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

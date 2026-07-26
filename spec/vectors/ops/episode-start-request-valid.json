@@ -1,0 +1,26 @@
+{
+  "name": "ops/episode-start-request-valid",
+  "description": "only the current holder under BOTH fences starts the Episode (R30, L21)",
+  "input": {
+    "schema": "episode-start-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_start",
+      "meta": {
+        "request_id": "req-srt-1",
+        "idempotency_key": "idem-srt-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 1
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

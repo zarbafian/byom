@@ -1,0 +1,41 @@
+{
+  "name": "ops/effect-reconcile-request-valid",
+  "description": "the ambiguous_source arm: result_use unavailable, late_source_policy obligatory, no classification-admission fields (\u00a713.2)",
+  "input": {
+    "schema": "effect-reconcile-request",
+    "value": {
+      "version": "0.2",
+      "op": "effect_reconcile",
+      "meta": {
+        "request_id": "req-erc-1",
+        "idempotency_key": "idem-erc-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "intent_ref": "intent-1",
+      "intent_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-3",
+        "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "stable_execution_key": "execkey-1",
+      "phase": "ambiguous_source",
+      "basis_source_admission_ref": "eoa-0001",
+      "basis_source_admission_revision": 1,
+      "basis_source_admission_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-6",
+        "value_hex": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "local_outcome": "failed",
+      "result_use": "unavailable",
+      "fresh_challenge_ref": "challenge-1",
+      "late_source_policy": "quarantine_and_redecide"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

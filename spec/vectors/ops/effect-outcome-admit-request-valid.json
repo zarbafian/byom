@@ -1,0 +1,50 @@
+{
+  "name": "ops/effect-outcome-admit-request-valid",
+  "description": "the ambiguous SOURCE admission: verified source facts only, no GovernanceDecision member, no result, reconciles nothing (\u00a713.2)",
+  "input": {
+    "schema": "effect-outcome-admit-request",
+    "value": {
+      "version": "0.2",
+      "op": "effect_outcome_admit",
+      "meta": {
+        "request_id": "req-eoa-1",
+        "idempotency_key": "idem-eoa-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "intent_ref": "intent-1",
+      "intent_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-3",
+        "value_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "stable_execution_key": "execkey-1",
+      "host_protocol": "kovee",
+      "host_endpoint_ref": "kovee-endpoint-1",
+      "host_effect_ref": "kovee-effect-1",
+      "host_effect_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "host_receipt_ref": "kovee-receipt-1",
+      "host_receipt_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "host_cursor_or_signature_ref": "kovee-sig-1",
+      "verification_status": "verified",
+      "outcome": "ambiguous"
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

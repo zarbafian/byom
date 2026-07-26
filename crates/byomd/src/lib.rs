@@ -1,9 +1,9 @@
-//! `byomd` — the byom reference daemon (B1 attached slice, personal
-//! profile): one plain-SQLite WAL store driven through the §15.3
-//! authority mutation journal (developer-recovery witness, honestly
-//! labeled), four per-surface Unix sockets (`governance.sock`,
-//! `candidate.sock`, `participant.sock`, `projection.sock` — `0600` in a
-//! `0700` dir, `SO_PEERCRED` same-UID), and the frozen B0.1
+//! `byomd` — the byom reference daemon (personal profile): one
+//! plain-SQLite WAL store driven through the §15.3 authority mutation
+//! journal (developer-recovery witness, honestly labeled), five
+//! per-surface Unix sockets (`governance.sock`, `candidate.sock`,
+//! `participant.sock`, `runtime.sock`, `projection.sock` — `0600` in a
+//! `0700` dir, `SO_PEERCRED` same-UID), and the frozen
 //! (operation,surface) registry as the dispatch truth.
 //!
 //! What a client writes (one line in, one line out):
@@ -18,6 +18,8 @@
 pub mod cand_ops;
 pub mod channel;
 pub mod dispatch;
+pub mod effect_ops;
+pub mod episode_ops;
 pub mod gov_authority;
 pub mod gov_decision;
 pub mod gov_ops;

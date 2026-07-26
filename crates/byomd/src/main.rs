@@ -58,6 +58,9 @@ fn run() -> Result<(), String> {
     // amendment A2, never Society authorship), publish its narrow R42
     // recovery-workload token file alongside the channel tokens.
     byomd::host_config::publish_recovery_token(&store);
+    // Startup reconcile of the episode-scoped runtime workload tokens
+    // (live Episodes keep theirs, terminal subjects lose theirs).
+    byomd::episode_ops::ensure_runtime_token_files(&store);
     let daemon = Arc::new(Daemon::new(store, AbortSpec::from_env()));
     let mut bound = Vec::new();
     let mut listeners = Vec::new();

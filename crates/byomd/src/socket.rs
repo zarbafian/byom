@@ -1,10 +1,12 @@
 //! Per-surface Unix-domain sockets (§14.5 authority surfaces; kovee's
 //! hardened control-socket discipline): one socket per surface —
 //! `governance.sock`, `candidate.sock`, `participant.sock`,
-//! `projection.sock` — each `0600` inside a `0700` per-user runtime
-//! directory. Peer authentication (`SO_PEERCRED` same-UID) happens per
-//! connection in the serve loop; the candidate socket additionally takes
-//! a channel-token preamble line (the offer-scoped credential).
+//! `runtime.sock`, `projection.sock` — each `0600` inside a `0700`
+//! per-user runtime directory. Peer authentication (`SO_PEERCRED`
+//! same-UID) happens per connection in the serve loop; the candidate and
+//! RUNTIME sockets additionally take a mandatory channel-token preamble
+//! line (the offer-scoped candidate credential; the episode-scoped or
+//! allocation-scoped workload token of R30/R33/R35).
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::UnixListener;
@@ -19,14 +21,16 @@ pub enum SocketSurface {
     Governance,
     Candidate,
     Participant,
+    Runtime,
     Projection,
 }
 
 impl SocketSurface {
-    pub const ALL: [SocketSurface; 4] = [
+    pub const ALL: [SocketSurface; 5] = [
         SocketSurface::Governance,
         SocketSurface::Candidate,
         SocketSurface::Participant,
+        SocketSurface::Runtime,
         SocketSurface::Projection,
     ];
 
@@ -35,6 +39,7 @@ impl SocketSurface {
             SocketSurface::Governance => "governance",
             SocketSurface::Candidate => "candidate",
             SocketSurface::Participant => "participant",
+            SocketSurface::Runtime => "runtime",
             SocketSurface::Projection => "projection",
         }
     }
@@ -44,6 +49,7 @@ impl SocketSurface {
             SocketSurface::Governance => bpp_core::registry::Surface::Governance,
             SocketSurface::Candidate => bpp_core::registry::Surface::Candidate,
             SocketSurface::Participant => bpp_core::registry::Surface::Participant,
+            SocketSurface::Runtime => bpp_core::registry::Surface::Runtime,
             SocketSurface::Projection => bpp_core::registry::Surface::Projection,
         }
     }

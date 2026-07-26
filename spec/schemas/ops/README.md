@@ -402,3 +402,58 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   the model's `@parity crash:` / `@parity fences:` transcriptions both
   ways, so a modeled row's crash/fence semantics cannot be swapped even
   for another legal value.
+- **G46 — the B0.4 runtime/reconciliation bundle (B3 slice 2).** The
+  §14.6 `runtime` family byom implements daemon-side, plus the two R38
+  reconciliation seats, ship as bundle `B0.4` in the same
+  `spec/registry.json` (`bundle: "B0.4"`): `placement_admit`,
+  `episode_claim`, `episode_start`, `checkpoint_commit`, `episode_yield`,
+  `episode_complete`, `episode_fail`, `usage_report`,
+  `effect_outcome_admit` (runtime) and `effect_reconcile`,
+  `budget_reconcile` (governance). Each publishes its closed
+  request/result pair here; the runner's `check_runtime_bundle` pins the
+  §14.7 surface, the RT-01 meta class, and — on every protected
+  per-attempt command — that BOTH fence members are *required*, so a
+  shape that could carry one fence alone cannot be committed (family
+  contract L21). Derivations DESIGN.md does not spell out, recorded here:
+  - **`activation_admit` / `resource_allocate` stage ids are derived from
+    the subject they decide** (`adm-<wake_intent>-r<revision>`,
+    `alloc-<wake_intent>-r<revision>`), the `gov_decision` idiom: §11.1
+    makes them non-callable kernel transitions, and the frozen
+    `episode-request-request` schema requires the caller to name the
+    ActivationAdmission, so the id must be one the request can only
+    match. Each runs as its OWN §15.3 authority transaction (its own
+    idempotency domain and journal entry), which is what lets a crash
+    between two stages recover the committed prefix.
+  - **A denied admission is committed evidence AND a typed refusal.**
+    §11.1's ActivationAdmission has a `denied` state and §14.8 says a
+    retry returns the same admission, so the denial row commits and
+    `episode_request` then refuses with the reason code's typed problem.
+  - **The `byom_subordinate` saga outcome is carried on
+    `placement_admit`.** §14.6 defines no byom-side catalog operation for
+    the Kovee-owned saga verbs (`subordinate_reserved`/`_denied`/
+    `_outcome_unknown`/`_query_*`), and byom holds no outbound Kovee
+    client in this slice; the narrow stage-4 adapter therefore reports
+    the exact subordinate reservation it created, and byom records it
+    under the committed descriptor's guards (never above parent, same
+    dimension and unit, idempotent over the stable key).
+  - **The per-Episode worst case and the lease window are pinned here.**
+    §11.4 fixes no per-Episode reservation and §11.2 no lease TTL: one
+    Episode reserves 256 units on the mandate's `budget_ceiling_set_ref`
+    (dimension `unit`) inside the mandate's 1024-unit allowance, and
+    `lease_ttl_seconds` is bounded 1..86400. An unknown outcome moves the
+    hold into the §11.4 `uncertain` bucket, so conservation holds and
+    nothing returns to `remaining` without the R38 decision.
+  - **`usage_report`'s two arms are separated by CHANNEL, not by a
+    flag.** The worker's episode-scoped token may file evidence only; the
+    narrow trusted-meter token is the only channel whose report settles
+    (family contract L33). Both tokens are byomd-minted from the store
+    root over the exact `(episode, generation)` subject and published
+    `0600` beside the candidate/participant channel files; mTLS and
+    attested workload identity are honestly NOT claimed at the developer
+    profile (§11.5), and neither is the `fresh_challenge_ref` the two R38
+    seats carry.
+  - **`effect_outcome_admit` binds the exact Episode/ByomEpisodeBinding,
+    not an ActIntent row.** The `act_intent_*` family lands with its own
+    bundle, so `intent_ref` + `stable_execution_key` are the opaque
+    stable pair the §13.1 heads are unique over, gated by the same dual
+    fences as every other runtime mutation.

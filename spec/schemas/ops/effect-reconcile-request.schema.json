@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/ops/effect-reconcile-request.schema.json",
+  "title": "BPP effect_reconcile request (DESIGN.md \u00a713.2; registry R38 governance)",
+  "description": "Mutation (meta required, create-classed: it appends an immutable EffectGovernanceDisposition revision and CASes its own head). The exact reconciliation seat with a FRESH challenge; infrastructure services prepare evidence only. It never advances the EOA head or the ActIntent source state, never releases an ambiguity-reserved budget, never creates a result, and never claims Kovee's Effect became factually succeeded or failed. The disposition union is closed: `ambiguous_source` requires `result_use: unavailable`, `late_source_policy: quarantine_and_redecide`, and no classification-admission fields; `late_source` forbids `late_source_policy` and binds the classification admission whenever the result is quarantined or released.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "op",
+    "meta",
+    "intent_ref",
+    "intent_digest",
+    "stable_execution_key",
+    "phase",
+    "basis_source_admission_ref",
+    "basis_source_admission_revision",
+    "basis_source_admission_digest",
+    "local_outcome",
+    "result_use",
+    "fresh_challenge_ref"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "#/$defs/protocolVersion"
+    },
+    "op": {
+      "const": "effect_reconcile"
+    },
+    "meta": {
+      "$ref": "#/$defs/mutationMeta"
+    },
+    "intent_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "intent_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "stable_execution_key": {
+      "$ref": "#/$defs/identifier"
+    },
+    "phase": {
+      "enum": [
+        "ambiguous_source",
+        "late_source"
+      ]
+    },
+    "basis_source_admission_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "basis_source_admission_revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger"
+    },
+    "basis_source_admission_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "local_outcome": {
+      "enum": [
+        "succeeded",
+        "failed"
+      ]
+    },
+    "result_use": {
+      "enum": [
+        "unavailable",
+        "quarantined",
+        "released"
+      ]
+    },
+    "fresh_challenge_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "The fresh challenge this reserved action was authorized under (\u00a714.7 budget_reconcile/effect_reconcile row). Phishing-resistant key material is honestly NOT claimed at the developer profile \u2014 recorded deviation."
+    },
+    "classification_admission_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "classification_admission_digest": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "late_source_policy": {
+      "const": "quarantine_and_redecide"
+    }
+  },
+  "$defs": {
+    "protocolVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Negotiated protocol minor version, e.g. \"0.2\" (\u00a714.1)."
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (\u00a714.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (\u00a714.2 rejects unsafe integers)."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 UTC instant with Z offset, semantically valid in the proleptic Gregorian calendar: the pattern pins the lexical ranges and implementations MUST additionally reject impossible calendar instants (e.g. 2026-02-30) \u2014 the conformance runner enforces this on every vector; leap seconds are not accepted. DESIGN.md does not fix a timestamp wire encoding; this derivation freezes with the bundle (gap note G3, amended per RT-17)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md \u00a76.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md \u00a76, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "mutationMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "idempotency_key",
+        "expected_endpoint_incarnation",
+        "expected_recovery_epoch"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_endpoint_incarnation": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expected_recovery_epoch": {
+          "$ref": "#/$defs/safeNonNegativeInteger"
+        },
+        "causation_event_ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "correlation_ref": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "MutationMeta (\u00a714.2), create-classed: this operation creates a record (or CASes a subordinate head through its own body fields), so the closed create meta carries NO expected_revision member \u2014 supplying one fails the closed schema (RT-01: update CAS is structural, never optional)."
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "late_source_policy"
+      ],
+      "properties": {
+        "phase": {
+          "const": "ambiguous_source"
+        },
+        "result_use": {
+          "const": "unavailable"
+        },
+        "classification_admission_ref": false,
+        "classification_admission_digest": false
+      },
+      "$comment": "ambiguous_source requires result_use unavailable and late_source_policy quarantine_and_redecide, and FORBIDS classification-admission fields (\u00a713.2)."
+    },
+    {
+      "required": [
+        "classification_admission_ref",
+        "classification_admission_digest"
+      ],
+      "properties": {
+        "phase": {
+          "const": "late_source"
+        },
+        "result_use": {
+          "enum": [
+            "quarantined",
+            "released"
+          ]
+        },
+        "late_source_policy": false
+      },
+      "$comment": "A quarantined or released late_source result binds its exact classification admission; late_source forbids late_source_policy."
+    },
+    {
+      "properties": {
+        "phase": {
+          "const": "late_source"
+        },
+        "result_use": {
+          "const": "unavailable"
+        },
+        "classification_admission_ref": false,
+        "classification_admission_digest": false,
+        "late_source_policy": false
+      },
+      "$comment": "When the final EOA has no verified result, result_use MUST be unavailable and classification-admission fields are absent."
+    }
+  ]
+}

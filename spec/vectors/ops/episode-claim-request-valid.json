@@ -1,0 +1,58 @@
+{
+  "name": "ops/episode-claim-request-valid",
+  "description": "the lease CAS with BOTH fences, the L22 stable binding key, and one \u03945 all-or-none context pair (R30; \u00a716.6 item 3)",
+  "input": {
+    "schema": "episode-claim-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_claim",
+      "meta": {
+        "request_id": "req-clm-1",
+        "idempotency_key": "idem-clm-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "holder_runtime_binding": "kovee-worker-1",
+      "claim_subject_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-d",
+        "value_hex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "lease_ttl_seconds": 300,
+      "kovee_invocation_ref": "kovee-inv-1",
+      "kovee_invocation_fence": 7,
+      "stable_binding_key": "bindkey-ep-0001-att-1",
+      "context_manifest_ref": "ctxman-1",
+      "context_manifest_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-e",
+        "value_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "context_source_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "mandate_use_refs": [
+        "muse-1"
+      ],
+      "allowed_local_commitments": [
+        "kovee_local_note"
+      ],
+      "provider_context_manifest_ref": "kovee-pcm-1",
+      "provider_context_manifest_digest": {
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "key-1",
+        "value_hex": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

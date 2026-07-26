@@ -27,6 +27,7 @@ pub mod host;
 pub mod mandate;
 pub mod policy;
 pub mod reads;
+pub mod runtime;
 pub mod work;
 
 pub use activity::*;
@@ -35,6 +36,7 @@ pub use host::*;
 pub use mandate::*;
 pub use policy::*;
 pub use reads::*;
+pub use runtime::*;
 pub use work::*;
 
 use serde::{Deserialize, Serialize};

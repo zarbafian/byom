@@ -773,7 +773,369 @@ CREATE TABLE channel_bindings (
 UPDATE events SET payload_secret = '';
 "#;
 
-const MIGRATIONS: [&str; 6] = [V1, V2, V3, V4, V5, V6];
+/// Version 7: the B3 slice-2 runtime tables — the four-stage activation
+/// records (§11.1), the Episode/EpisodeAttempt/EpisodeLeaseHead machine
+/// (§11.2), the §11.4 external budget bridge with its `byom_subordinate`
+/// reservation and settlement heads, the C2 `ByomEpisodeBinding` row,
+/// and the §13.2 effect outcome / governance disposition heads.
+///
+/// Recorded shape notes:
+/// - `activation_admissions.admission_id` IS the §11.1
+///   `UNIQUE(wake_intent_ref, wake_intent_revision)`: the kernel derives
+///   the id from the exact WakeIntent revision it evaluated, so a retry
+///   after a crash finds the one committed admission instead of minting
+///   a second decision.
+/// - `resource_allocations.allocation_id` likewise carries
+///   `UNIQUE(activation_admission_ref, stable_allocation_key)`.
+/// - `episode_lease_heads` is the ONE head per `(episode_id,
+///   generation)` — `episode_id` is the primary key and `generation` is
+///   fixed per Episode, so the §11.2 uniqueness is a table constraint.
+///   `expires_at_unix` is the CLOCKED deadline minted at claim
+///   (`now + lease_ttl_seconds`): reclaim is enabled only after the
+///   authoritative server clock passes it (D-RT-6/RT-10,
+///   proof/specs/EpisodeLease.tla `NoPrematureExpiry`). `attempt_count`,
+///   `expiry_count` and `yield_count` are the audit counters the
+///   `ReclaimNeedsExpiryOrYield` invariant is stated over — a crash
+///   alone advances none of them.
+/// - `byom_episode_bindings.record` holds the FROZEN C2
+///   `byom-episode-binding.schema.json` object verbatim; the indexed
+///   columns are denormalized copies for the fence and idempotency
+///   lookups (`stable_binding_key` is the L22 idempotent-create key).
+/// - `external_budget_bridges`/`subordinate_reservations` carry NO SQL
+///   UNIQUE on the stable key: journal effects apply as full-row upserts
+///   (`INSERT OR REPLACE`), under which UNIQUE would silently DELETE the
+///   conflicting row. The ids are DERIVED from the stable key instead,
+///   so idempotent create is a primary key.
+/// - the four head tables (`usage_settlement_heads`,
+///   `effect_outcome_admission_heads`,
+///   `effect_governance_disposition_heads`) are compare-and-swap heads
+///   keyed exactly as §11.4/§13.1 specify; their revision rows are
+///   immutable and append-only.
+const V7: &str = r#"
+CREATE TABLE activation_admissions (
+    admission_id             TEXT PRIMARY KEY,
+    society_id               TEXT NOT NULL,
+    wake_intent_ref          TEXT NOT NULL,
+    wake_intent_revision     INTEGER NOT NULL,
+    wake_intent_digest       TEXT NOT NULL,
+    activity_stream_ref      TEXT NOT NULL,
+    generation               INTEGER NOT NULL,
+    participant_ref          TEXT NOT NULL,
+    kernel_policy_version    TEXT NOT NULL,
+    dependency_set_ref       TEXT NOT NULL,
+    dependency_digest        TEXT NOT NULL,
+    eligibility_reason_codes TEXT NOT NULL,
+    state                    TEXT NOT NULL,
+    decided_at               TEXT NOT NULL,
+    digest                   TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE resource_allocations (
+    allocation_id                  TEXT PRIMARY KEY,
+    society_id                     TEXT NOT NULL,
+    revision                       INTEGER NOT NULL,
+    activation_admission_ref       TEXT NOT NULL,
+    activity_stream_ref            TEXT NOT NULL,
+    generation                     INTEGER NOT NULL,
+    participant_ref                TEXT NOT NULL,
+    mandate_ref                    TEXT NOT NULL,
+    mandate_use_refs               TEXT NOT NULL,
+    byom_budget_reservation_set_ref TEXT NOT NULL,
+    reservation_items              TEXT NOT NULL,
+    external_budget_bridge_ref     TEXT,
+    rate_counter_use_refs          TEXT NOT NULL,
+    stable_allocation_key          TEXT NOT NULL,
+    expires_at                     TEXT NOT NULL,
+    state                          TEXT NOT NULL,
+    dependency_digest              TEXT NOT NULL,
+    digest                         TEXT NOT NULL,
+    created_at                     TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE external_budget_bridges (
+    bridge_id                        TEXT PRIMARY KEY,
+    society_id                       TEXT NOT NULL,
+    revision                         INTEGER NOT NULL,
+    byom_reservation_set_ref         TEXT NOT NULL,
+    byom_reservation_set_revision    INTEGER NOT NULL,
+    byom_reservation_set_digest      TEXT NOT NULL,
+    external_owner                   TEXT NOT NULL,
+    external_endpoint_ref            TEXT NOT NULL,
+    external_binding_epoch           INTEGER NOT NULL,
+    stable_external_reservation_key  TEXT NOT NULL,
+    subordinate_reservation_ref      TEXT,
+    subordinate_reservation_revision INTEGER,
+    subordinate_reservation_digest   TEXT,
+    state                            TEXT NOT NULL,
+    reconcile_decision_ref           TEXT,
+    settled_charge                   INTEGER NOT NULL,
+    created_at                       TEXT NOT NULL,
+    digest                           TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE subordinate_reservations (
+    subordinate_reservation_ref     TEXT PRIMARY KEY,
+    society_id                      TEXT NOT NULL,
+    external_budget_bridge_ref      TEXT NOT NULL,
+    stable_external_reservation_key TEXT NOT NULL,
+    revision                        INTEGER NOT NULL,
+    reservation_class               TEXT NOT NULL,
+    record                          TEXT NOT NULL,
+    state                           TEXT NOT NULL,
+    created_at                      TEXT NOT NULL,
+    digest                          TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE placement_admissions (
+    admission_id               TEXT PRIMARY KEY,
+    society_id                 TEXT NOT NULL,
+    resource_allocation_ref    TEXT NOT NULL,
+    resource_allocation_digest TEXT NOT NULL,
+    kovee_placement_ref        TEXT NOT NULL,
+    kovee_placement_revision   INTEGER NOT NULL,
+    kovee_placement_digest     TEXT NOT NULL,
+    source_binding_epoch       INTEGER NOT NULL,
+    selected_manifestation_ref TEXT NOT NULL,
+    kovee_invocation_ref       TEXT NOT NULL,
+    kovee_fence_epoch          INTEGER NOT NULL,
+    verification_status        TEXT NOT NULL,
+    admitted_at                TEXT NOT NULL,
+    digest                     TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE episodes (
+    episode_id               TEXT PRIMARY KEY,
+    society_id               TEXT NOT NULL,
+    activity_stream_ref      TEXT NOT NULL,
+    generation               INTEGER NOT NULL,
+    revision                 INTEGER NOT NULL,
+    endpoint_incarnation     TEXT NOT NULL,
+    recovery_epoch           INTEGER NOT NULL,
+    participant_ref          TEXT NOT NULL,
+    manifestation_ref        TEXT,
+    mandate_ref              TEXT NOT NULL,
+    wake_intent_ref          TEXT NOT NULL,
+    activation_admission_ref TEXT NOT NULL,
+    resource_allocation_ref  TEXT NOT NULL,
+    placement_admission_ref  TEXT,
+    wake_cause_ref           TEXT NOT NULL,
+    admission_cursor         TEXT NOT NULL,
+    context_manifest_ref     TEXT,
+    context_manifest_digest  TEXT,
+    mandate_use_refs         TEXT NOT NULL,
+    budget_reservation_set_ref TEXT NOT NULL,
+    deadline                 TEXT,
+    deadline_unix            INTEGER,
+    state                    TEXT NOT NULL,
+    created_at               TEXT NOT NULL,
+    terminal_at              TEXT
+) STRICT;
+
+CREATE TABLE episode_lease_heads (
+    episode_id             TEXT PRIMARY KEY,
+    society_id             TEXT NOT NULL,
+    generation             INTEGER NOT NULL,
+    revision               INTEGER NOT NULL,
+    current_attempt_ref    TEXT NOT NULL,
+    holder_runtime_binding TEXT NOT NULL,
+    byom_fence_epoch       INTEGER NOT NULL,
+    renewed_at             TEXT NOT NULL,
+    expires_at             TEXT NOT NULL,
+    expires_at_unix        INTEGER NOT NULL,
+    state                  TEXT NOT NULL,
+    last_attempt_event_ref TEXT,
+    attempt_count          INTEGER NOT NULL,
+    expiry_count           INTEGER NOT NULL,
+    yield_count            INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE episode_attempts (
+    attempt_id           TEXT PRIMARY KEY,
+    society_id           TEXT NOT NULL,
+    episode_id           TEXT NOT NULL,
+    generation           INTEGER NOT NULL,
+    claim_ordinal        INTEGER NOT NULL,
+    holder_runtime_binding TEXT NOT NULL,
+    manifestation_ref    TEXT,
+    byom_fence_epoch     INTEGER NOT NULL,
+    acquired_at          TEXT NOT NULL,
+    initial_expires_at   TEXT NOT NULL,
+    kovee_invocation_ref TEXT,
+    kovee_attempt_ref    TEXT,
+    kovee_fence_digest   TEXT,
+    claim_subject_digest TEXT NOT NULL,
+    created_at           TEXT NOT NULL,
+    digest               TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE episode_attempt_events (
+    event_id                TEXT PRIMARY KEY,
+    society_id              TEXT NOT NULL,
+    episode_id              TEXT NOT NULL,
+    attempt_ref             TEXT NOT NULL,
+    expected_lease_revision INTEGER NOT NULL,
+    byom_fence_epoch        INTEGER NOT NULL,
+    kind                    TEXT NOT NULL,
+    payload_digest          TEXT NOT NULL,
+    occurred_at             TEXT NOT NULL,
+    digest                  TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE episode_completions (
+    completion_id       TEXT PRIMARY KEY,
+    society_id          TEXT NOT NULL,
+    episode_ref         TEXT NOT NULL,
+    attempt_ref         TEXT NOT NULL,
+    byom_fence_epoch    INTEGER NOT NULL,
+    runtime_binding_ref TEXT NOT NULL,
+    output_refs         TEXT NOT NULL,
+    evidence_refs       TEXT NOT NULL,
+    usage_report_refs   TEXT NOT NULL,
+    outcome             TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    digest              TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE byom_episode_bindings (
+    binding_id             TEXT PRIMARY KEY,
+    society_id             TEXT NOT NULL,
+    stable_binding_key     TEXT NOT NULL,
+    episode_ref            TEXT NOT NULL,
+    byom_attempt_ref       TEXT NOT NULL,
+    kovee_invocation_ref   TEXT NOT NULL,
+    byom_fence_epoch       INTEGER NOT NULL,
+    kovee_invocation_fence INTEGER NOT NULL,
+    record                 TEXT NOT NULL,
+    state                  TEXT NOT NULL,
+    created_at             TEXT NOT NULL,
+    digest                 TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE usage_reports (
+    report_id         TEXT PRIMARY KEY,
+    society_id        TEXT NOT NULL,
+    episode_ref       TEXT NOT NULL,
+    attempt_ref       TEXT NOT NULL,
+    byom_fence_epoch  INTEGER NOT NULL,
+    source            TEXT NOT NULL,
+    stable_report_key TEXT NOT NULL,
+    quantities        TEXT NOT NULL,
+    settlement_ref    TEXT,
+    created_at        TEXT NOT NULL,
+    digest            TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE usage_settlements (
+    settlement_id              TEXT PRIMARY KEY,
+    society_id                 TEXT NOT NULL,
+    revision                   INTEGER NOT NULL,
+    previous_settlement_digest TEXT,
+    stable_settlement_key      TEXT NOT NULL,
+    reservation_set_ref        TEXT NOT NULL,
+    meter_ref                  TEXT NOT NULL,
+    meter_attestation_ref      TEXT NOT NULL,
+    pricing_revision_ref       TEXT,
+    measured_quantities        TEXT NOT NULL,
+    charged_quantities         TEXT NOT NULL,
+    status                     TEXT NOT NULL,
+    created_at                 TEXT NOT NULL,
+    digest                     TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE usage_settlement_heads (
+    reservation_set_ref        TEXT NOT NULL,
+    stable_settlement_key      TEXT NOT NULL,
+    society_id                 TEXT NOT NULL,
+    current_settlement_ref     TEXT NOT NULL,
+    current_settlement_revision INTEGER NOT NULL,
+    current_settlement_digest  TEXT NOT NULL,
+    revision                   INTEGER NOT NULL,
+    updated_at                 TEXT NOT NULL,
+    PRIMARY KEY (reservation_set_ref, stable_settlement_key)
+) STRICT;
+
+CREATE TABLE effect_outcome_admissions (
+    admission_id                 TEXT PRIMARY KEY,
+    society_id                   TEXT NOT NULL,
+    revision                     INTEGER NOT NULL,
+    previous_admission_digest    TEXT,
+    intent_ref                   TEXT NOT NULL,
+    intent_digest                TEXT NOT NULL,
+    stable_execution_key         TEXT NOT NULL,
+    episode_ref                  TEXT NOT NULL,
+    host_protocol                TEXT NOT NULL,
+    host_endpoint_ref            TEXT NOT NULL,
+    host_effect_ref              TEXT NOT NULL,
+    host_effect_digest           TEXT NOT NULL,
+    host_receipt_ref             TEXT NOT NULL,
+    host_receipt_digest          TEXT NOT NULL,
+    host_cursor_or_signature_ref TEXT NOT NULL,
+    verification_status          TEXT NOT NULL,
+    outcome                      TEXT NOT NULL,
+    result_ref                   TEXT,
+    result_digest                TEXT,
+    usage_settlement_ref         TEXT,
+    reconciles_admission_ref     TEXT,
+    reconciles_admission_digest  TEXT,
+    admitted_by_service          TEXT NOT NULL,
+    admitted_at                  TEXT NOT NULL,
+    digest                       TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE effect_outcome_admission_heads (
+    intent_ref                 TEXT NOT NULL,
+    stable_execution_key       TEXT NOT NULL,
+    society_id                 TEXT NOT NULL,
+    current_admission_ref      TEXT NOT NULL,
+    current_admission_revision INTEGER NOT NULL,
+    current_admission_digest   TEXT NOT NULL,
+    current_outcome            TEXT NOT NULL,
+    revision                   INTEGER NOT NULL,
+    updated_at                 TEXT NOT NULL,
+    PRIMARY KEY (intent_ref, stable_execution_key)
+) STRICT;
+
+CREATE TABLE effect_governance_dispositions (
+    disposition_id                 TEXT PRIMARY KEY,
+    society_id                     TEXT NOT NULL,
+    revision                       INTEGER NOT NULL,
+    previous_disposition_ref       TEXT,
+    previous_disposition_revision  INTEGER,
+    previous_disposition_digest    TEXT,
+    intent_ref                     TEXT NOT NULL,
+    intent_digest                  TEXT NOT NULL,
+    stable_execution_key           TEXT NOT NULL,
+    phase                          TEXT NOT NULL,
+    basis_source_admission_ref     TEXT NOT NULL,
+    basis_source_admission_revision INTEGER NOT NULL,
+    basis_source_admission_digest  TEXT NOT NULL,
+    basis_source_outcome           TEXT NOT NULL,
+    governance_decision_ref        TEXT NOT NULL,
+    governance_decision_digest     TEXT NOT NULL,
+    local_outcome                  TEXT NOT NULL,
+    result_use                     TEXT NOT NULL,
+    classification_admission_ref   TEXT,
+    classification_admission_digest TEXT,
+    late_source_policy             TEXT,
+    created_at                     TEXT NOT NULL,
+    digest                         TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE effect_governance_disposition_heads (
+    intent_ref                    TEXT NOT NULL,
+    stable_execution_key          TEXT NOT NULL,
+    society_id                    TEXT NOT NULL,
+    current_disposition_ref       TEXT NOT NULL,
+    current_disposition_revision  INTEGER NOT NULL,
+    current_disposition_digest    TEXT NOT NULL,
+    state                         TEXT NOT NULL,
+    revision                      INTEGER NOT NULL,
+    updated_at                    TEXT NOT NULL,
+    PRIMARY KEY (intent_ref, stable_execution_key)
+) STRICT;
+"#;
+
+const MIGRATIONS: [&str; 7] = [V1, V2, V3, V4, V5, V6, V7];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

@@ -1,0 +1,25 @@
+{
+  "name": "ops/episode-start-request-single-fence-invalid",
+  "description": "family contract L21: a mutation carrying only ONE of the DUAL fences is the committed negative vector \u2014 the closed shape refuses it",
+  "input": {
+    "schema": "episode-start-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_start",
+      "meta": {
+        "request_id": "req-srt-2",
+        "idempotency_key": "idem-srt-2",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 1
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1
+    }
+  },
+  "expected": {
+    "valid": false
+  }
+}

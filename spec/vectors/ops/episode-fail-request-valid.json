@@ -1,0 +1,30 @@
+{
+  "name": "ops/episode-fail-request-valid",
+  "description": "the failing holder under both current fences (R30)",
+  "input": {
+    "schema": "episode-fail-request",
+    "value": {
+      "version": "0.2",
+      "op": "episode_fail",
+      "meta": {
+        "request_id": "req-fal-1",
+        "idempotency_key": "idem-fal-1",
+        "expected_endpoint_incarnation": "inc-0001",
+        "expected_recovery_epoch": 0,
+        "expected_revision": 2
+      },
+      "episode_ref": "ep-0001",
+      "generation": 1,
+      "byom_attempt_ref": "att-0001",
+      "byom_fence_epoch": 1,
+      "kovee_invocation_fence": 7,
+      "failure_reason_ref": "reason-tool-error",
+      "evidence_refs": [
+        "ev-2"
+      ]
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}
