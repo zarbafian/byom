@@ -4,6 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Heavy suites write large fixtures; this box's /tmp is a quota-limited
+# tmpfs, so keep them on the data disk when it is available.
+if [ -d /data/tmp ] && [ -z "${TMPDIR:-}" ]; then
+  export TMPDIR=/data/tmp
+fi
+
 echo "== conformance (schemas + envelope/machine/policy vectors + C3a mcp tool bindings)"
 python3 conformance/run.py
 
