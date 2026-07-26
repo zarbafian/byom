@@ -61,7 +61,7 @@ use kovee_byom::records::{KoveeRealmByomBinding, KoveeSocietyMapping};
 use kovee_byom::runtime::{self as byom_runtime, Workload};
 use kovee_core::family::DigestRef;
 use kovee_core::problem::{Problem, ProblemKind};
-use kovee_effects::{Egress, HttpsTransport, RecordingTransport};
+use kovee_effects::{Egress, RecordingTransport};
 use kovee_store::Store;
 use koveed::episode::{self, Notice, Runtime, Seam};
 use koveed::model_broker::{self, ActAuthorization, CompleteRequest, Fault};
@@ -624,6 +624,12 @@ fn authorization_of(args: &Value) -> ActAuthorization {
         act_intent_digest: digest(a, "act_intent_digest"),
         act_revision: number(a, "act_revision"),
         subject_digest: digest(a, "subject_digest"),
+        // The HOST-owned ContextManifest the act's seats assented to. byom
+        // compares BOTH members at consumption (R3-A01), so the notice
+        // carries the pair byom's own `act_intent_prepare` published rather
+        // than nothing at all.
+        context_manifest_ref: text(a, "context_manifest_ref"),
+        context_manifest_digest: digest(a, "context_manifest_digest"),
         stable_execution_key: text(a, "stable_execution_key"),
         budget_reservation_set_ref: text(a, "budget_reservation_set_ref"),
     }
@@ -655,14 +661,15 @@ fn complete(args: &Value) -> Result<Value, Problem> {
         "https" => None,
         other => fail(&format!("unknown transport {other:?}")),
     };
-    let https = HttpsTransport::new();
-    // The wire is SEALED (disposition D-R3-1): `Egress` is the only thing
-    // `complete` accepts, the recording double exists only under
+    // The wire is SEALED (D-R3-1, R3-B02): `Egress` is the only thing
+    // `complete` accepts, `HttpsTransport` is crate-private now and
+    // `Egress::live()` hands back a kovee-effects singleton this binary can
+    // neither name nor send through, the recording double exists only under
     // kovee-effects' `testing` feature, and either arm stamps its own profile
     // on the effect so a receipt cannot claim a provider call it never made.
     let transport: Egress<'_> = match &recording {
         Some(double) => Egress::recording(double),
-        None => Egress::live(&https),
+        None => Egress::live(),
     };
     let outcome = model_broker::complete(
         &mut store,

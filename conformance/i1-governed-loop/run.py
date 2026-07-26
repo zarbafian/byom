@@ -276,6 +276,89 @@ def head_of(repo: Path) -> dict:
             "dirty": bool(git_out(repo, "status", "--porcelain"))}
 
 
+def _tracked_blobs(repo: Path) -> dict:
+    """path -> blob id, for every file the pinned commit contains."""
+    blobs = {}
+    for line in git_out(repo, "ls-tree", "-r", "HEAD").splitlines():
+        info, path = line.split("\t", 1)
+        blobs[path] = info.split()[2]
+    return blobs
+
+
+def source_pin(repo: Path, binaries: list) -> dict:
+    """The pin, as EXACT SOURCE STATE rather than HEAD equality (R3-I02).
+
+    `assert_pinned` used to compare commits only, so the confirmer made the
+    pinned kovee tree dirty WITHOUT moving HEAD and the gate accepted it —
+    it even printed `dirty: true` and passed. A commit id says nothing about
+    the bytes that were compiled.
+
+    What is compared here is the set of files cargo itself says each binary
+    was built from (`<target>/debug/<name>.d`, the same record
+    `assert_fresh` reads). Every one of them that lives in `repo` must be
+    TRACKED at HEAD and byte-identical to the blob HEAD holds, and so must
+    every manifest and the lockfile. A modified, staged, deleted or
+    never-committed source file therefore fails the gate, whatever HEAD
+    says.
+
+    It is deliberately not `git status --porcelain`: that would also fail on
+    an untracked file in some crate this gate never compiles, which says
+    nothing about the revision under test. The dep files name exactly the
+    inputs that CAN change what this run observes."""
+    blobs = _tracked_blobs(repo)
+    inputs: set = set()
+    for binary in binaries:
+        dep_file = Path(binary).with_suffix(".d")
+        need(dep_file.exists(),
+             f"cargo wrote no dependency record for {binary}: the source "
+             f"state cannot be pinned")
+        for line in dep_file.read_text(encoding="utf-8").splitlines():
+            if ": " not in line:
+                continue
+            for token in line.split(": ", 1)[1].split():
+                source = Path(token)
+                if not source.is_file():
+                    continue
+                try:
+                    rel = str(source.resolve().relative_to(repo.resolve()))
+                except ValueError:
+                    continue  # a registry/toolchain path, not this repo
+                # `build.rs` scripts declare `rerun-if-changed` on git's own
+                # files to follow the tree; those are the repository, not
+                # source it compiled, and git never tracks them.
+                if rel == ".git" or rel.startswith(".git/"):
+                    continue
+                inputs.add(rel)
+    # The manifests and the lockfile decide WHICH sources those are.
+    inputs |= {p for p in blobs
+               if p == "Cargo.lock" or p.endswith("Cargo.toml")}
+    untracked, modified = [], []
+    for rel in sorted(inputs):
+        if rel not in blobs:
+            untracked.append(rel)
+            continue
+        actual = subprocess.check_output(
+            ["git", "-C", str(repo), "hash-object", "--", rel],
+            text=True).strip()
+        if actual != blobs[rel]:
+            modified.append(rel)
+    need(not untracked,
+         f"{repo.name}: {len(untracked)} compiled input(s) are not committed "
+         f"at {git_out(repo, 'rev-parse', 'HEAD')[:12]}, so this run is not "
+         f"the pinned revision: {untracked[:8]}")
+    need(not modified,
+         f"{repo.name}: {len(modified)} compiled input(s) differ from the "
+         f"pinned commit {git_out(repo, 'rev-parse', 'HEAD')[:12]} — the "
+         f"gate would be testing source that exists nowhere in history: "
+         f"{modified[:8]}")
+    digest = hashlib.sha256()
+    for rel in sorted(inputs):
+        digest.update(f"{rel}\0{blobs[rel]}\n".encode())
+    return {"compiled_inputs": len(inputs),
+            "source_digest": digest.hexdigest(),
+            "matches_pinned_commit": True}
+
+
 def assert_fresh(binary: Path):
     """The staleness oracle, from cargo's OWN dependency record.
 
@@ -301,44 +384,67 @@ def assert_fresh(binary: Path):
                  f"gate would be testing a stale revision")
 
 
-def _binary(repo: Path, package: str, name: str) -> str:
+# One cargo invocation per repo, so each side is resolved with ONE feature
+# set: building the packages one at a time made cargo re-resolve the shared
+# crates between them and rebuild on every call.
+#
+# The kovee side is a TEST BUILD (`koveed/testing`), and that is the point:
+# it is what lets this gate drive koveed's OWN `model_complete` to
+# COMPLETION over a no-network wire (R3-I02), instead of linking kovee as a
+# library and choosing the transport itself — which bypassed the very op
+# under test. A production `cargo build -p koveed` compiles no
+# `RecordingTransport` and no egress override at all; every mode's honesty
+# label says which build it ran.
+KOVEE_TEST_FEATURE = "koveed/testing"
+BUILD_GROUPS = {
+    "byom": (["byomd", "byom-cli", "byom-mcp"], []),
+    "kovee": (["koveed", "kovee-cli", "kovee-mcp"], [KOVEE_TEST_FEATURE]),
+}
+
+
+def _binary(repo: Path, group: str, name: str) -> str:
     """One daemon/CLI binary, ALWAYS rebuilt once per run (R3-I02:
     "reuse of an existing binary can mix revisions"), then checked against
     its own repo's newest source file — so a build that silently failed to
     pick a change up cannot pass the gate."""
+    packages, features = BUILD_GROUPS[group]
     path = _target_dir(repo) / "debug" / name
-    if package not in _built:
-        subprocess.check_call(
-            ["cargo", "build", "-q", "-p", package,
-             "--manifest-path", str(repo / "Cargo.toml")])
-        _built.add(package)
+    if group not in _built:
+        args = ["cargo", "build", "-q",
+                "--manifest-path", str(repo / "Cargo.toml")]
+        for package in packages:
+            args += ["-p", package]
+        for feature in features:
+            args += ["--features", feature]
+        subprocess.check_call(args)
+        _built.add(group)
     need(path.exists(), f"binary missing after build: {path}")
     assert_fresh(path)
     return str(path)
 
 
 def byomd_bin():
-    return _binary(REPO, "byomd", "byomd")
+    return _binary(REPO, "byom", "byomd")
 
 
 def byom_cli_bin():
-    return _binary(REPO, "byom-cli", "byom")
+    return _binary(REPO, "byom", "byom")
 
 
 def byom_mcp_bin():
-    return _binary(REPO, "byom-mcp", "byom-mcp")
+    return _binary(REPO, "byom", "byom-mcp")
 
 
 def koveed_bin():
-    return _binary(KOVEE_ROOT, "koveed", "koveed")
+    return _binary(KOVEE_ROOT, "kovee", "koveed")
 
 
 def kovee_cli_bin():
-    return _binary(KOVEE_ROOT, "kovee-cli", "kovee")
+    return _binary(KOVEE_ROOT, "kovee", "kovee")
 
 
 def kovee_mcp_bin():
-    return _binary(KOVEE_ROOT, "kovee-mcp", "kovee-mcp")
+    return _binary(KOVEE_ROOT, "kovee", "kovee-mcp")
 
 
 def driver_bin() -> str:
@@ -362,14 +468,24 @@ def driver_bin() -> str:
 
 
 def assert_pinned(ev: Evidence) -> dict:
-    """The revisions this run gates, asserted rather than assumed.
+    """The revisions this run gates, asserted rather than assumed — and the
+    SOURCE STATE, not just the commit id (R3-I02).
 
     The driver reports the commit its `build.rs` read out of the kovee tree
     it LINKS (fixed path dependencies, so that tree is decided at compile
     time); this compares it with the tree the harness resolved, and refuses
     a mismatch or a driver built against a path that is not `$KOVEE_ROOT`.
     `$I1_KOVEE_COMMIT`/`$I1_BYOM_COMMIT` pin the pair explicitly when CI
-    wants to."""
+    wants to.
+
+    Then [`source_pin`] takes every file cargo says the binaries under test
+    were compiled from and requires it to be committed AT that commit, byte
+    for byte. A dirty tree with the right HEAD used to pass — it printed
+    `dirty: true` and passed anyway — and it no longer does, from either
+    repo, in any mode.
+
+    EVERY mode calls this, including the real-harness ones, which used not
+    to call it at all."""
     byom, kovee = head_of(REPO), head_of(KOVEE_ROOT)
     reported = json.loads(subprocess.check_output(
         [driver_bin(), "pinned"], input="{}", text=True))
@@ -389,7 +505,18 @@ def assert_pinned(ev: Evidence) -> dict:
         if expected:
             need(actual.startswith(expected.strip()),
                  f"${name} pins {expected}, the tree is at {actual}")
-    pinned = {"byom": byom, "kovee": kovee,
+    byom_sources = source_pin(REPO, [byomd_bin(), byom_cli_bin(),
+                                     byom_mcp_bin()])
+    kovee_sources = source_pin(KOVEE_ROOT, [koveed_bin(), kovee_cli_bin(),
+                                            kovee_mcp_bin(), driver_bin()])
+    # The driver's build.rs read the same thing at COMPILE time, from inside
+    # cargo — a second, independent witness that the tree it linked was the
+    # committed one.
+    need(built.get("kovee_worktree_dirty") is False,
+         f"the driver was COMPILED against a dirty kovee worktree: the "
+         f"binary contains source that is committed nowhere ({built})")
+    pinned = {"byom": {**byom, "sources": byom_sources},
+              "kovee": {**kovee, "sources": kovee_sources},
               "driver_built_against": built,
               "explicit_pins": {k: os.environ.get(k) for k in
                                 ("I1_KOVEE_COMMIT", "I1_BYOM_COMMIT")}}
@@ -418,6 +545,10 @@ class Evidence:
         self.n = 0
         self.ns: str | None = None
         self._written: dict[str, int] = {}
+        # (cell, title) for every step this run took. `plan_coverage` reads
+        # it: a coverage claim has to point at a step this run actually
+        # printed, not at a string its caller composed (R3-I01).
+        self.titles: list = []
         self._steps = (self.dir / "steps.jsonl").open("w", encoding="utf-8")
 
     def namespace(self, slug: str | None):
@@ -432,6 +563,7 @@ class Evidence:
         row = {"step": self.n, "title": title, **detail}
         if self.ns:
             row["cell"] = self.ns
+        self.titles.append((self.ns, title))
         self._steps.write(json.dumps(row) + "\n")
         self._steps.flush()
         print(f"  ok {self.n:02d}  {title}")
@@ -496,6 +628,166 @@ def peer_process_start(pid: int) -> int:
         return int(fields[19])
     except (IndexError, ValueError):
         return 0
+
+
+# ------------------------------------------------- the wire, losslessly ----
+#
+# R3-I04(a): the relay used to `json.loads` every frame and throw the bytes
+# away, so the oracle's "byte-equal arguments" comparison was really Python
+# equality between two parsed dicts — `{"n": 1.0}` and `{"n": 1}` compared
+# EQUAL, and a duplicate key silently lost one of its values. What the
+# relay saw is now kept, and what is compared is derived from those bytes.
+#
+# The comparison is BYTE equality of a canonical form that throws nothing
+# away: number literals travel verbatim (`1.0` is not `1`), duplicate keys
+# are a hard error, and the only things normalised are the two that carry
+# no JSON meaning — insignificant whitespace and member ORDER. A model that
+# emits the same members in another order sent the same arguments; a model
+# that respells a number did not.
+
+
+class Literal(str):
+    """A number exactly as it appeared on the wire."""
+
+
+def _no_duplicate_keys(items: list) -> dict:
+    keys = [k for k, _ in items]
+    if len(set(keys)) != len(keys):
+        raise ValueError(f"duplicate object keys on the wire: {sorted(keys)}")
+    return dict(items)
+
+
+def wire_value(text: str):
+    """One JSON value, parsed WITHOUT losing number spelling or duplicate
+    keys — the two distinctions `json.loads` silently discards."""
+    return json.loads(text, parse_int=Literal, parse_float=Literal,
+                      object_pairs_hook=_no_duplicate_keys)
+
+
+def canonical(value) -> str:
+    """The canonical byte form of a wire value or of a Python value this
+    driver fixed. Members are ordered and whitespace is dropped; NOTHING
+    else is normalised."""
+    if isinstance(value, Literal):
+        return str(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ",".join(canonical(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            json.dumps(k, ensure_ascii=False) + ":" + canonical(value[k])
+            for k in sorted(value)) + "}"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    raise Fail(f"not a JSON value: {value!r}")
+
+
+def json_span(text: str, path: list) -> str | None:
+    """The exact substring of `text` holding the value at `path` — the raw
+    bytes, quoted verbatim into the evidence."""
+    def ws(i: int) -> int:
+        while i < len(text) and text[i] in " \t\r\n":
+            i += 1
+        return i
+
+    def string_end(i: int) -> int:
+        i += 1
+        while i < len(text):
+            if text[i] == "\\":
+                i += 2
+                continue
+            if text[i] == '"':
+                return i + 1
+            i += 1
+        raise ValueError("unterminated string")
+
+    def value_end(i: int) -> int:
+        i = ws(i)
+        if text[i] == '"':
+            return string_end(i)
+        if text[i] in "{[":
+            close = "}" if text[i] == "{" else "]"
+            depth, i = 0, i
+            while i < len(text):
+                if text[i] == '"':
+                    i = string_end(i)
+                    continue
+                if text[i] in "{[":
+                    depth += 1
+                elif text[i] in "}]":
+                    depth -= 1
+                    if depth == 0:
+                        if text[i] != close:
+                            raise ValueError("mismatched bracket")
+                        return i + 1
+                i += 1
+            raise ValueError("unterminated container")
+        while i < len(text) and text[i] not in ",}] \t\r\n":
+            i += 1
+        return i
+
+    def member(i: int, key: str) -> int | None:
+        i = ws(i)
+        if text[i] != "{":
+            return None
+        i = ws(i + 1)
+        if text[i] == "}":
+            return None
+        while True:
+            i = ws(i)
+            name_end = string_end(i)
+            name = json.loads(text[i:name_end])
+            i = ws(name_end)
+            i = ws(i + 1)  # the ':'
+            end = value_end(i)
+            if name == key:
+                return i
+            i = ws(end)
+            if i >= len(text) or text[i] != ",":
+                return None
+            i += 1
+
+    try:
+        i = 0
+        for key in path:
+            found = member(i, key)
+            if found is None:
+                return None
+            i = found
+        return text[i:value_end(i)]
+    except (ValueError, IndexError):
+        return None
+
+
+# The byom-mcp logical call key, re-derived (D-R1-3, `bridge.rs::meta`).
+#
+# R3-I04(b): the oracle used to correlate a session with byomd's ledger by
+# EVENT KIND, so any same-kind event landing after the mark satisfied the
+# step — including one an exact REFUSED invocation could not have produced.
+# byom-mcp derives its `request_id` from (session salt, tool, op, JCS of the
+# arguments) and byomd stores it as the event's `correlation_ref`, so with
+# the salt pinned by this harness the exact event a given call produced is
+# nameable. That is request identity, not a kind that anything can share.
+MCP_REQUEST_PREFIX = "req-"
+
+
+def logical_call_key(session: str, tool: str, arguments: dict) -> str:
+    need(tool.startswith("byom_"),
+         f"byom-mcp tool names derive from their op: {tool}")
+    bound = {"session": session, "tool": tool,
+             "op": tool[len("byom_"):], "input": arguments}
+    return hashlib.sha256(jcs(bound)).hexdigest()[:32]
+
+
+def correlation_of(session: str, tool: str, arguments: dict) -> str:
+    return MCP_REQUEST_PREFIX + logical_call_key(session, tool, arguments)
 
 
 def parse_credential(line: str) -> dict:
@@ -785,6 +1077,13 @@ class Koveed(Killable):
             # reachable from a worker request.
             "KOVEE_BYOM_RUNTIME_DIR": str(self.byom.run_dir),
             "KOVEE_BYOM_CHANNELS_DIR": str(self.byom.channels_dir()),
+            # R3-I02: the daemon's OWN egress, and the reason this gate can
+            # drive koveed's `model_complete` to COMPLETION with no network.
+            # It is the daemon that chooses the wire — a worker request
+            # cannot name one — so the choice has to be made where the
+            # daemon is configured, and only a `koveed/testing` build has
+            # this wire to choose. The value is the stub provider reply.
+            "KOVEE_TESTING_RECORDING_EGRESS": STUB_REPLY,
         }
 
     def start(self, env: dict | None = None):
@@ -990,6 +1289,20 @@ class AgentChannel:
         self.ev = ev
         self.sessions = 0
 
+    def salt(self) -> str:
+        """The byom-mcp session salt for the CURRENT session.
+
+        byom-mcp derives its logical call key (and therefore the
+        `request_id` byomd stores as each event's `correlation_ref`) from
+        this salt plus the tool and its JCS arguments. Pinning it is what
+        lets a caller name the EXACT event one call produced (R3-I04). It
+        must stay per-session: a constant would make two identical calls in
+        different sessions share an idempotency key, and the second would
+        replay the first's receipt instead of committing."""
+        return f"i1-{self.tag}-{self.sessions:03d}"
+
+    tag = "scripted"
+
     def open(self) -> Mcp:
         self.sessions += 1
         return Mcp([byom_mcp_bin(), "--profile", "participant"],
@@ -997,7 +1310,8 @@ class AgentChannel:
                     "BYOM_PARTICIPANT_TOKEN_FILE":
                         str(self.byom.token_file(
                             f"participant-{AGENT}.token")),
-                    "BYOM_SOCIETY": self.society},
+                    "BYOM_SOCIETY": self.society,
+                    "BYOM_MCP_SESSION": self.salt()},
                    self.ev, "byom-mcp[participant]")
 
     def one(self, tool: str, arguments: dict, frames: str | None = None):
@@ -1107,9 +1421,12 @@ def mode_mcp_wire(log_path: str, argv: list) -> int:
                               "dir": direction, **row}) + "\n")
 
     def frame(direction: str, line: bytes):
+        # The RAW text of every frame is kept, always (R3-I04): the parsed
+        # form is a convenience, the bytes are the evidence. The oracle
+        # compares what the server was sent, not what Python made of it.
         text = line.decode("utf-8", "replace").rstrip("\r\n")
         try:
-            record(direction, frame=json.loads(text))
+            record(direction, frame=json.loads(text), raw=text)
         except ValueError:
             record(direction, raw=text)
 
@@ -1163,7 +1480,10 @@ def wire_report(log: Path, tool: str) -> dict:
     - `served`: the tool names the server ADVERTISED in `tools/list` (the
       surface question: was the tool the harness allowed even there?);
     - `invocations`: every `tools/call` for `tool`, each with the server's
-      own answer — the problem body VERBATIM when byomd refused;
+      own answer — the problem body VERBATIM when byomd refused — and, for
+      each, the RAW argument bytes the relay saw plus their lossless
+      canonical form (R3-I04: the comparison used to be Python equality
+      between parsed dicts, which cannot tell `1.0` from `1`);
     - `other_calls`: any call for a different tool (the prompt forbids
       them, so this is a finding, not noise);
     - `stderr`: the server's own stderr lines."""
@@ -1186,9 +1506,28 @@ def wire_report(log: Path, tool: str) -> dict:
         body = row.get("frame") or {}
         params = body.get("params") or {}
         if body.get("method") == "tools/call":
-            pending[json.dumps(body.get("id"))] = {
-                "name": params.get("name"),
-                "arguments": params.get("arguments")}
+            raw_line = row.get("raw")
+            raw_arguments = (json_span(raw_line, ["params", "arguments"])
+                             if raw_line else None)
+            call = {"name": params.get("name"),
+                    "arguments": params.get("arguments"),
+                    "raw_arguments": raw_arguments,
+                    "raw_frame": raw_line}
+            if raw_arguments is None:
+                # No bytes means no evidence. The step will refuse it
+                # rather than fall back to the parsed form.
+                call["canonical_arguments"] = None
+                call["canonical_error"] = (
+                    "the relay recorded no raw bytes for this call's "
+                    "arguments")
+            else:
+                try:
+                    call["canonical_arguments"] = canonical(
+                        wire_value(raw_arguments))
+                except (ValueError, Fail) as bad:
+                    call["canonical_arguments"] = None
+                    call["canonical_error"] = str(bad)
+            pending[json.dumps(body.get("id"))] = call
             continue
         if body.get("method") is not None or "id" not in body:
             continue
@@ -2551,7 +2890,7 @@ def worker_call(kovee: Koveed, ctx: dict, transport: dict, prompt: str,
 
 def worker_model_complete(kovee: Koveed, ctx: dict, transport: dict,
                           prompt: str, call_args: dict,
-                          authorization: dict) -> dict:
+                          authorization: dict, nonce: str = "") -> dict:
     """koveed's REAL worker-socket `model_complete` (R3-I02).
 
     The driver exists because kovee exposes the episode pipeline as library
@@ -2565,23 +2904,27 @@ def worker_model_complete(kovee: Koveed, ctx: dict, transport: dict,
     may express: no provider, host, header, credential or transport is
     nameable here, and the daemon supplies the wire.
 
-    HONEST LIMIT, stated because it is the residual of this fix: koveed's
-    `Daemon` constructs `HttpsTransport` unconditionally and kovee's
-    recording double exists only under kovee-effects' `testing` feature, so
-    the daemon has no no-network wire to offer and a COMPLETING call
-    through this op would have to reach a real provider. The gate therefore
-    drives the op at the points where it must refuse BEFORE egress (no
-    permit; a spent permit) — the whole authority chain, zero bytes — and
-    the completing dispatch still runs in the kovee-linked driver over
-    kovee's sealed `Egress::recording`. Closing the residual needs one
-    kovee-side change: a `testing`-gated daemon egress."""
+    R3-I02 is CLOSED here, both ways. The gate drives this op at the points
+    where it must refuse BEFORE egress (no permit; a spent permit) — the
+    whole authority chain, zero bytes — and it also drives it to COMPLETION
+    (`daemon_completing_dispatch`), because koveed now offers a no-network
+    egress in a `koveed/testing` build (`$KOVEE_TESTING_RECORDING_EGRESS`,
+    `koveed/src/main.rs`). The daemon still chooses the wire; the gate only
+    chooses which daemon to build."""
     return kovee.call({
         "version": "0.1", "op": "model_complete", "realm_id": REALM,
         "project_id": ctx["project"],
-        "meta": {"request_id": f"req-worker-model-{authorization['act_revision']}",
+        # The idempotency key is the LOGICAL call: an exact retry replays
+        # the retained receipt rather than dispatching twice. `nonce`
+        # therefore says "this is a DIFFERENT call", which is what a
+        # second dispatch of a spent permit has to be for the refusal to
+        # be a refusal and not a replay.
+        "meta": {"request_id":
+                     f"req-worker-model-{call_args['attempt_id']}"
+                     f"-r{authorization['act_revision']}{nonce}",
                  "idempotency_key":
                      f"idem-worker-model-{authorization['stable_execution_key']}"
-                     f"-r{authorization['act_revision']}"},
+                     f"-r{authorization['act_revision']}{nonce}"},
         "args": {
             "attempt_id": call_args["attempt_id"],
             "fence_epoch": call_args["fence_epoch"],
@@ -2596,6 +2939,12 @@ def worker_model_complete(kovee: Koveed, ctx: dict, transport: dict,
             "act_intent_digest": authorization["act_intent_digest"],
             "act_revision": authorization["act_revision"],
             "subject_digest": authorization["subject_digest"],
+            # R3-A01: the HOST-owned ContextManifest pair the act's seats
+            # assented to. byom compares both at consumption, so a worker
+            # request that cannot name them cannot drive a governed call.
+            "context_manifest_ref": authorization["context_manifest_ref"],
+            "context_manifest_digest":
+                authorization["context_manifest_digest"],
             "stable_execution_key": authorization["stable_execution_key"],
             "budget_reservation_set_ref":
                 authorization["budget_reservation_set_ref"]}},
@@ -2631,14 +2980,22 @@ def act_authorization(byom: ByomDaemon, act: dict, revision: int) -> dict:
     """The NOTICE kovee echoes into `execution_permit_consume`. Every
     member is byom's own committed value — including the ActIntent record
     digest, which byom exposes on no wire surface, so it is read from
-    byomd's own store beside the daemon."""
+    byomd's own store beside the daemon.
+
+    The CONTEXT pair (R3-A01) is the host's own binding, read back from
+    byom's committed act rather than repeated from this file: byom compares
+    both members against the subject its gate seat assented to, so an act
+    can no longer execute under a context no seat ever saw."""
+    row = byom.rows("SELECT intent_digest, context_manifest_ref,"
+                    " context_manifest_digest FROM act_intents"
+                    " WHERE intent_id = ?", (act["intent_id"],))[0]
     return {
         "act_intent_ref": act["intent_id"],
-        "act_intent_digest": json.loads(byom.row(
-            "SELECT intent_digest FROM act_intents WHERE intent_id = ?",
-            act["intent_id"])),
+        "act_intent_digest": json.loads(row["intent_digest"]),
         "act_revision": revision,
         "subject_digest": act["subject_digest"],
+        "context_manifest_ref": row["context_manifest_ref"],
+        "context_manifest_digest": json.loads(row["context_manifest_digest"]),
         "stable_execution_key": act["stable_execution_key"],
         "budget_reservation_set_ref": act["budget_reservation_set_ref"]}
 
@@ -3119,11 +3476,18 @@ def honesty_labels(ev: Evidence, transport: dict, note: str = ""):
             "EXERCISED went through the disclosed, metered broker; "
             "provider-bypass PREVENTION is NOT claimed until K4's secure "
             "profile. Data is synthetic and non-sensitive; no production "
-            "effect is performed",
+            "effect is performed. And the koveed this gate runs is a TEST "
+            "BUILD (`--features testing`): that is what gives the daemon a "
+            "no-network wire to offer, which is what lets the gate drive "
+            "koveed's own `model_complete` to completion (R3-I02). A "
+            "production build compiles no such wire, and the daemon-egress "
+            "cell checks that on the binaries rather than asserting it",
             assurance_profile="developer",
             bypass_prevention_claimed=False,
             confinement_claimed=False,
             data="synthetic, non-sensitive",
+            koveed_build=f"cargo build -p koveed --features "
+                         f"{KOVEE_TEST_FEATURE.split('/')[1]}",
             transport_profile=transport["profile"], note=note)
 
 
@@ -3646,6 +4010,193 @@ def ambiguous_effect_cell(ev: Evidence) -> None:
         cleanup_live()
 
 
+def production_seal(ev: Evidence) -> dict:
+    """The seal behind the daemon's no-network wire, checked on ARTIFACTS
+    rather than asserted (R3-I02).
+
+    The gate runs a `koveed/testing` build so the daemon has a recording
+    wire to offer. The claim that a PRODUCTION build has none is then
+    checked the only way it can be: build `koveed` with no features into a
+    separate target directory and look for the recording transport's own
+    profile string in the two binaries. It must be in the one this gate
+    runs and absent from the production one — the seal is the absence of
+    the code, not a flag."""
+    # Inside kovee's own target directory, which is always ignored: a second
+    # target dir is what makes this a second BUILD rather than an overwrite
+    # of the binary the daemons in this run are using.
+    seal_dir = _target_dir(KOVEE_ROOT) / "i1-production-seal"
+    subprocess.check_call(
+        ["cargo", "build", "-q", "-p", "koveed",
+         "--manifest-path", str(KOVEE_ROOT / "Cargo.toml")],
+        env={**os.environ, "CARGO_TARGET_DIR": str(seal_dir)})
+    production = seal_dir / "debug" / "koveed"
+    need(production.exists(), f"no production koveed at {production}")
+    mark = b"recording-test-double"
+    testing_has = mark in Path(koveed_bin()).read_bytes()
+    production_has = mark in production.read_bytes()
+    need(testing_has,
+         "the koveed this gate runs must BE a testing build: its binary "
+         "does not carry the recording transport at all, so the completing "
+         "worker-socket dispatch could only have gone to a real provider")
+    need(not production_has,
+         f"a production `cargo build -p koveed` still contains "
+         f"{mark.decode()}: the no-network wire is not sealed behind the "
+         f"`testing` feature after all ({production})")
+    return {"gate_binary": koveed_bin(), "gate_build": "koveed/testing",
+            "gate_binary_has_recording_wire": testing_has,
+            "production_binary": str(production),
+            "production_build": "cargo build -p koveed (no features)",
+            "production_binary_has_recording_wire": production_has}
+
+
+def daemon_egress_cell(ev: Evidence) -> None:
+    """Plan §8 I1 / R3-I02: the **completing** model dispatch through
+    KOVEED'S OWN worker-socket `model_complete`, over the daemon's own wire.
+
+    The gate used to drive this op only at its refusals and let the
+    kovee-linked driver perform every completing call, because
+    `koveed::Daemon` built `HttpsTransport` unconditionally: the harness,
+    not the daemon, chose the wire — which is the one thing the op is
+    supposed to own. `Daemon::with_recording_egress` existed but nothing
+    ever called it; deleting the whole feature left kovee's build green.
+
+    It is called now. `koveed/src/main.rs` reads
+    `$KOVEE_TESTING_RECORDING_EGRESS` in a `testing` build and hands the
+    daemon a `RecordingTransport`; this cell then drives ONE authorized act
+    to COMPLETION through the worker socket and holds it to:
+
+      * the stub provider's own reply reaching the worker view — only the
+        recording double can produce those bytes, and it opens no socket;
+      * kovee's own attempt row recording `recording-test-double`;
+      * byom's one-shot permit spent exactly once (one receipt, one
+        MandateUse), and refusing the second dispatch on the same path;
+      * the DRIVER never running `complete` in this cell at all — the
+        evidence directory is the proof, since every driver call writes a
+        blob named after its command;
+      * and the seal: the production koveed binary contains no such wire.
+    """
+    ev.namespace("daemon-egress")
+    tag = "i1deg"
+    seal = production_seal(ev)
+    ev.step("R3-I02: the egress the DAEMON offers, and the seal behind it "
+            "— this gate runs a `koveed/testing` build whose binary carries "
+            "kovee's recording transport, and a production "
+            "`cargo build -p koveed` built beside it carries none",
+            **seal)
+    ctx = governed_setup(ev, tag, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
+    try:
+        byom, kovee, driver = ctx["byom"], ctx["kovee"], ctx["driver"]
+        call_args, act, authorization = armed_broker_state(ctx, tag, "deg")
+        key = act["stable_execution_key"]
+        base_ledger = byom.ledger()
+
+        # THE COMPLETING DISPATCH, on koveed's own op. Nothing in this
+        # request can name a provider, a host, a header, a credential or a
+        # transport: the daemon supplies the wire.
+        completed = worker_model_complete(kovee, ctx, RECORDING, "Say OK.",
+                                          call_args, authorization)
+        need(completed.get("outcome") == "ok",
+             f"koveed's own worker-socket model_complete must COMPLETE over "
+             f"the daemon's recording wire: {json.dumps(completed)[:900]}")
+        r = completed["result"]
+        need(r["state"] == "completed", f"the dispatch completed: {r}")
+        need(r["usage"]["input_tokens"] == STUB_INPUT_TOKENS
+             and r["usage"]["output_tokens"] == STUB_OUTPUT_TOKENS,
+             f"the stub provider's own token counts came back through the "
+             f"daemon: {r['usage']}")
+        need(r.get("provider_ref") == "msg_01i1scripted" and r.get("text")
+             == "OK",
+             f"and the stub's own reply body: {r}")
+
+        # kovee's own row for the attempt the DAEMON made.
+        attempts = kovee.query(
+            "SELECT effect_attempt_id, state, transport_profile"
+            " FROM model_effect_attempts")
+        need(len(attempts) == 1
+             and attempts[0]["effect_attempt_id"] == r["effect_attempt_id"]
+             and attempts[0]["state"] == "completed"
+             and attempts[0]["transport_profile"] == RECORDING["profile"],
+             f"exactly one attempt, on the daemon's recorded wire: "
+             f"{attempts}")
+
+        # The driver never dispatched anything here: every driver call
+        # writes `driver-NN-<command>.json`, and no `complete` is among them.
+        prefix = f"{ev.ns}/driver-"
+        driver_commands = sorted({
+            written[len(prefix):].split("-", 1)[1].removesuffix(".json")
+            for written in ev._written if written.startswith(prefix)})
+        need("complete" not in driver_commands,
+             f"the completing call must be the DAEMON's, not the driver's, "
+             f"and the driver ran: {driver_commands}")
+
+        # byom's side of the one-shot permit.
+        receipts = byom.count("SELECT COUNT(*) FROM"
+                              " execution_consumption_receipts")
+        uses = byom.count("SELECT COUNT(*) FROM mandate_uses")
+        need(receipts == 1 and uses == 1,
+             f"one consumption, one receipt, one MandateUse: "
+             f"{receipts}/{uses}")
+        need(byom.row("SELECT state FROM act_intents WHERE intent_id = ?",
+                      act["intent_id"]) == "consumed",
+             "the one-shot act is spent")
+        settlements = byom.rows(
+            "SELECT charged_quantities, status FROM usage_settlements")
+        charged = STUB_INPUT_TOKENS + STUB_OUTPUT_TOKENS
+        need(len(settlements) == 1
+             and json.loads(settlements[0]["charged_quantities"])
+             == [{"dimension": "unit", "unit": "unit", "amount": charged}],
+             f"BYOM settled the metered total of the DAEMON's call: "
+             f"{settlements}")
+        ledger = byom.ledger()
+        need(ledger["conserves"], f"conservation holds: {ledger}")
+
+        # And the SPENT permit refuses the second dispatch on the same op.
+        again = worker_model_complete(kovee, ctx, RECORDING, "Say OK.",
+                                      call_args, authorization,
+                                      nonce="-second")
+        need(again.get("outcome") != "ok" and "spent" in json.dumps(again),
+             f"the one-shot permit refuses a second dispatch on the daemon's "
+             f"own path: {json.dumps(again)[:600]}")
+        need(byom.count("SELECT COUNT(*) FROM mandate_uses") == 1,
+             "and inserts no second MandateUse")
+        need(len(kovee.query("SELECT 1 FROM model_effect_attempts")) == 1,
+             "and no second attempt")
+
+        attribution = cell_attribution(byom, ctx["genesis"],
+                                       ctx["sovereign"], ev, "daemon-egress")
+        ev.blob("daemon-completing-dispatch.json", json.dumps(
+            {"op": "model_complete", "surface": "koveed worker socket",
+             "worker_view": r, "kovee_attempt": attempts[0],
+             "byom_receipts": receipts, "byom_mandate_uses": uses,
+             "byom_settlement": settlements[0],
+             "driver_commands_in_this_cell": driver_commands,
+             "seal": seal}, indent=1))
+        ev.step("R3-I02 CLOSED: the COMPLETING model dispatch ran inside "
+                "koveed's own worker-socket `model_complete` — koveed's "
+                "parsing, its worker attempt-binding authentication, its "
+                "mutexed store and ITS choice of egress — over the "
+                "no-network wire a `koveed/testing` daemon offers. The stub "
+                "provider's own reply came back through the op, kovee's "
+                "attempt row records recording-test-double, byom spent the "
+                "one-shot permit exactly once and settled the metered "
+                "total, the second dispatch was REFUSED as spent on the "
+                "same path, and the kovee-linked driver ran no `complete` "
+                "in this cell at all",
+                worker_op="model_complete", state=r["state"],
+                usage=r["usage"], provider_ref=r.get("provider_ref"),
+                transport_profile=attempts[0]["transport_profile"],
+                byom_receipts=receipts, byom_mandate_uses=uses,
+                charged=charged, ledger_conserves=ledger["conserves"],
+                base_reserved=base_ledger["reserved"],
+                second_dispatch_refused_as_spent=True,
+                driver_commands_in_this_cell=driver_commands,
+                production_seal=seal,
+                attributed_event_kinds=sorted({row["kind"]
+                                               for row in attribution}))
+    finally:
+        cleanup_live()
+
+
 def onboarding_compute_cell(ev: Evidence) -> None:
     """Plan §8 I1: the **one-shot OnboardingCompute path** — a hosted
     candidate's `OnboardingComputeIntent` → `onboarding_compute_permit_
@@ -3918,42 +4469,286 @@ RECORDING = {
 }
 
 
-# The plan-§8 I1 item list, and where this gate covers each one. The gate
-# FAILS if a covered item is not exercised, and the label of anything less
-# than complete travels with the evidence (R3-I01).
+# The plan-§8 I1 item list and, per item, the PROOFS this gate accepts for
+# it: which cell of which mode may certify it, the step that cell has to
+# have printed, the artifacts it has to have written, and what — if
+# anything — is still standing in (R3-I01).
+#
+# The old map validated only that its caller supplied a non-default string
+# per cell. A run of no-op cells satisfied it, so "coverage" certified
+# nothing but the caller's own prose. Every proof now names:
+#
+#   step:      a substring of a step title THIS run printed in that cell,
+#              read back from the Evidence object's own record of what it
+#              printed — not from a string the caller composed;
+#   artifacts: files THIS run wrote under `evidence/<test-id>/<cell>/`,
+#              each of which must exist, be non-empty and be one this
+#              process wrote (`Evidence` tracks every path it writes, so a
+#              file left behind by an earlier run is not evidence);
+#   simulated: exactly what is standing in. A simulated proof is REPORTED
+#              AS SIMULATED — in the coverage blob, in the step detail and
+#              on stdout — and is never counted as covered.
+#
+# An item with two proofs (the attached execution paths) is covered by
+# whichever ran; an unsimulated proof supersedes a simulated one, so the
+# real CLI session upgrades the deterministic stand-in when `--all-checks`
+# runs both.
+WIRE_ONLY = (
+    "the WIRE, and only the wire. The provider is kovee's own "
+    "`RecordingTransport`, which opens no socket and stamps "
+    "`recording-test-double` on the effect. A real provider call is "
+    "`--real-model` (it spends money).")
+
 PLAN_8_I1_ITEMS = [
-    ("greenfield binding saga", "governed-loop"),
-    ("AttentionContract notification (never a wake)", "governed-loop"),
-    ("the complete activation pipeline in A8 order", "governed-loop"),
-    ("hosted episode", "governed-loop"),
-    ("cross-Manifestation Continuation resume", "continuation-resume"),
-    ("a distinct hosted Manifestation", "continuation-resume"),
-    ("ambiguous effect: EOA -> disposition, lock order, conservative "
-     "settlement", "ambiguous-effect"),
-    ("execution path 1/3: hosted invocation through the disclosed metered "
-     "broker", "governed-loop"),
-    ("execution path 2/3: attached Claude Code", "harness-claude"),
-    ("execution path 3/3: attached Codex", "harness-codex"),
-    ("the one-shot OnboardingCompute path", "onboarding-compute"),
-    ("data boundary: synthetic data, provider claims bound by ref+digest, "
-     "honest developer/confined labels", "governed-loop"),
+    {"item": "greenfield binding saga",
+     "proofs": {"governed-loop": {
+         "step": "governance_enable — the D10 GREENFIELD saga",
+         "artifacts": ["driver-01-host-binding.json",
+                       "byom-timeline.json"]}}},
+    {"item": "AttentionContract notification (never a wake)",
+     "proofs": {"governed-loop": {
+         "step": "attention_notice_record",
+         "artifacts": ["driver-02-attention-notice.json"],
+         "simulated":
+             "the TRIGGER. kovee's `kovee-attention` crate is a two-line "
+             "stub, so no AttentionContract subsystem DECIDES to notify and "
+             "kovee has no `Workload::Attention` channel class; this "
+             "scenario decides. The notice itself is real — kovee's own "
+             "byom client verifies the event is in koveed's ledger, derives "
+             "the source digest and sends it on byomd's narrow attention "
+             "channel — and byom's no-effect arm is asserted from byom's "
+             "own rows."}}},
+    {"item": "the complete activation pipeline in A8 order",
+     "proofs": {"governed-loop": {
+         "step": "episode_request (participant)",
+         "artifacts": ["byom-timeline.json"]}}},
+    {"item": "hosted episode",
+     "proofs": {"governed-loop": {
+         "step": "PlacementBinding (the ONE activation record Kovee owns)",
+         "artifacts": ["driver-06-episode-activate.json"]}}},
+    {"item": "cross-Manifestation Continuation resume",
+     "proofs": {"continuation-resume": {
+         "step": "CROSS-MANIFESTATION CONTINUATION RESUME",
+         "artifacts": ["continuations.json",
+                       "driver-07-episode-yield.json"]}}},
+    {"item": "a distinct hosted Manifestation",
+     "proofs": {"continuation-resume": {
+         "step": "CROSS-MANIFESTATION CONTINUATION RESUME",
+         "artifacts": ["driver-08-episode-activate.json"],
+         "simulated":
+             "the byom ManifestationRevision. byom mints revisions only "
+             "inside `membership_offer`, which fixes `kind: "
+             "attached_harness`; no byom operation admits a `host_kind: "
+             "kovee_deployment` revision and `placement_admit` does not "
+             "resolve `selected_manifestation_ref` against that table. The "
+             "cell CHECKS exactly that — byom holds zero "
+             "non-attached_harness revisions — so the distinct hosted "
+             "Manifestation is the ref kovee SELECTS at placement from its "
+             "own active deployment row and byom COMMITS on the Episode and "
+             "the PlacementAdmission, asserted in both stores, and NOT a "
+             "byom `host_kind` row."}}},
+    {"item": "ambiguous effect: EOA -> disposition, lock order, "
+             "conservative settlement",
+     "proofs": {"ambiguous-effect": {
+         "step": "AMBIGUOUS EFFECT walked through EOA",
+         "artifacts": ["effect-heads.json", "driver-09-complete.json"]}}},
+    {"item": "execution path 1/3: hosted invocation through the disclosed "
+             "metered broker",
+     "proofs": {"governed-loop": {
+         "step": "kovee broker PROCEEDS with the permit",
+         "artifacts": ["kovee-broker-chain.json"],
+         "simulated": WIRE_ONLY}}},
+    {"item": "the completing model dispatch inside koveed's OWN "
+             "worker-socket `model_complete`",
+     "proofs": {"daemon-egress": {
+         "step": "R3-I02 CLOSED",
+         "artifacts": ["daemon-completing-dispatch.json"],
+         "simulated":
+             "the WIRE, and only the wire — chosen by the DAEMON, not by "
+             "this harness. koveed is built `--features testing`, the only "
+             "build in which it has a `RecordingTransport` to offer; the "
+             "production binary is built beside it in the same cell and "
+             "checked to contain no such wire at all."}}},
+    {"item": "execution path 2/3: attached Claude Code",
+     "proofs": {
+         "attached-claude": {
+             "step": "ATTACHED claude",
+             "artifacts": ["attached-steps.json", "participant-tools.json"],
+             "simulated":
+                 "the CLI SESSION. Every agent step goes through the real "
+                 "byom-mcp participant surface with the exact tool "
+                 "allowlist and launch argv `--harness claude` uses, and no "
+                 "claude CLI is invoked, so the cell is deterministic. The "
+                 "real session is `--harness claude` under "
+                 "I1_REAL_HARNESS=1, which `--all-checks` runs and reports "
+                 "— and which supersedes this proof when it passes."},
+         "harness-claude": {
+             "step": "real claude sessions drove the agent's own steps",
+             "artifacts": ["session-01-byom_mandate_prepare.txt",
+                           "session-01-byom_mandate_prepare.byom-wire.jsonl"],
+             "simulated": WIRE_ONLY}}},
+    {"item": "execution path 3/3: attached Codex",
+     "proofs": {
+         "attached-codex": {
+             "step": "ATTACHED codex",
+             "artifacts": ["attached-steps.json", "participant-tools.json"],
+             "simulated":
+                 "the CLI SESSION. Every agent step goes through the real "
+                 "byom-mcp participant surface with the exact tool "
+                 "allowlist and launch argv `--harness codex` uses, and no "
+                 "codex CLI is invoked, so the cell is deterministic. The "
+                 "real session is `--harness codex` under "
+                 "I1_REAL_HARNESS=1, which `--all-checks` runs and reports "
+                 "— and which supersedes this proof when it passes."},
+         "harness-codex": {
+             "step": "real codex sessions drove the agent's own steps",
+             "artifacts": ["session-01-byom_mandate_prepare.txt",
+                           "session-01-byom_mandate_prepare.byom-wire.jsonl"],
+             "simulated": WIRE_ONLY}}},
+    {"item": "the one-shot OnboardingCompute path",
+     "proofs": {"onboarding-compute": {
+         "step": "ONE-SHOT OnboardingCompute path",
+         "artifacts": ["driver-07-onboarding-complete.json"],
+         "simulated":
+             "the CALLER and three digests. kovee ships no onboarding code "
+             "at all, so the consume/claim/complete are sent by kovee's own "
+             "byom client acting as the hosted candidate's runtime and the "
+             "decision to call is this scenario's; and byom's "
+             "`onboarding_compute_permit_consume` still demands byom-keyed "
+             "(`local_erasure_safe`) digests for three KOVEE-owned objects "
+             "— the A8 direction R3-L01 closed for "
+             "`execution_permit_consume` — so those three values come from "
+             "this scenario. Every value the receipt is CHECKED against is "
+             "byom's own."}}},
+    {"item": "data boundary: synthetic data, provider claims bound by "
+             "ref+digest, honest developer/confined labels",
+     "proofs": {"governed-loop": {
+         "step": "assurance profile, labeled honestly",
+         "artifacts": ["byom-attribution.json"]}}},
 ]
 
+# Where a mode's coverage statement lands, so `--all-checks` can hold the
+# WHOLE gate to the item list rather than any one mode.
+COVERAGE_BLOB = "plan-8-i1-coverage.json"
 
-def plan_coverage(ev: Evidence, covered: dict):
-    """The gate's own coverage statement, checked. Every plan-§8 I1 item
-    names the cell that exercised it and how; an item marked `not covered`
-    fails the gate rather than being dropped from the list."""
+
+def plan_coverage(ev: Evidence, covered: dict) -> list:
+    """This MODE's coverage statement, checked against its OWN evidence.
+
+    `covered` maps the cells this mode ran to how it ran them. For each
+    such cell the item's proof must hold: the step it claims must be one
+    THIS run printed in that cell, and every artifact it names must be a
+    file THIS run wrote and left non-empty. A cell that did nothing cannot
+    be certified — which is exactly what the old string map allowed.
+
+    A cell this mode did not run is reported `not covered by this mode`;
+    `mode_all_checks` is where the union has to cover every item. A mode
+    can therefore no longer certify what it did not do, and the gate can no
+    longer pass with an item nobody did.
+
+    Anything standing in is reported as `simulated` with the reason. That
+    is an honest state and does not fail the mode; an item with a cell but
+    no step or no artifact IS a failure."""
+    printed = {}
+    for cell, title in ev.titles:
+        printed.setdefault(cell, []).append(title)
+    rows, missing = [], []
+    for spec in PLAN_8_I1_ITEMS:
+        item = spec["item"]
+        ran = [c for c in spec["proofs"] if c in covered]
+        row = {"plan_8_I1_item": item,
+               "cells_that_could_prove_it": sorted(spec["proofs"]),
+               "status": "not covered by this mode", "proofs": []}
+        for cell in ran:
+            proof = spec["proofs"][cell]
+            marker = proof.get("step")
+            if not any(marker in title for title in printed.get(cell, [])):
+                # This mode ran the cell but not the step that proves this
+                # item — `--verify-trails`, for instance, runs the whole arc
+                # without printing the honesty labels. That is "not covered
+                # HERE", not a broken claim; `mode_all_checks` is where the
+                # union has to cover every item, so nothing can hide in the
+                # gap between two modes.
+                continue
+            artifacts, ok = [], True
+            for name in proof.get("artifacts", []):
+                key = f"{cell}/{name}"
+                path = ev.dir / key
+                if key not in ev._written:
+                    missing.append(
+                        f"{item!r}: {key} was not written by this run — a "
+                        f"leftover file is not evidence")
+                    ok = False
+                    continue
+                if not path.exists() or path.stat().st_size == 0:
+                    missing.append(f"{item!r}: {key} is missing or empty")
+                    ok = False
+                    continue
+                artifacts.append({"path": key, "bytes": path.stat().st_size,
+                                  "written_at_step": ev._written[key]})
+            if not ok:
+                continue
+            row["proofs"].append({
+                "cell": cell, "how": covered[cell], "proved_by_step": marker,
+                "proved_by_artifacts": artifacts,
+                "simulated": proof.get("simulated")})
+        real = [p for p in row["proofs"] if not p["simulated"]]
+        if real:
+            row["status"] = "exercised"
+        elif row["proofs"]:
+            row["status"] = "SIMULATED"
+            row["simulated"] = row["proofs"][0]["simulated"]
+        rows.append(row)
+    need(not missing,
+         "plan §8 I1 coverage is not backed by this run's own evidence:\n  "
+         + "\n  ".join(missing))
     ev.namespace(None)
-    rows = []
-    for item, cell in PLAN_8_I1_ITEMS:
-        state = covered.get(cell, "NOT EXERCISED")
-        rows.append({"plan_8_I1_item": item, "cell": cell, "how": state})
-        need(state != "NOT EXERCISED",
-             f"plan §8 I1 item {item!r} is not exercised by this gate")
-    ev.blob("plan-8-i1-coverage.json", json.dumps(rows, indent=1))
+    ev.blob(COVERAGE_BLOB, json.dumps(rows, indent=1))
     return rows
 
+
+def merge_coverage(per_mode: list) -> list:
+    """The WHOLE gate's coverage: every mode's statement, unioned per item,
+    with an unsimulated proof superseding a simulated one."""
+    merged = {spec["item"]: {"plan_8_I1_item": spec["item"],
+                             "cells_that_could_prove_it":
+                                 sorted(spec["proofs"]),
+                             "status": "NOT EXERCISED", "proofs": []}
+              for spec in PLAN_8_I1_ITEMS}
+    for rows in per_mode:
+        for row in rows:
+            target = merged.get(row["plan_8_I1_item"])
+            if target is None:
+                continue
+            target["proofs"] += row.get("proofs", [])
+    for row in merged.values():
+        real = [p for p in row["proofs"] if not p["simulated"]]
+        if real:
+            row["status"] = "exercised"
+        elif row["proofs"]:
+            row["status"] = "SIMULATED"
+            row["simulated"] = row["proofs"][0]["simulated"]
+    return list(merged.values())
+
+
+def print_coverage(rows: list, heading: str):
+    """The coverage statement in the runner's OWN output, with every
+    simulation named where a reader cannot miss it (R3-I01)."""
+    simulated = [r for r in rows if r["status"] == "SIMULATED"]
+    absent = [r for r in rows if r["status"].startswith("NOT")
+              or r["status"].startswith("not")]
+    print(f"\n{heading}")
+    for row in rows:
+        cells = ",".join(sorted({p["cell"] for p in row["proofs"]})) or "-"
+        print(f"  [{row['status']:<22}] {row['plan_8_I1_item']}  "
+              f"({cells})")
+    print(f"  {len(rows) - len(simulated) - len(absent)} of {len(rows)} "
+          f"plan-§8 I1 items are exercised with NOTHING standing in; "
+          f"{len(simulated)} are SIMULATED and {len(absent)} are not "
+          f"covered here.")
+    for row in simulated:
+        print(f"    - SIMULATED: {row['plan_8_I1_item']}\n"
+              f"      what stands in: {row['simulated']}")
 
 def mode_scripted() -> int:
     ev = Evidence("i1-flow-scripted")
@@ -3989,31 +4784,28 @@ def mode_scripted() -> int:
         # pair of daemons (R3-I01).
         continuation_resume_cell(ev)
         ambiguous_effect_cell(ev)
+        daemon_egress_cell(ev)
         onboarding_compute_cell(ev)
+        oracle_self_test(ev)
         rows = plan_coverage(ev, {
             "governed-loop": "exercised live in this run",
             "continuation-resume": "exercised live in this run",
             "ambiguous-effect": "exercised live in this run",
-            "onboarding-compute": "exercised live in this run",
-            "harness-claude": "deterministic stand-in here (the same "
-                              "byom-mcp stdio surface and tool schemas); "
-                              "the real CLI session is `--harness claude`, "
-                              "gated by I1_REAL_HARNESS=1",
-            "harness-codex": "deterministic stand-in here (the same "
-                             "byom-mcp stdio surface and tool schemas); "
-                             "the real CLI session is `--harness codex`, "
-                             "gated by I1_REAL_HARNESS=1"})
-        ev.step("plan §8 I1 coverage, item by item: every item is "
-                "exercised by a named cell of this run — the greenfield "
-                "saga, the notice that is not a wake, the A8 activation "
-                "order, the hosted episode, the cross-Manifestation "
-                "Continuation resume, the distinct hosted Manifestation, "
-                "the ambiguous effect through EOA -> disposition, the "
-                "broker execution path, the one-shot OnboardingCompute "
-                "path and the data-boundary labels; the two ATTACHED "
-                "harness paths run their real CLI sessions under "
-                "I1_REAL_HARNESS=1 and their deterministic stand-in here",
+            "daemon-egress": "exercised live in this run",
+            "onboarding-compute": "exercised live in this run"})
+        ev.step("plan §8 I1 coverage, item by item, CHECKED AGAINST THIS "
+                "RUN'S OWN EVIDENCE: every claim above names a step this "
+                "run printed in that cell and artifacts this run wrote and "
+                "left non-empty, so a no-op cell cannot certify anything. "
+                "The two ATTACHED execution paths are not in this mode at "
+                "all and are reported as such; they are covered by "
+                "`--attached-path <which>` and, for real, by "
+                "`--harness <which>`. Everything still standing in is "
+                "named as SIMULATED with its reason and is NOT counted as "
+                "covered",
                 coverage=rows)
+        print_coverage(rows, "i1-flow-scripted: plan §8 I1 coverage "
+                             "(this mode):")
         print(f"i1-flow-scripted: PASS ({ev.n} steps; evidence "
               f"{ev.dir.relative_to(REPO)})")
         return 0
@@ -4074,6 +4866,12 @@ def mode_verify_trails() -> int:
                     refusal=str(refusal))
         else:
             raise Fail("a mis-attributed kernel record must fail")
+        rows = plan_coverage(ev, {
+            "governed-loop": "exercised live in this run",
+            "continuation-resume": "exercised live in this run",
+            "ambiguous-effect": "exercised live in this run",
+            "onboarding-compute": "exercised live in this run"})
+        print_coverage(rows, "i1-trails: plan §8 I1 coverage (this mode):")
         print(f"i1-trails: PASS ({ev.n} steps; evidence "
               f"{ev.dir.relative_to(REPO)})")
         return 0
@@ -4168,6 +4966,15 @@ def mode_real_model() -> int:
           f"the broker, for {len(available)} provider(s): "
           f"{', '.join(p['kind'] for p, _ in available)}")
     try:
+        # EVERY mode pins, and this is the one that spends money on the
+        # answer: a paid call against source that exists nowhere in history
+        # would be the most expensive way to learn nothing (R3-I02).
+        pinned = assert_pinned(ev)
+        ev.step("the revisions this PAID run is gating, ASSERTED: both "
+                "trees at their pinned commit AND every compiled source "
+                "file identical to it",
+                byom=pinned["byom"], kovee=pinned["kovee"],
+                driver_built_against=pinned["driver_built_against"])
         for provider, (secret, source) in available:
             ctx = None
             tag = f"i1r{provider['kind'][:3]}"
@@ -4335,18 +5142,27 @@ def harness_wire_spec(spec: dict, logs: dict) -> dict:
             for name, server in spec.items()}
 
 
-def harness_server_spec(byom: ByomDaemon, society: str) -> dict:
+def harness_server_spec(byom: ByomDaemon, society: str,
+                        salt: str) -> dict:
     """The MCP server configuration BOTH harnesses are given: the real
     byom-mcp binary in its PARTICIPANT profile, byomd's runtime directory,
-    the participant channel credential byomd minted, and the Society. No
-    other server, and no other environment."""
+    the participant channel credential byomd minted, the Society, and the
+    session salt.
+
+    The salt is what makes a session's calls NAMEABLE afterwards (R3-I04):
+    byom-mcp derives its logical call key from it, byomd records that key
+    as the `correlation_ref` of every event the call commits, and the step
+    can then ask for the event THIS call produced instead of any event of
+    the same kind. It is per session, because a shared salt would make two
+    identical calls share an idempotency key."""
     return {"byom": {
         "command": byom_mcp_bin(),
         "args": ["--profile", "participant"],
         "env": {"BYOM_RUNTIME_DIR": str(byom.run_dir),
                 "BYOM_PARTICIPANT_TOKEN_FILE":
                     str(byom.token_file(f"participant-{AGENT}.token")),
-                "BYOM_SOCIETY": society}}}
+                "BYOM_SOCIETY": society,
+                "BYOM_MCP_SESSION": salt}}}
 
 
 def harness_launch(which: str, cli: str, prompt: str, server: dict,
@@ -4452,8 +5268,11 @@ class HarnessAgent:
         self.workdir = workdir
         self.sessions = 0
 
-    def server(self) -> dict:
-        return harness_server_spec(self.byom, self.society)
+    def salt(self, n: int) -> str:
+        return f"i1-{self.which}-{n:03d}"
+
+    def server(self, n: int) -> dict:
+        return harness_server_spec(self.byom, self.society, self.salt(n))
 
     def session(self, tool: str, args: dict) -> dict:
         """One real CLI session, and everything it can be held to: the
@@ -4464,7 +5283,7 @@ class HarnessAgent:
         stem = f"session-{n:02d}-{tool}"
         prompt = harness_prompt(tool, args)
         allowed = f"mcp__byom__{tool}"
-        spec = self.server()
+        spec = self.server(n)
         logs = {name: self.ev.reserve(f"{stem}.{name}-wire.jsonl")
                 for name in spec}
         argv = harness_launch(
@@ -4524,6 +5343,7 @@ class HarnessAgent:
         need(not wire["other_calls"],
              f"{self.which} session {n:02d} called tools the prompt did "
              f"not name: {[c['name'] for c in wire['other_calls']]}")
+        wire["salt"] = self.salt(n)
         return wire
 
     def release_group(self, pgid: int) -> list:
@@ -4577,59 +5397,89 @@ class HarnessAgent:
              f"no byom event is pinned for {tool}, so a session driving it "
              f"could not be held to anything")
         kind = HARNESS_EFFECT[tool]
+        want = canonical(args)
         idle: list = []
         for _ in range(self.ATTEMPTS):
             since = len(timeline(self.byom, self.genesis))
             wire = self.session(tool, args)
             stem = f"session-{self.sessions:02d}-{tool}"
             # "Every argument is fixed by this driver" is a CLAIM until the
-            # wire is compared with what the driver fixed. A session that
-            # reformatted, shortened or invented a member did not drive this
-            # step, whatever byom then answered.
-            exact = [c for c in wire["invocations"] if c["arguments"] == args]
+            # RAW BYTES the server was sent are compared with what the
+            # driver fixed. R3-I04(a): this used to compare parsed dicts, so
+            # `1.0` passed for `1` and a duplicate key lost a value
+            # silently. The comparison is now byte equality of a canonical
+            # form that keeps number spelling and refuses duplicate keys.
+            exact = [c for c in wire["invocations"]
+                     if c["canonical_arguments"] == want]
             altered = [c for c in wire["invocations"]
-                       if c["arguments"] != args]
-            landed = self.since(kind, since)
-            if landed:
+                       if c["canonical_arguments"] != want]
+            # R3-I04(b): correlate by REQUEST IDENTITY, not by event kind.
+            # byom-mcp derives its request_id from this session's salt, the
+            # tool and the JCS of the arguments byomd was actually sent, and
+            # byomd stores it as the event's `correlation_ref` — so the only
+            # event that can pass this step is the one THIS call committed.
+            # Kind-correlation let any same-kind event landing after the
+            # mark satisfy a step whose exact invocation byom had REFUSED.
+            wanted_ref = correlation_of(wire["salt"], tool, args)
+            mine = [e for e in self.since(kind, since)
+                    if e.get("correlation_ref") == wanted_ref]
+            others = [e for e in self.since(kind, since)
+                      if e.get("correlation_ref") != wanted_ref]
+            # A refusal of the EXACT call is the finding, whatever else
+            # landed: byom answered the governed question. It can no longer
+            # be masked by an unrelated event of the same kind.
+            refused = [c for c in exact if c["failed"]]
+            if refused:
+                raise Fail(
+                    f"{self.which} session {self.sessions:02d} called {tool} "
+                    f"with the exact arguments this driver fixed and byom "
+                    f"REFUSED it — so byomd committed no {kind} FOR THIS "
+                    f"CALL ({wanted_ref}), whatever else is on the ledger "
+                    f"({len(others)} other {kind} event(s) after the mark). "
+                    f"The server's answer, verbatim: "
+                    f"{refused[-1]['answer'][:900]} (full wire: "
+                    f"{stem}.byom-wire.jsonl)")
+            if mine:
                 need(exact,
                      f"{self.which} session {self.sessions:02d}: byomd holds "
-                     f"a new {kind} event, but no invocation on this "
-                     f"session's wire carried the arguments this driver "
-                     f"fixed — the effect is not this step's. Sent: "
-                     f"{json.dumps([c['arguments'] for c in altered])[:600]} "
+                     f"a new {kind} event correlated to this call, but no "
+                     f"invocation on this session's wire carried the exact "
+                     f"bytes this driver fixed — the effect is not this "
+                     f"step's. Sent: "
+                     f"{json.dumps([c['raw_arguments'] for c in altered])[:600]} "
                      f"({stem}.byom-wire.jsonl)")
                 need(not altered,
                      f"{self.which} session {self.sessions:02d} also called "
                      f"{tool} with arguments it changed: "
-                     f"{json.dumps([c['arguments'] for c in altered])[:600]}")
+                     f"{json.dumps([c['raw_arguments'] for c in altered])[:600]}")
                 self.mark = since
+                self.correlation = wanted_ref
                 return self.recover(tool, args)
-            if exact:
-                # byom was asked the exact governed question and refused it.
-                # Its answer IS the finding: never retried, quoted verbatim
-                # from the server's own reply.
-                raise Fail(
-                    f"{self.which} session {self.sessions:02d} called {tool} "
-                    f"with the exact arguments this driver fixed and byom "
-                    f"REFUSED it — byomd committed no {kind}. The server's "
-                    f"answer, verbatim: {exact[-1]['answer'][:900]} (full "
-                    f"wire: {stem}.byom-wire.jsonl)")
-            # Either no call at all, or a call the model rewrote: in both
-            # cases the session did not perform the step, and its words are
-            # not evidence of anything however confident they sound. Worth
-            # one more session — bounded, and every attempt is recorded.
+            # Either no call at all, a call the model rewrote, or a
+            # same-kind event that some OTHER call committed: in every case
+            # this session did not perform the step, and its words are not
+            # evidence of anything however confident they sound. Worth one
+            # more session — bounded, and every attempt is recorded.
             idle.append({
                 "session": self.sessions,
+                "salt": wire["salt"],
                 "invocations": len(wire["invocations"]),
-                "altered_arguments": [c["arguments"] for c in altered],
+                "wanted_correlation_ref": wanted_ref,
+                "uncorrelated_same_kind_events": len(others),
+                "altered_raw_arguments": [c["raw_arguments"]
+                                          for c in altered],
+                "canonical_errors": [c.get("canonical_error")
+                                     for c in wire["invocations"]
+                                     if c.get("canonical_error")],
                 "server_answer": [c["answer"][:300] for c in altered],
                 "said": (wire["stdout"] or "").strip()[:300]})
         raise Fail(
             f"{self.ATTEMPTS} {self.which} sessions failed to drive {tool} "
-            f"and byomd committed no {kind}: byom-mcp advertised the tool in "
-            f"every one of them and the driver's arguments were in every "
-            f"prompt, so the sessions either made no call or rewrote it "
-            f"before sending. Per session: {json.dumps(idle)[:1500]}")
+            f"and byomd committed no {kind} correlated to any of them: "
+            f"byom-mcp advertised the tool in every one of them and the "
+            f"driver's arguments were in every prompt, so the sessions "
+            f"either made no call or rewrote it before sending. Expected "
+            f"bytes: {want[:400]}. Per session: {json.dumps(idle)[:1500]}")
 
     def open(self) -> "HarnessAgent":
         return self
@@ -4642,18 +5492,24 @@ class HarnessAgent:
 
     # -- recovery: byomd's own records, never the session's words --------
 
-    # Where the current step's session began in byomd's ledger. Recovery
-    # reads only what was minted after it, so a step can never be passed by
-    # an event some EARLIER session (or the scenario itself) committed.
+    # Where the current step's session began in byomd's ledger, and the
+    # `correlation_ref` of the call that passed it. Recovery reads only
+    # what was minted after the mark AND correlated to this exact call, so
+    # a step can be passed neither by an event an earlier session (or the
+    # scenario) committed, nor by an unrelated same-kind event of this one.
     mark = 0
+    correlation: str | None = None
 
     def since(self, kind: str, mark: int) -> list:
         return [e for i, e in enumerate(timeline(self.byom, self.genesis))
                 if e["kind"] == kind and i >= mark]
 
     def last(self, kind: str) -> dict:
-        rows = self.since(kind, self.mark)
-        need(rows, f"byomd's ledger holds no {kind} event from this session")
+        rows = [e for e in self.since(kind, self.mark)
+                if self.correlation is None
+                or e.get("correlation_ref") == self.correlation]
+        need(rows, f"byomd's ledger holds no {kind} event correlated to "
+                   f"this step's own call ({self.correlation})")
         return rows[-1]
 
     def recover(self, tool: str, args: dict) -> dict:
@@ -4783,15 +5639,19 @@ class AttachedStandIn(AgentChannel):
     session under I1_REAL_HARNESS=1. The evidence says which one ran."""
 
     def __init__(self, which: str, byom: ByomDaemon, society: str,
-                 ev: Evidence):
+                 ev: Evidence, genesis: str | None = None):
         super().__init__(byom, society, ev)
         self.which = which
+        self.tag = which
+        self.genesis = genesis
         self.cli = shutil.which(which) or f"<{which}: not on PATH>"
         self.steps: list = []
         self.tools: dict = {}
+        self.correlations: list = []
 
     def one(self, tool: str, arguments: dict, frames: str | None = None):
         mcp = self.open()
+        salt = self.salt()
         try:
             if not self.tools:
                 listed = mcp.tools()
@@ -4824,16 +5684,332 @@ class AttachedStandIn(AgentChannel):
                  f"schema the harness would see: {unknown}")
             argv = harness_launch(
                 self.which, self.cli, harness_prompt(tool, arguments),
-                harness_server_spec(self.byom, self.society),
+                harness_server_spec(self.byom, self.society, salt),
                 f"mcp__byom__{tool}",
                 self.ev.path(f"launch-{len(self.steps) + 1:02d}-{tool}"
                              ".mcp.json"))
             self.steps.append({"tool": tool, "allowed": f"mcp__byom__{tool}",
                                "argv_prefix": argv[:2],
                                "argv_length": len(argv)})
-            return mcp.call_ok(tool, arguments)
+            reply = mcp.call_ok(tool, arguments)
+            self.check_correlation(tool, arguments, salt)
+            return reply
         finally:
             mcp.close(frames)
+
+    def check_correlation(self, tool: str, arguments: dict, salt: str):
+        """The real-harness oracle's identity correlation, DETERMINISTICALLY
+        exercised here (R3-I04).
+
+        `HarnessAgent` decides whether a session drove its step by asking
+        byomd for the event whose `correlation_ref` is the byom-mcp logical
+        call key of THIS call — the only thing that distinguishes it from
+        another call of the same kind. That derivation lives in this file
+        and byom-mcp's `bridge.rs::meta` computes the real one, so it is a
+        cross-repo agreement, and nothing deterministic used to check it:
+        the whole oracle first ran in a 40-minute real-CLI mode.
+
+        Here it is checked on every attached step: byomd's newest event of
+        the tool's pinned kind must carry exactly the ref this file
+        derived."""
+        if self.genesis is None or tool not in HARNESS_EFFECT:
+            return
+        kind = HARNESS_EFFECT[tool]
+        expected = correlation_of(salt, tool, arguments)
+        events = [e for e in timeline(self.byom, self.genesis)
+                  if e["kind"] == kind]
+        need(events, f"byomd committed no {kind} for {tool}")
+        need(events[-1].get("correlation_ref") == expected,
+             f"the byom-mcp logical call key this file derives is not the "
+             f"one byomd recorded for {tool}: derived {expected}, byomd "
+             f"holds {events[-1].get('correlation_ref')}. The real-harness "
+             f"oracle correlates a session's call with byomd's ledger by "
+             f"exactly this value, so a drift here would silently weaken it")
+        self.correlations.append({"tool": tool, "salt": salt,
+                                  "correlation_ref": expected,
+                                  "event_id": events[-1]["event_id"]})
+
+# ------------------------------------------- the oracle, tested itself ----
+#
+# R3-I04: nothing deterministic exercised the real-harness oracle at all —
+# not the relay's recording, not the mark, not the retry bound, not the
+# gate in front of recovery. `AttachedStandIn` is a different implementation
+# (direct MCP), so the first time `HarnessAgent`'s logic ran was inside a
+# forty-minute real-CLI mode, and its two false-positive paths were found by
+# an external probe rather than by this gate.
+#
+# What follows is that probe, shipped: the REAL relay recording a REAL stdio
+# round trip, and the REAL `wire_report`/`HarnessAgent.one` driven over
+# wires this cell composes. Only the CLI session and byomd are stood in for.
+
+ORACLE_ECHO_SERVER = '''\
+import json, sys
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    frame = json.loads(line)
+    if frame.get("method") == "tools/list":
+        body = {"tools": [{"name": "byom_activity_open",
+                           "inputSchema": {"type": "object",
+                                           "properties": {}}}]}
+    elif frame.get("method") == "tools/call":
+        # The arguments are echoed back VERBATIM, so a reader can see what
+        # this server was actually handed.
+        body = {"content": [{"type": "text",
+                             "text": json.dumps(frame["params"]["arguments"])}]}
+    elif frame.get("method") == "initialize":
+        body = {"protocolVersion": "2025-06-18"}
+    else:
+        continue
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": frame.get("id"),
+                                 "result": body}) + "\\n")
+    sys.stdout.flush()
+'''
+
+
+def oracle_relay_roundtrip(ev: Evidence) -> dict:
+    """`--_mcp-wire` relaying a real stdio server, so the RECORDING half of
+    the oracle is exercised rather than assumed.
+
+    The frame sent here is spelled the way a model might spell it — members
+    reordered, whitespace, `1.0` where the driver fixed `1`. The relay must
+    hand the server those exact bytes and keep them, and `wire_report` must
+    read them back byte for byte."""
+    log = ev.reserve("relay-roundtrip.jsonl")
+    ev.blob("echo-server.py", ORACLE_ECHO_SERVER)
+    server = ev.path("echo-server.py")
+    sent = ('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":'
+            '{"name":"byom_activity_open","arguments":'
+            '{ "generation" : 1.0 , "kind" : "exploration" }}}')
+    relay = subprocess.run(
+        [sys.executable, str(HERE / "run.py"), "--_mcp-wire", str(log),
+         sys.executable, str(server)],
+        input=('{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n'
+               + sent + "\n"),
+        capture_output=True, text=True, timeout=60)
+    need(relay.returncode == 0,
+         f"the relay child failed ({relay.returncode}): {relay.stderr[-400:]}")
+    report = wire_report(log, "byom_activity_open")
+    need(len(report["invocations"]) == 1,
+         f"the relay recorded the call: {report}")
+    call = report["invocations"][0]
+    need(call["raw_arguments"]
+         == '{ "generation" : 1.0 , "kind" : "exploration" }',
+         f"the RAW argument bytes the server was sent are what the relay "
+         f"kept, whitespace and all: {call['raw_arguments']!r}")
+    need(call["canonical_arguments"]
+         == '{"generation":1.0,"kind":"exploration"}',
+         f"and their canonical form keeps the number as it was spelled: "
+         f"{call['canonical_arguments']!r}")
+    need(call["canonical_arguments"] != canonical({"generation": 1,
+                                                   "kind": "exploration"}),
+         "which is exactly the distinction the parsed-dict comparison lost")
+    need(json.loads(call["answer"]) == {"generation": 1.0,
+                                        "kind": "exploration"},
+         f"the server answered over the same relay: {call['answer']!r}")
+    return {"relay_log": str(log.relative_to(ev.dir)),
+            "raw_arguments": call["raw_arguments"],
+            "canonical_arguments": call["canonical_arguments"],
+            "driver_would_have_sent": canonical({"generation": 1,
+                                                 "kind": "exploration"}),
+            "frames": report["frames"]}
+
+
+class OracleByom:
+    """A byomd stand-in with a BEFORE and an AFTER ledger, so the real
+    `timeline()` and `HarnessAgent.since()` run unmodified and the mark
+    means what it means in a live run."""
+
+    def __init__(self, before: list, after: list):
+        self.events = list(before)
+        self.after = list(after)
+
+    def expect_ok(self, surface: str, request: dict) -> dict:
+        return {"result": {"events": self.events}}
+
+
+class OracleProbe(HarnessAgent):
+    """`HarnessAgent`'s own logic, over wires this cell composes.
+
+    Everything under test is the SHIPPED code: `one()`, the canonical byte
+    comparison, the correlation by request identity, the mark, the retry
+    bound and the gate in front of `recover()`."""
+
+    def __init__(self, ev: Evidence, label: str, wires: list,
+                 before: list, after: list):
+        self.which = "probe"
+        self.ev = ev
+        self.label = label
+        self.sessions = 0
+        self.wires = list(wires)
+        self.byom = OracleByom(before, after)
+        self.genesis = "cursor-probe"
+        self.recovered = None
+
+    def salt(self, n: int) -> str:
+        return f"probe-{self.label}-{n:03d}"
+
+    def session(self, tool: str, args: dict) -> dict:
+        self.sessions += 1
+        n = self.sessions
+        calls = self.wires[n - 1] if n <= len(self.wires) else []
+        log = self.ev.reserve(f"probe-{self.label}-{n:02d}.jsonl")
+        listed = {"jsonrpc": "2.0", "id": 1,
+                  "result": {"tools": [{"name": tool}]}}
+        lines = [json.dumps({"at": 0, "dir": "relay", "argv": ["probe"]}),
+                 json.dumps({"at": 0, "dir": "server->harness",
+                             "frame": listed, "raw": json.dumps(listed)})]
+        for i, (raw_arguments, failed) in enumerate(calls, start=2):
+            request = ('{"jsonrpc":"2.0","id":%d,"method":"tools/call",'
+                       '"params":{"name":%s,"arguments":%s}}'
+                       % (i, json.dumps(tool), raw_arguments))
+            answer = {"jsonrpc": "2.0", "id": i,
+                      "result": {"content": [{"type": "text", "text":
+                                              "byom refused: the mandate "
+                                              "does not permit this"
+                                              if failed else "{}"}],
+                                 "isError": failed}}
+            lines.append(json.dumps({"at": 0, "dir": "harness->server",
+                                     "frame": json.loads(request),
+                                     "raw": request}))
+            lines.append(json.dumps({"at": 0, "dir": "server->harness",
+                                     "frame": answer,
+                                     "raw": json.dumps(answer)}))
+        log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # Whatever the session did or did not do, byomd's ledger is now
+        # whatever this case says it is.
+        self.byom.events = list(self.byom.after)
+        wire = wire_report(log, tool)
+        wire["salt"] = self.salt(n)
+        wire["stdout"] = "DONE act-0001 — the session's own words"
+        return wire
+
+    def recover(self, tool: str, args: dict) -> dict:
+        self.recovered = {"tool": tool, "correlation": self.correlation,
+                          "mark": self.mark}
+        return {"result": self.recovered}
+
+
+def oracle_self_test(ev: Evidence) -> None:
+    """The real-harness oracle, held to its own failure modes — the two an
+    external probe found, and the ones it confirmed were already closed.
+
+    Each case is a mutation of the one case that must pass, so a weakening
+    of the oracle turns one of them green."""
+    ev.namespace("oracle-self-test")
+    tool = "byom_activity_open"
+    kind = HARNESS_EFFECT[tool]
+    args = {"generation": 1, "kind": "exploration"}
+    relay = oracle_relay_roundtrip(ev)
+    ev.step("R3-I04(a): the relay keeps the BYTES. `--_mcp-wire` was run "
+            "over a real stdio server and handed it a frame spelled the way "
+            "a model might — members reordered, whitespace, `1.0` where the "
+            "driver fixed `1` — and the recorded log holds those exact "
+            "bytes, which `wire_report` reads back and canonicalises "
+            "WITHOUT losing the number's spelling. The relay used to "
+            "`json.loads` each frame and throw the text away, so the "
+            "oracle's `byte-equal` comparison was really Python equality "
+            "between two parsed dicts",
+            **relay)
+
+    exact = '{"generation":1,"kind":"exploration"}'
+    reordered = '{ "kind": "exploration",\n  "generation": 1 }'
+    respelled = '{"generation":1.0,"kind":"exploration"}'
+    shortened = '{"kind":"exploration"}'
+
+    def mine(label: str, n: int = 1) -> dict:
+        """The event THIS call would commit: correlated by the byom-mcp
+        logical call key, exactly as byomd records it."""
+        return {"kind": kind, "event_id": f"evt-{label}", "object_ref": "act-1",
+                "correlation_ref": correlation_of(
+                    f"probe-{label}-{n:03d}", tool, args)}
+
+    someone_else = {"kind": kind, "event_id": "evt-another-call",
+                    "object_ref": "act-9999",
+                    "correlation_ref": "req-an-entirely-different-call"}
+    cases = []
+
+    def case(label: str, wires: list, after: list, expect: str,
+             because: str, before: list | None = None):
+        probe = OracleProbe(ev, label, wires, before or [], after)
+        try:
+            probe.one(tool, args)
+            got, detail = "RECOVERED", json.dumps(probe.recovered)
+        except Fail as refusal:
+            got, detail = "RED", str(refusal)
+        need(got == expect,
+             f"oracle self-test {label!r}: expected {expect}, got {got} — "
+             f"{because}. Detail: {detail[:700]}")
+        cases.append({"case": label, "expected": expect, "got": got,
+                      "sessions": probe.sessions, "why": because,
+                      "detail": detail[:400]})
+
+    # The one case that must PASS: the exact bytes, and byomd holding the
+    # event THIS call committed.
+    case("exact-call-recovers", [[(exact, False)]],
+         [mine("exact-call-recovers")], "RECOVERED",
+         "the session sent the exact bytes and byomd holds the event that "
+         "call committed, so the step is done")
+
+    # R3-I04(a). The event is even correlated to this call — the ONLY thing
+    # that makes this red is the byte comparison.
+    case("respelled-number-is-red",
+         [[(respelled, False)]] * HarnessAgent.ATTEMPTS,
+         [mine("respelled-number-is-red")], "RED",
+         "`1.0` is not `1` on the wire, and the old parsed-dict comparison "
+         "accepted it")
+
+    # Member ORDER carries no JSON meaning, and the gate says so rather
+    # than claiming a strictness it does not have.
+    case("reordered-members-recover", [[(reordered, False)]],
+         [mine("reordered-members-recover")], "RECOVERED",
+         "object member order is not a JSON distinction: the same members "
+         "in another order ARE the driver's arguments")
+
+    # R3-I04(b): an exact REFUSAL is the finding, and an unrelated same-kind
+    # event landing after the mark can no longer mask it.
+    case("exact-refusal-plus-unrelated-event-is-red", [[(exact, True)]],
+         [someone_else], "RED",
+         "byom answered the exact governed question with a refusal, and a "
+         "same-kind event some other call committed is not this step's")
+
+    case("exact-refusal-alone-is-red", [[(exact, True)]], [], "RED",
+         "an exact refusal is never retried and never recovered")
+
+    case("no-call-at-all-is-red", [[], [], []], [], "RED",
+         "a session that narrates DONE without calling anything proves "
+         "nothing, and is retried a bounded number of times")
+
+    case("shortened-arguments-are-red",
+         [[(shortened, False)]] * HarnessAgent.ATTEMPTS, [someone_else],
+         "RED",
+         "a session that dropped a member did not ask this step's question, "
+         "whatever else landed on the ledger")
+
+    # The mark: an event already on the ledger before the session cannot
+    # pass it, even though it is correlated to this very call.
+    case("pre-mark-event-is-red", [[(exact, False)]],
+         [mine("pre-mark-event-is-red")], "RED",
+         "the mark is the pre-session timeline length, so an event that was "
+         "already there is excluded",
+         before=[mine("pre-mark-event-is-red")])
+
+    ev.blob("oracle-self-test.json", json.dumps(cases, indent=1))
+    ev.step("R3-I04: the real-harness oracle, driven DETERMINISTICALLY over "
+            "its own failure modes — the shipped `HarnessAgent.one()`, the "
+            "shipped `wire_report`, the shipped canonical byte comparison "
+            "and the shipped correlation by request identity, with only the "
+            "CLI session and byomd stood in for. Two cases must pass and "
+            "six must go RED, including the two false positives an external "
+            "probe found: a respelled number accepted as the driver's "
+            "argument, and an exact REFUSED invocation masked by an "
+            "unrelated same-kind event after the mark",
+            cases=cases,
+            attempts_before_giving_up=HarnessAgent.ATTEMPTS,
+            recovered=[c["case"] for c in cases if c["got"] == "RECOVERED"],
+            red=[c["case"] for c in cases if c["got"] == "RED"])
+
+
 
 
 def mode_attached_path(which: str) -> int:
@@ -4862,9 +6038,17 @@ def mode_attached_path(which: str) -> int:
             ev, f"i1a{which[:2]}", RECORDING,
             {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY}, "Say OK.",
             agent_factory=lambda byom, society, e, genesis: AttachedStandIn(
-                which, byom, society, e))
+                which, byom, society, e, genesis))
         per_source_trails(ctx, ev, which)
         agent = ctx["agent"]
+        correlated = [s for s in agent.steps if s["tool"] in HARNESS_EFFECT]
+        need(len(agent.correlations) == len(correlated) >= 6,
+             f"the real-harness oracle's identity correlation must be "
+             f"checked on EVERY attached step whose tool has a pinned byom "
+             f"event: {len(agent.correlations)} checked of "
+             f"{len(correlated)} such steps")
+        ev.blob("oracle-correlations.json",
+                json.dumps(agent.correlations, indent=1))
         need(len(agent.steps) >= 8,
              f"the attached path must drive the agent's own steps: "
              f"{agent.steps}")
@@ -4890,7 +6074,20 @@ def mode_attached_path(which: str) -> int:
                 tools_served=len(agent.tools),
                 tool_surface_sha256=_TOOL_SURFACE[which],
                 cli_on_path=shutil.which(which) is not None,
-                real_session_mode=f"--harness {which} (I1_REAL_HARNESS=1)")
+                real_session_mode=f"--harness {which} (I1_REAL_HARNESS=1)",
+                # R3-I04: the real-harness oracle decides a step by asking
+                # byomd for the event whose `correlation_ref` is the
+                # byom-mcp logical call key of THAT call. The derivation
+                # lives in this file and byom-mcp computes the real one, so
+                # it is a cross-repo agreement — checked here, on every
+                # attached step whose tool has a pinned byom event, against
+                # byomd's own record.
+                oracle_correlations_checked=[c["tool"]
+                                             for c in agent.correlations])
+        rows = plan_coverage(ev, {
+            f"attached-{which}": "the deterministic attached path, over the "
+                                 "real byom-mcp participant surface"})
+        print_coverage(rows, f"{test_id}: plan §8 I1 coverage (this mode):")
         print(f"{test_id}: PASS ({ev.n} steps; evidence "
               f"{ev.dir.relative_to(REPO)})")
         return 0
@@ -4943,9 +6140,18 @@ def mode_harness(which: str) -> int:
           "byomd's own records")
     ev.blob("setup-instructions.txt", harness_instructions(which))
     workdir = Path(tempfile.mkdtemp(prefix=f"i1-harness-{which}-cwd-"))
-    ev.namespace(f"harness-{which}")
     ctx = None
     try:
+        # R3-I02: the real-harness modes used not to pin anything at all —
+        # the one place a 40-minute run against the wrong source would cost
+        # the most.
+        pinned = assert_pinned(ev)
+        ev.step("the revisions this real-harness run is gating, ASSERTED "
+                "(R3-I02): both trees at their pinned commit AND every "
+                "compiled source file identical to it",
+                byom=pinned["byom"], kovee=pinned["kovee"],
+                driver_built_against=pinned["driver_built_against"])
+        ev.namespace(f"harness-{which}")
         ctx = scripted_flow(
             ev, f"i1h{which[:2]}", RECORDING,
             {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY}, "Say OK.",
@@ -4975,6 +6181,10 @@ def mode_harness(which: str) -> int:
                 per_session_evidence=["session-NN-<tool>.txt",
                                       "session-NN-<tool>.byom-wire.jsonl"],
                 effect_events=sorted(set(HARNESS_EFFECT.values())))
+        rows = plan_coverage(ev, {
+            f"harness-{which}": f"a REAL {which} CLI session per agent step, "
+                                f"held to its MCP wire and byomd's ledger"})
+        print_coverage(rows, f"{test_id}: plan §8 I1 coverage (this mode):")
         print(f"{test_id}: PASS ({ctx['agent'].sessions} real {which} "
               f"sessions, {ev.n} steps; evidence "
               f"{ev.dir.relative_to(REPO)})")
@@ -5497,49 +6707,88 @@ def mode_crash_matrix() -> int:
 
 # ---------------------------------------------------------------- main ----
 
-def mode_all_checks() -> int:
-    """Every deterministic check this gate has, plus the env-gated real
-    ones — reported, never silently excluded (R3-I01 e).
+def mode_coverage_rows(test_id: str) -> list:
+    """One mode's own coverage statement, read back from the evidence it
+    just wrote. `--all-checks` unions these, so the whole-gate claim rests
+    on artifacts rather than on a summary line."""
+    path = EVIDENCE / test_id / COVERAGE_BLOB
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))
 
-    The three plan-§8 execution paths are all in here: the hosted broker
-    invocation inside `--scripted`, and the two ATTACHED harness paths as
-    their own gated cells. The real Claude/Codex sessions run when
-    I1_REAL_HARNESS=1 and are reported as an honest SKIP when it is not —
-    the one thing they are never again is left off the list."""
-    results = []
-    for name, mode in (("scripted", mode_scripted),
-                       ("crash-matrix", mode_crash_matrix),
-                       ("verify-trails", mode_verify_trails),
-                       ("attached-claude",
-                        lambda: mode_attached_path("claude")),
-                       ("attached-codex",
-                        lambda: mode_attached_path("codex"))):
+
+def mode_all_checks() -> int:
+    """Every check this gate has, deterministic and env-gated alike, and
+    then the WHOLE gate held to the plan-§8 I1 item list (R3-I01).
+
+    A SKIP IS NOT A PASS. `--all-checks` used to run both real-harness
+    modes, let each answer exit 2, print `SKIP`, and then return 0 — so the
+    suite could report green having run neither harness, and two of the
+    plan's three execution paths would rest on nothing but their
+    deterministic stand-in. It now exits 2 in that case: an honest
+    INCOMPLETE, distinguishable from both the pass and the failure, and it
+    says which item is left standing on a simulation.
+
+    The coverage statement at the end is the union of every mode's own
+    statement, each of which was checked against that mode's own evidence.
+    An item nobody exercised fails the gate; an item only a SIMULATED proof
+    covers is named, with what stands in, and is not counted as covered."""
+    results, coverage = [], []
+    for name, test_id, mode in (
+            ("scripted", "i1-flow-scripted", mode_scripted),
+            ("crash-matrix", "i1-crash", mode_crash_matrix),
+            ("verify-trails", "i1-trails", mode_verify_trails),
+            ("attached-claude", "i1-attached-claude",
+             lambda: mode_attached_path("claude")),
+            ("attached-codex", "i1-attached-codex",
+             lambda: mode_attached_path("codex"))):
         code = mode()
         results.append((name, code, "PASS" if code == 0 else "FAIL"))
         if code != 0:
             print(f"i1: all checks FAILED at {name} (exit {code})")
             return code
+        coverage.append(mode_coverage_rows(test_id))
+    incomplete = []
     for which in ("claude", "codex"):
         code = mode_harness(which)
         if code == 2:
             results.append((f"real-harness-{which}", 2,
-                            "SKIP (env-gated: I1_REAL_HARNESS=1 and the "
-                            f"{which} CLI on PATH)"))
+                            "SKIP — NOT A PASS (needs I1_REAL_HARNESS=1 and "
+                            f"the {which} CLI on PATH)"))
+            incomplete.append(f"real-harness-{which}")
         elif code == 0:
             results.append((f"real-harness-{which}", 0, "PASS (real "
                             f"{which} session)"))
+            coverage.append(mode_coverage_rows(f"i1-flow-{which}"))
         else:
             print(f"i1: all checks FAILED at real-harness-{which}")
             return code
+    rows = merge_coverage(coverage)
+    (EVIDENCE / "all-checks-coverage.json").write_text(
+        json.dumps(rows, indent=1), encoding="utf-8")
     print("\ni1 all-checks summary:")
     for name, code, state in results:
         print(f"  {name:<20} exit {code}  {state}")
-    skipped = [n for n, c, _ in results if c == 2]
-    print("i1: all checks PASS — the deterministic gate covers every "
-          "plan-§8 I1 item and all three execution paths"
-          + (f"; env-gated and SKIPPED here: {', '.join(skipped)}"
-             if skipped else "")
-          + ". --real-model is separate (it spends money).")
+    print_coverage(rows, "i1 all-checks: plan §8 I1 coverage, over EVERY "
+                         "mode that ran:")
+    uncovered = [r["plan_8_I1_item"] for r in rows
+                 if r["status"].upper().startswith("NOT")]
+    if uncovered:
+        print("i1: all checks FAILED — no mode of this run exercised: "
+              + "; ".join(uncovered))
+        return 1
+    if incomplete:
+        print(f"i1: all checks INCOMPLETE (exit 2) — {', '.join(incomplete)} "
+              "did not run, and a SKIP is not a PASS. The plan-§8 execution "
+              "paths those modes own are covered here only by their "
+              "DETERMINISTIC stand-in, which is reported as SIMULATED "
+              "above. Set I1_REAL_HARNESS=1 with both CLIs on PATH for a "
+              "green --all-checks.")
+        return 2
+    print("i1: all checks PASS — every plan-§8 I1 item is covered by a mode "
+          "that ran, each claim backed by that mode's own evidence, and "
+          "everything still standing in is named SIMULATED above. "
+          "--real-model is separate (it spends money).")
     return 0
 
 
