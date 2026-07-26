@@ -21,6 +21,10 @@
 //!     "intent_ref": "intent-1",
 //!     "host_effect_ref": "kovee-effect-1", "host_effect_digest": p(0x2a),
 //!     "host_effect_credential": "b".repeat(64),
+//!     // The two host-owned members of the frozen binding fragment byom
+//!     // rebuilds, so `host_effect_digest` is DERIVED here, not asserted:
+//!     "host_effect_external_idempotency_key": "kovee-model-exec-key-1-2a2a2a2a2a2a2a2a",
+//!     "host_effect_request_byte_digest": p(0x2a),
 //!     "driver_audience": "kovee-model-broker",
 //!     "budget_reservation_set_ref": "rset-1",
 //!     "byom_fence_epoch": 3, "host_fence_epoch": 5});
@@ -283,6 +287,14 @@ impl ActIntentFinalizeRequest {
 ///   {intent_ref, stable_execution_key, host_effect_ref, host_effect_digest}
 ///   under the permit channel credential byomd itself published. Without it
 ///   the request merely *stored* a caller-chosen effect ref and digest.
+/// - `host_effect_external_idempotency_key` and
+///   `host_effect_request_byte_digest` are the two members of the host's
+///   FROZEN binding fragment byom does not already hold (R3-L01, D-R3-3).
+///   With them byom rebuilds the whole `kovee-host-effect-binding-v1`
+///   preimage — every other member is read from its own committed ActIntent —
+///   and re-derives `host_effect_digest` instead of storing an assertion.
+///   Authentication proved only that the addressed host sent the value; it
+///   never tied that value to anything both sides hold.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionPermitConsumeRequest {
@@ -294,6 +306,8 @@ pub struct ExecutionPermitConsumeRequest {
     pub host_effect_ref: String,
     pub host_effect_digest: DigestRef,
     pub host_effect_credential: String,
+    pub host_effect_external_idempotency_key: String,
+    pub host_effect_request_byte_digest: DigestRef,
     #[serde(default)]
     pub context_manifest_ref: Option<String>,
     #[serde(default)]
@@ -321,6 +335,14 @@ impl ExecutionPermitConsumeRequest {
         check_identifier("host_effect_ref", &req.host_effect_ref)?;
         check_portable("host_effect_digest", &req.host_effect_digest)?;
         check_credential("host_effect_credential", &req.host_effect_credential)?;
+        check_identifier(
+            "host_effect_external_idempotency_key",
+            &req.host_effect_external_idempotency_key,
+        )?;
+        check_portable(
+            "host_effect_request_byte_digest",
+            &req.host_effect_request_byte_digest,
+        )?;
         check_opt_identifier("context_manifest_ref", &req.context_manifest_ref)?;
         check_opt_portable("context_digest", &req.context_digest)?;
         check_opt_identifier("disclosure_manifest_ref", &req.disclosure_manifest_ref)?;
@@ -417,6 +439,8 @@ mod tests {
             "host_effect_ref": "kovee-effect-1",
             "host_effect_digest": portable(0x2a),
             "host_effect_credential": "b".repeat(64),
+            "host_effect_external_idempotency_key": "kovee-model-exec-key-1-2a2a2a2a2a2a2a2a",
+            "host_effect_request_byte_digest": portable(0x2a),
             "context_manifest_ref": "kovee-context-1",
             "context_digest": portable(0x3e),
             "disclosure_manifest_ref": "kovee-disclosure-1",
@@ -446,7 +470,12 @@ mod tests {
         }
         // The demanded half: a host-owned digest byom must verify travels as
         // a frozen portable_public fragment, never a keyed blob.
-        for peer in ["host_effect_digest", "context_digest", "disclosure_digest"] {
+        for peer in [
+            "host_effect_digest",
+            "host_effect_request_byte_digest",
+            "context_digest",
+            "disclosure_digest",
+        ] {
             let mut body = consume_body();
             body.as_object_mut()
                 .unwrap()

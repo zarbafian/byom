@@ -278,6 +278,31 @@ fn conservation_holds_across_reserve_commit_settle_and_release() {
         .as_deref(),
         Some("released")
     );
+    // **R3-U02, byom's half of the saga.** The measured path reaches the same
+    // terminal record: the counterparty's row carries byom's committed charge
+    // and is released, so both sides end this Episode naming one number.
+    assert_eq!(
+        f.row(
+            "SELECT state FROM subordinate_reservations
+             WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1"
+        )
+        .as_deref(),
+        Some("released")
+    );
+    assert_eq!(
+        f.number(
+            "SELECT json_extract(record, '$.byom_terminal.charged')
+             FROM subordinate_reservations WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1",
+        ),
+        Some(140),
+        "byom's own committed charge, on byom's own row"
+    );
+    assert_eq!(
+        completed["result"]["settlement"]["subordinate_reservation_ref"], "kovee-sub-p1",
+        "{completed}"
+    );
 }
 
 #[test]
@@ -473,6 +498,36 @@ fn an_unmeasured_use_settles_to_the_conservative_maximum() {
         )
         .as_deref(),
         Some("conservatively_maxed")
+    );
+    // **R3-U02, byom's half of the saga.** byom just charged the whole bridge
+    // on its OWN authority. Its durable record must name what the counterparty
+    // now owes, in the same transaction, or a counterparty that crashed
+    // between the two sides comes back to a `confirmed` row and no committed
+    // byom fact to converge on — which is exactly how the two ledgers split.
+    assert_eq!(
+        f.row(
+            "SELECT state FROM subordinate_reservations
+             WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1"
+        )
+        .as_deref(),
+        Some("settled"),
+        "the counterparty's row used to stay `confirmed` for ever while byom's \
+         parent was committed"
+    );
+    assert_eq!(
+        f.number(
+            "SELECT json_extract(record, '$.byom_terminal.charged')
+             FROM subordinate_reservations WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1",
+        ),
+        Some(WORST_CASE as i64),
+        "byom's own committed number, recorded against the counterparty"
+    );
+    assert_eq!(
+        failed["result"]["settlement"]["subordinate_reservation_ref"], "kovee-sub-p1",
+        "and the reply names the exact row, so the counterparty can converge \
+         on it: {failed}"
     );
     let _ = test_digest(0);
 }
@@ -803,6 +858,12 @@ fn episode_request_publishes_a_verifiable_parent_budget_fragment() {
     );
     assert_eq!(fragment["items"][0]["worst_case_amount"], WORST_CASE);
     assert_eq!(fragment["items"][0]["account_ref"], PARENT_ACCOUNT);
+    // And it is the SAME construction the pinned family vector records, so
+    // the consumer's copy and this producer cannot drift apart in silence.
+    assert_eq!(
+        fragment["digest"]["class"], "portable_public",
+        "the cross-boundary class (A8)"
+    );
 
     // A consumer that INVENTS a parent fact instead of taking it from the
     // fragment is refused: the revision here is one the allocation never
@@ -818,4 +879,46 @@ fn episode_request_publishes_a_verifiable_parent_budget_fragment() {
          item: {refused}"
     );
     assert_eq!(f.count("SELECT COUNT(*) FROM subordinate_reservations"), 0);
+}
+
+/// **The producer half of the pinned family vector (R3-L02, D-R3-3).**
+///
+/// `crates/byomd/tests/vectors/parent-budget-fragment.json` is a RECORDING
+/// of this producer's output, and kovee's shipped test verifies that exact
+/// recording. Before it existed, kovee's cross-contract test constructed AND
+/// verified both sides, so changing only kovee's domain tag left it green —
+/// producer and consumer were the same code.
+///
+/// This test is the other end of that pin: byom's producer must still emit the
+/// recorded bytes. Change `PARENT_BUDGET_TAG`, the member set, the nested
+/// set-binding construction or the canonicalization here, and this fails.
+#[test]
+fn the_published_fragment_reproduces_the_pinned_family_vector() {
+    const VECTOR: &str = include_str!("vectors/parent-budget-fragment.json");
+    /// The one constant both repositories name literally. kovee's shipped test
+    /// pins the identical value, so a vendored copy that drifts is caught on
+    /// whichever side drifted.
+    const PINNED_DIGEST: &str = "9ecda50f25f5a1f4da5e264f175c2bfcfade42fc3e9ca3ebdacfc52bcf819398";
+
+    let vector: Value = serde_json::from_str(VECTOR).expect("the pinned family vector parses");
+    let inputs = &vector["inputs"];
+    let produced = byomd::episode_ops::parent_budget_fragment(
+        inputs["byom_budget_reservation_set_ref"].as_str().unwrap(),
+        inputs["byom_budget_reservation_set_revision"]
+            .as_u64()
+            .unwrap(),
+        inputs["external_budget_bridge_ref"].as_str().unwrap(),
+        inputs["external_budget_bridge_revision"].as_u64().unwrap(),
+        inputs["stable_external_reservation_key"].as_str().unwrap(),
+        &inputs["items"],
+    )
+    .expect("byom composes the fragment");
+    assert_eq!(
+        produced, vector["fragment"],
+        "byom's producer no longer emits the recorded fragment: the consumer's \
+         pinned copy is now wrong, and re-recording it is a wire change, not a \
+         test fix"
+    );
+    assert_eq!(produced["digest"]["value_hex"], PINNED_DIGEST);
+    assert_eq!(vector["domain"], "bpp-parent-budget-fragment-v0");
 }

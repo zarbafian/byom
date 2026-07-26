@@ -109,6 +109,48 @@ pub fn host_effect_credential(
     ))
 }
 
+/// The host's FROZEN `kovee-host-effect-binding-v1` fragment and its
+/// `portable_public` digest, derived here the way the consuming HOST derives
+/// them (R3-L01, D-R3-3). byomd rebuilds the identical preimage from its own
+/// committed ActIntent and refuses a `host_effect_digest` that does not agree,
+/// so this is the shape a host must produce — not a value byom will store
+/// because it was signed.
+#[allow(clippy::too_many_arguments)]
+pub fn host_effect_binding(
+    host_effect_ref: &str,
+    intent_ref: &str,
+    stable_execution_key: &str,
+    context_manifest_ref: &str,
+    context_digest: &Value,
+    disclosure_manifest_ref: &str,
+    disclosure_digest: &Value,
+    request_byte_digest: &str,
+) -> (Value, String, Value) {
+    let external_idempotency_key = format!(
+        "kovee-model-{stable_execution_key}-{}",
+        &request_byte_digest[..16]
+    );
+    let fragment = json!({
+        "context_digest": context_digest,
+        "context_manifest_ref": context_manifest_ref,
+        "disclosure_digest": disclosure_digest,
+        "disclosure_manifest_ref": disclosure_manifest_ref,
+        "external_idempotency_key": external_idempotency_key,
+        "final_provider_request_typed_byte_digest": request_byte_digest,
+        "host_effect_ref": host_effect_ref,
+        "intent_ref": intent_ref,
+        "stable_execution_key": stable_execution_key,
+    });
+    let bytes =
+        bpp_core::canonical::tagged_canonical("kovee-host-effect-binding-v1", &fragment).unwrap();
+    let digest = json!({
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": bpp_core::canonical::sha256_hex(&bytes),
+    });
+    (digest, external_idempotency_key, fragment)
+}
+
 /// Signs a consumption body's host-effect tuple with the permit token: the
 /// host registers the exact Effect it durably created before consuming
 /// (§13.1 step 3). A probe that mutates the effect ref or digest and
@@ -682,15 +724,35 @@ impl Fixture {
         byom_fence: u64,
         host_fence: u64,
         expected_revision: u64,
-        host_effect_digest: Value,
+        request_byte_digest: &str,
     ) -> Value {
+        // The host-effect digest is DERIVED from the frozen binding fragment,
+        // not chosen (R3-L01): byomd rebuilds the same preimage from its own
+        // committed act and refuses anything that does not re-derive.
+        let host_effect_ref = format!("kovee-effect-{effect_key}");
+        let (host_effect_digest, external_idempotency_key, _) = host_effect_binding(
+            &host_effect_ref,
+            &act.intent_id,
+            stable_key,
+            &act.context_manifest_ref,
+            &act.context_digest,
+            &act.disclosure_manifest_ref,
+            &act.disclosure_digest,
+            request_byte_digest,
+        );
         let mut body = json!({
             "version": "0.2", "op": "execution_permit_consume",
             "meta": self.meta(&format!("perm-{key}"), Some(expected_revision)),
             "stable_execution_key": stable_key,
             "intent_ref": act.intent_id,
-            "host_effect_ref": format!("kovee-effect-{effect_key}"),
+            "host_effect_ref": host_effect_ref,
             "host_effect_digest": host_effect_digest,
+            "host_effect_external_idempotency_key": external_idempotency_key,
+            "host_effect_request_byte_digest": {
+                "class": "portable_public",
+                "algorithm": "sha-256",
+                "value_hex": request_byte_digest,
+            },
             "context_manifest_ref": act.context_manifest_ref,
             "context_digest": act.context_digest,
             "disclosure_manifest_ref": act.disclosure_manifest_ref,
@@ -721,7 +783,7 @@ impl Fixture {
         byom_fence: u64,
         host_fence: u64,
         expected_revision: u64,
-        host_effect_digest: Value,
+        request_byte_digest: &str,
     ) -> Value {
         let mut body = self.consume_body(
             act,
@@ -733,7 +795,7 @@ impl Fixture {
             byom_fence,
             host_fence,
             expected_revision,
-            host_effect_digest,
+            request_byte_digest,
         );
         sign_host_effect(token, &mut body);
         self.runtime(token, &body)

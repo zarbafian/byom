@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-request-dangling-context-invalid",
-  "description": "RT-05: the consume tuple is exact — the CONTEXT binding is a both-or-neither pair (context_manifest_ref + context_digest), exactly like the disclosure binding, so a dangling context reference without its digest fails the closed oneOf instead of validating. A reference the consumption names without pinning its content is the substitution the pair exists to refuse (R3-A01).",
+  "description": "RT-05: the consume tuple is exact \u2014 the CONTEXT binding is a both-or-neither pair (context_manifest_ref + context_digest), exactly like the disclosure binding, so a dangling context reference without its digest fails the closed oneOf instead of validating. A reference the consumption names without pinning its content is the substitution the pair exists to refuse (R3-A01).",
   "input": {
     "schema": "execution-permit-consume-request",
     "value": {
@@ -22,6 +22,12 @@
         "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
       },
       "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_effect_external_idempotency_key": "kovee-model-exec-key-410-3c3c3c3c3c3c3c3c",
+      "host_effect_request_byte_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+      },
       "driver_audience": "driver-audience-1",
       "budget_reservation_set_ref": "budget-reservation-set-ref-1",
       "byom_fence_epoch": 1,

@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-stale-fence-rejected",
-  "description": "RT-05 stale-fence rejection probe: the intent head is authorized at revision 3 with current dual fences byom=3/host=5; this schema-valid consume pins the correct revision but carries byom_fence_epoch 2, superseded by a lease re-claim — Byom's atomic fence recheck (§13.1 steps 4-5, R34) must reject with kind stale_revision before any MandateUse insert.",
+  "description": "RT-05 stale-fence rejection probe: the intent head is authorized at revision 3 with current dual fences byom=3/host=5; this schema-valid consume pins the correct revision but carries byom_fence_epoch 2, superseded by a lease re-claim \u2014 Byom's atomic fence recheck (\u00a713.1 steps 4-5, R34) must reject with kind stale_revision before any MandateUse insert.",
   "input": {
     "permit_probe": {
       "request": {
@@ -22,6 +22,12 @@
           "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
         },
         "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "host_effect_external_idempotency_key": "kovee-model-exec-key-410-3c3c3c3c3c3c3c3c",
+        "host_effect_request_byte_digest": {
+          "class": "portable_public",
+          "algorithm": "sha-256",
+          "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+        },
         "disclosure_manifest_ref": "disclosure-7",
         "disclosure_digest": {
           "class": "portable_public",

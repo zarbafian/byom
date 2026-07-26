@@ -1486,6 +1486,20 @@ pub fn execution_permit_consume(
             &committed_disclosure_ref,
             &committed_disclosure_digest,
         )?;
+        // And the host's own `host_effect_digest` is now DERIVED here, from
+        // the very members just compared plus this row's one-shot key, rather
+        // than stored because a caller authenticated a tuple containing it
+        // (R3-L01, D-R3-3). The registration credential above still proves WHO
+        // sent it; this proves WHAT it is the digest of.
+        verify_host_effect_binding(
+            &req_c,
+            &req_c.intent_ref,
+            rows::str_of(&intent, "stable_execution_key"),
+            &committed_context_ref,
+            &committed_context_digest,
+            &committed_disclosure_ref,
+            &committed_disclosure_digest,
+        )?;
         // The slots the decision locked are still the slots this
         // consumption would execute under: the snapshot is recomputed from
         // the CURRENT active Position revisions and compared with the
@@ -1924,6 +1938,138 @@ fn verify_effect_registration(
             "host_effect_credential does not register host effect {:?} with digest {} under this \
              act's one-shot key",
             req.host_effect_ref, req.host_effect_digest.value_hex
+        )))
+    }
+}
+
+// ============ the host's frozen binding fragment (L01, D-R3-3) ===========
+//
+// What `verify_effect_registration` above proves: the addressed host, and only
+// it, composed this {intent, key, effect ref, effect digest} tuple. What it
+// does NOT prove: that the effect digest is the digest OF anything. It
+// authenticates a tuple CONTAINING the supplied value, so byom stored an
+// assertion.
+//
+// D-R3-3 fixes the class of defect in both directions. byom's own owner-
+// recomputed digests are never request members (done: A8's converse). And a
+// PEER-owned digest byom must verify travels as a frozen `portable_public`
+// fragment whose members byom holds — which is exactly the shape kovee already
+// consumes for byom's `bpp-parent-budget-fragment-v0` parent budget. This is
+// the converse instance of it.
+//
+// byom holds six of the nine members in its own committed ActIntent, takes the
+// effect reference from the request, and is handed the two remaining
+// kovee-owned members explicitly. It then re-derives the digest. A digest that
+// does not re-derive is refused before any consumption state changes.
+
+/// kovee's `$domain` for the host-effect binding fragment. It is the HOST's
+/// domain, exactly as `bpp-parent-budget-fragment-v0` is byom's: the verifier
+/// re-derives the producer's value and never mints one of its own.
+pub const HOST_EFFECT_BINDING_TAG: &str = "kovee-host-effect-binding-v1";
+
+/// Its frozen member set, in the host's published order.
+pub const HOST_EFFECT_BINDING_FIELDS: [&str; 9] = [
+    "context_digest",
+    "context_manifest_ref",
+    "disclosure_digest",
+    "disclosure_manifest_ref",
+    "external_idempotency_key",
+    "final_provider_request_typed_byte_digest",
+    "host_effect_ref",
+    "intent_ref",
+    "stable_execution_key",
+];
+
+/// Rebuilds the host's fragment from byom's OWN committed act plus the exact
+/// host-owned members presented, and re-derives its `portable_public` digest.
+fn host_effect_binding_digest(
+    req: &ops::ExecutionPermitConsumeRequest,
+    committed_intent_ref: &str,
+    committed_execution_key: &str,
+    committed_context_ref: &str,
+    committed_context_digest: &Value,
+    committed_disclosure_ref: &str,
+    committed_disclosure_digest: &Value,
+) -> Result<(DigestRef, Value), Problem> {
+    let fragment = json!({
+        "context_digest": committed_context_digest,
+        "context_manifest_ref": committed_context_ref,
+        "disclosure_digest": committed_disclosure_digest,
+        "disclosure_manifest_ref": committed_disclosure_ref,
+        "external_idempotency_key": req.host_effect_external_idempotency_key,
+        "final_provider_request_typed_byte_digest":
+            req.host_effect_request_byte_digest.value_hex,
+        "host_effect_ref": req.host_effect_ref,
+        "intent_ref": committed_intent_ref,
+        "stable_execution_key": committed_execution_key,
+    });
+    // The frozen member set, exactly: a member added on one side and not the
+    // other would silently change a preimage the other side already verified.
+    let mut emitted: Vec<&str> = fragment
+        .as_object()
+        .map(|o| o.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    let mut frozen = HOST_EFFECT_BINDING_FIELDS.to_vec();
+    emitted.sort_unstable();
+    frozen.sort_unstable();
+    if emitted != frozen {
+        return Err(state::internal(
+            "the rebuilt host-effect binding fragment is not the frozen member set",
+        ));
+    }
+    let bytes = tagged_canonical(HOST_EFFECT_BINDING_TAG, &fragment)
+        .map_err(|e| state::internal(&e.to_string()))?;
+    Ok((DigestRef::portable_public(sha256_hex(&bytes)), fragment))
+}
+
+/// Verifies the presented `host_effect_digest` DERIVES from members byom
+/// holds (R3-L01, D-R3-3), inside the consumption transaction where the
+/// committed ActIntent is in hand.
+fn verify_host_effect_binding(
+    req: &ops::ExecutionPermitConsumeRequest,
+    committed_intent_ref: &str,
+    committed_execution_key: &str,
+    committed_context_ref: &str,
+    committed_context_digest: &Value,
+    committed_disclosure_ref: &str,
+    committed_disclosure_digest: &Value,
+) -> Result<(), Problem> {
+    // The idempotency key is not a free member: the host derives it from the
+    // one-shot key byom minted and the first 16 hex of the request-byte
+    // digest, so byom re-derives it too. Without this the only member a
+    // caller could still choose freely would be one byom never checks.
+    let expected_key = format!(
+        "kovee-model-{committed_execution_key}-{}",
+        req.host_effect_request_byte_digest
+            .value_hex
+            .chars()
+            .take(16)
+            .collect::<String>()
+    );
+    if req.host_effect_external_idempotency_key != expected_key {
+        return Err(unregistered_effect(&format!(
+            "host_effect_external_idempotency_key must be {expected_key:?} for this act's \
+             one-shot key and request bytes; {:?} was presented",
+            req.host_effect_external_idempotency_key
+        )));
+    }
+    let (expected, fragment) = host_effect_binding_digest(
+        req,
+        committed_intent_ref,
+        committed_execution_key,
+        committed_context_ref,
+        committed_context_digest,
+        committed_disclosure_ref,
+        committed_disclosure_digest,
+    )?;
+    if expected.same_ref(&req.host_effect_digest) {
+        Ok(())
+    } else {
+        Err(unregistered_effect(&format!(
+            "host_effect_digest does not re-derive from the frozen \
+             {HOST_EFFECT_BINDING_TAG} fragment byom rebuilt from its own committed act: \
+             expected {} over {fragment}, got {}",
+            expected.value_hex, req.host_effect_digest.value_hex
         )))
     }
 }

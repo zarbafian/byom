@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-changed-binding-rejected",
-  "description": "RT-05 changed-binding rejection probe: the intent is recorded consumed under stable_execution_key exec-key-410 with its exact canonical request stored; this schema-valid consume reuses the SAME key with a DIFFERENT host_effect_digest binding (and therefore a different host_effect_credential registering it), so the runner's §13.1 step-6 oracle (gap note G37) must reject with kind idempotency_mismatch — only the byte-identical canonical request replays to the retained receipt (the oracle also proves that replay accepts).",
+  "description": "RT-05 changed-binding rejection probe: the intent is recorded consumed under stable_execution_key exec-key-410 with its exact canonical request stored; this schema-valid consume reuses the SAME key with a DIFFERENT host_effect_digest binding (and therefore a different host_effect_credential registering it), so the runner's \u00a713.1 step-6 oracle (gap note G37) must reject with kind idempotency_mismatch \u2014 only the byte-identical canonical request replays to the retained receipt (the oracle also proves that replay accepts).",
   "input": {
     "permit_probe": {
       "request": {
@@ -22,6 +22,12 @@
           "value_hex": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
         },
         "host_effect_credential": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "host_effect_external_idempotency_key": "kovee-model-exec-key-410-0f0f0f0f0f0f0f0f",
+        "host_effect_request_byte_digest": {
+          "class": "portable_public",
+          "algorithm": "sha-256",
+          "value_hex": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+        },
         "disclosure_manifest_ref": "disclosure-7",
         "disclosure_digest": {
           "class": "portable_public",
@@ -60,6 +66,12 @@
               "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
             },
             "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "host_effect_external_idempotency_key": "kovee-model-exec-key-410-3c3c3c3c3c3c3c3c",
+            "host_effect_request_byte_digest": {
+              "class": "portable_public",
+              "algorithm": "sha-256",
+              "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+            },
             "disclosure_manifest_ref": "disclosure-7",
             "disclosure_digest": {
               "class": "portable_public",

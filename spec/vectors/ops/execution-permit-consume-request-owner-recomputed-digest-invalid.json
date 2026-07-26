@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-request-owner-recomputed-digest-invalid",
-  "description": "A8's converse half, machine-checked on the wire (PROFILE.md §6.2, amendment §A8, R3-L01): a digest byom recomputes from its OWN committed state is never a request member. This otherwise valid consumption echoes byom's committed act subject back at it, so the closed shape refuses it outright — an owner-recomputed value is not quietly ignored, because accepting it is what made the echo look like a check while byom only ever compared its own value with itself.",
+  "description": "A8's converse half, machine-checked on the wire (PROFILE.md \u00a76.2, amendment \u00a7A8, R3-L01): a digest byom recomputes from its OWN committed state is never a request member. This otherwise valid consumption echoes byom's committed act subject back at it, so the closed shape refuses it outright \u2014 an owner-recomputed value is not quietly ignored, because accepting it is what made the echo look like a check while byom only ever compared its own value with itself.",
   "input": {
     "schema": "execution-permit-consume-request",
     "value": {
@@ -22,6 +22,12 @@
         "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
       },
       "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "host_effect_external_idempotency_key": "kovee-model-exec-key-410-3c3c3c3c3c3c3c3c",
+      "host_effect_request_byte_digest": {
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+      },
       "disclosure_manifest_ref": "disclosure-7",
       "disclosure_digest": {
         "class": "portable_public",

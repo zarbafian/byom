@@ -1880,6 +1880,71 @@ fn subordinate_cap(reservation: &Map<String, Value>, dimension: &str) -> u64 {
         .unwrap_or_default()
 }
 
+/// **byom's half of the terminal saga record (R3-U02, D-R3-2).**
+///
+/// Terminalization used to commit the parent charge, release the bridge and
+/// leave the COUNTERPARTY's `subordinate_reservations` row `confirmed` for
+/// ever. A counterparty that crashed between the two sides then had no
+/// committed byom record naming what it owed — the two ledgers had no shared
+/// terminal fact to converge on, and that is precisely how they split.
+///
+/// The row now reaches a terminal state in the SAME transaction as the charge
+/// it describes, carrying byom's own committed number. `revision` and `digest`
+/// are deliberately untouched: they are the counterparty's confirmation of the
+/// exact confirmed items, not byom's terminal arithmetic, and rewriting them
+/// would make byom author a value the counterparty must accept.
+///
+/// Returns the reference it settled, or `Value::Null` when the bridge names
+/// no committed subordinate.
+#[allow(clippy::too_many_arguments)]
+fn settle_subordinate_row(
+    conn: &Connection,
+    effects: &mut Vec<Effect>,
+    bridge: &Map<String, Value>,
+    terminal_state: &str,
+    charged: u64,
+    settlement_ref: Option<&str>,
+    stable_settlement_key: &str,
+    at: &str,
+) -> Result<Value, Problem> {
+    let sub_ref = rows::str_of(bridge, "subordinate_reservation_ref").to_owned();
+    if sub_ref.is_empty() {
+        return Ok(Value::Null);
+    }
+    let Some(row) = rows::get_row(
+        conn,
+        "subordinate_reservations",
+        "subordinate_reservation_ref",
+        &sub_ref,
+    )
+    .map_err(db_err)?
+    else {
+        return Ok(Value::Null);
+    };
+    let mut record = rows::json_of(&row, "record");
+    if let Some(map) = record.as_object_mut() {
+        map.insert("state".into(), json!(terminal_state));
+        map.insert(
+            "byom_terminal".into(),
+            json!({
+                "state": terminal_state,
+                "charged": charged,
+                "settlement_ref": settlement_ref,
+                "stable_settlement_key": stable_settlement_key,
+                "settled_at": at,
+            }),
+        );
+    }
+    let mut updated = row.clone();
+    updated.insert("state".into(), json!(terminal_state));
+    updated.insert("record".into(), json_text(&record));
+    effects.push(Effect::Upsert {
+        table: "subordinate_reservations".into(),
+        row: updated,
+    });
+    Ok(json!(sub_ref))
+}
+
 // ============================================= stage 4: placement_admit ==
 
 /// `placement_admit` (runtime, create; R33): the narrow Kovee placement
@@ -3832,9 +3897,30 @@ fn terminalize(
                 });
                 bridge_row.insert("state".into(), json!("released"));
                 bridge_row.insert("settled_charge".into(), json!(held));
+                // byom's OWN durable record of what the COUNTERPARTY now owes
+                // (R3-U02, D-R3-2). Terminalizing used to commit the parent
+                // charge and leave the subordinate row `confirmed` for ever,
+                // so a counterparty that came back after this had no committed
+                // byom record naming its obligation — the two ledgers had no
+                // shared terminal fact to converge on. The saga's byom half is
+                // this row, and it settles in the same transaction as the
+                // charge it describes.
+                let counterparty = settle_subordinate_row(
+                    conn,
+                    &mut effects,
+                    &bridge,
+                    "settled",
+                    held,
+                    Some(&settlement_id),
+                    &stable,
+                    &created_at,
+                )?;
                 settlement_note = json!({"bridge_state": "released",
                                          "status": "conservatively_maxed",
-                                         "charged": held, "released": 0});
+                                         "settlement_ref": settlement_id,
+                                         "stable_settlement_key": stable,
+                                         "charged": held, "released": 0,
+                                         "subordinate_reservation_ref": counterparty});
                 events.push(event(
                     &society_c,
                     &settle_event,
@@ -3845,6 +3931,9 @@ fn terminalize(
                     ACTOR_METER,
                     &meta_c,
                     json!({"status": "conservatively_maxed", "charged": held,
+                           "settlement_ref": settlement_id,
+                           "stable_settlement_key": stable,
+                           "subordinate_reservation_ref": counterparty,
                            "reason": "no trusted meter settled this use (§11.4)"}),
                 ));
             }
@@ -3865,10 +3954,26 @@ fn terminalize(
                 }
                 set_reservation(&mut effects, reservation.clone(), held, "released");
                 bridge_row.insert("state".into(), json!("released"));
+                // The same durable record on the measured path: the
+                // counterparty's row carries byom's committed charge and moves
+                // to `released`, so both sides end this Episode naming one
+                // number (D-R3-2).
+                let charged = rows::u64_of(&bridge, "settled_charge");
+                let counterparty = settle_subordinate_row(
+                    conn,
+                    &mut effects,
+                    &bridge,
+                    "released",
+                    charged,
+                    None,
+                    "",
+                    &created_at,
+                )?;
                 settlement_note = json!({"bridge_state": "released",
                                          "status": "measured",
-                                         "charged": rows::u64_of(&bridge, "settled_charge"),
-                                         "released": held});
+                                         "charged": charged,
+                                         "released": held,
+                                         "subordinate_reservation_ref": counterparty});
                 events.push(event(
                     &society_c,
                     &settle_event,
@@ -3879,7 +3984,8 @@ fn terminalize(
                     ACTOR_METER,
                     &meta_c,
                     json!({"released_remainder": held,
-                           "settled_charge": rows::u64_of(&bridge, "settled_charge")}),
+                           "subordinate_reservation_ref": counterparty,
+                           "settled_charge": charged}),
                 ));
             }
             // An unknown outcome NEVER releases without the R38 seat.

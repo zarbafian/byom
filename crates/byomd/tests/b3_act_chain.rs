@@ -24,12 +24,23 @@ mod common;
 
 use common::runtime::{
     act_context_digest, act_context_ref, act_disclosure_digest, act_disclosure_ref,
-    host_effect_credential, portable_digest, Act, Claim, Fixture, Subordinate,
+    host_effect_binding, host_effect_credential, portable_digest, sign_host_effect, Act, Claim,
+    Fixture, Subordinate,
 };
 use common::{kind_of, test_digest};
 use serde_json::{json, Value};
 
 const BROKER: &str = "kovee-model-broker";
+
+/// The §11.8 typed byte digest of the exact provider-request bytes: the one
+/// genuinely host-owned member of the host-effect binding fragment, and the
+/// only one a consumption chooses. Every other member byom rebuilds from its
+/// own committed act (R3-L01, D-R3-3).
+const REQUEST_BYTES: &str = "f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7";
+/// A DIFFERENT set of request bytes: a different effect, so a different
+/// binding fragment and a different `host_effect_digest`.
+const OTHER_REQUEST_BYTES: &str =
+    "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f";
 
 /// The FROZEN §13.1 result shape, committed with the bundle. Every receipt
 /// assertion below is driven by this file, so a member the shape defines
@@ -201,7 +212,7 @@ fn consume(f: &Fixture, act: &Act, episode: &str, c: &Claim, key: &str) -> Value
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     )
 }
 
@@ -452,7 +463,7 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         1,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&no_permit), "decision_incomplete", "{no_permit}");
     assert!(
@@ -476,7 +487,7 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         1,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&forged), "forbidden", "{forged}");
 
@@ -502,7 +513,7 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         1,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&awaiting), "decision_incomplete", "{awaiting}");
     assert!(awaiting["problem"]["detail"]
@@ -537,7 +548,7 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision + 1,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&other_key), "stale_revision", "{other_key}");
     assert!(other_key["problem"]["detail"]
@@ -559,7 +570,7 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision + 1,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(
         replay["outcome"], "ok",
@@ -595,7 +606,7 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision + 1,
-        portable_digest(0x0f),
+        OTHER_REQUEST_BYTES,
     );
     assert_eq!(kind_of(&changed), "idempotency_mismatch", "{changed}");
     // And a second MandateUse was never inserted.
@@ -625,7 +636,7 @@ fn a_stale_fence_cannot_consume_an_execution_permit() {
         c.byom_fence_epoch + 1,
         c.kovee_invocation_fence,
         act.revision,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&stale_byom), "stale_revision", "{stale_byom}");
     assert!(stale_byom["problem"]["detail"]
@@ -646,7 +657,7 @@ fn a_stale_fence_cannot_consume_an_execution_permit() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence + 1,
         act.revision,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&stale_host), "stale_revision", "{stale_host}");
     assert!(stale_host["problem"]["detail"]
@@ -669,7 +680,7 @@ fn a_stale_fence_cannot_consume_an_execution_permit() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(kind_of(&no_lease), "stale_revision", "{no_lease}");
     assert_eq!(
@@ -705,7 +716,7 @@ fn a_wrong_class_subject_cannot_reach_the_model_egress_driver() {
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     );
     assert_eq!(
         kind_of(&wrong_audience),
@@ -770,7 +781,7 @@ fn probe_body(f: &Fixture, act: &Act, episode: &str, c: &Claim, key: &str) -> Va
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        portable_digest(0xf7),
+        REQUEST_BYTES,
     )
 }
 
@@ -1426,4 +1437,138 @@ fn the_daemon_refuses_a_request_that_echoes_byoms_own_digests() {
     keyed["host_effect_digest"] = test_digest(0xf7);
     let reply = f.consume_signed(&token, &keyed);
     assert_eq!(kind_of(&reply), "invalid", "{reply}");
+}
+
+/// **R3-L01, reproduced.** The registration credential (R3-A02) proves WHO
+/// sent `host_effect_digest`. It never proved WHAT the digest is the digest
+/// of: byom authenticated a tuple that CONTAINED the value and then stored
+/// whatever it was handed. It "explicitly does not hold the kovee row", so
+/// the digest was asserted, not verified against anything both sides hold.
+///
+/// D-R3-3 requires a peer-owned digest byom must verify to travel as a frozen
+/// `portable_public` fragment whose members byom holds — the shape kovee
+/// already consumes for byom's parent budget. byom now REBUILDS that fragment
+/// out of its own committed ActIntent plus the two host-owned members, and
+/// re-derives the digest.
+///
+/// The vector is kovee's OWN recording, so the verifier does not derive its
+/// own expectation. That was exactly the L02 weakness, applied here from the
+/// start.
+#[test]
+fn the_host_effect_digest_must_re_derive_from_the_frozen_binding_fragment() {
+    const VECTOR: &str = include_str!("vectors/kovee-host-effect-binding.json");
+
+    // -- the pinned KOVEE vector: byom's rebuild reproduces it ------------
+    let vector: Value = serde_json::from_str(VECTOR).expect("the pinned kovee vector parses");
+    assert_eq!(
+        vector["owner"], "kovee",
+        "this vector is kovee's, not byom's"
+    );
+    let i = &vector["inputs"];
+    let (digest, key, fragment) = host_effect_binding(
+        i["host_effect_ref"].as_str().unwrap(),
+        i["intent_ref"].as_str().unwrap(),
+        i["stable_execution_key"].as_str().unwrap(),
+        i["context_manifest_ref"].as_str().unwrap(),
+        &i["context_digest"],
+        i["disclosure_manifest_ref"].as_str().unwrap(),
+        &i["disclosure_digest"],
+        i["final_provider_request_typed_byte_digest"]
+            .as_str()
+            .unwrap(),
+    );
+    assert_eq!(
+        fragment, vector["fragment"],
+        "byom's rebuild is not kovee's recorded fragment: the two sides no \
+         longer agree on the frozen member set or its canonicalization"
+    );
+    assert_eq!(
+        digest["value_hex"],
+        vector["host_effect_digest"]["value_hex"]
+    );
+    assert_eq!(digest["class"], "portable_public", "unkeyed by A8");
+    assert_eq!(key, vector["fragment"]["external_idempotency_key"]);
+
+    // -- and the LIVE daemon refuses a digest that does not re-derive -----
+    let (f, episode, c, _binding) = running("b3-act-binding");
+    let (act, token) = probe(&f, "a1");
+    let body = probe_body(&f, &act, &episode, &c, "e1");
+
+    // (a) a well-formed `portable_public` digest of NOTHING, registered by
+    // the host under its own permit token. R3's probe, with the credential
+    // check satisfied: it used to be stored and republished on the receipt.
+    let mut asserted = body.clone();
+    asserted["host_effect_digest"] = portable_digest(0x5a);
+    sign_host_effect(&token, &mut asserted);
+    let reply = f.runtime(&token, &asserted);
+    assert_eq!(kind_of(&reply), "forbidden", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("kovee-host-effect-binding-v1"),
+        "the refusal names the fragment it could not re-derive: {reply}"
+    );
+
+    // (b) the digest of a fragment over a DIFFERENT effect reference: the
+    // members byom holds are its own, so a host cannot move the effect.
+    let (other_digest, other_key, _) = host_effect_binding(
+        "kovee-effect-elsewhere",
+        &act.intent_id,
+        &act.stable_execution_key,
+        &act.context_manifest_ref,
+        &act.context_digest,
+        &act.disclosure_manifest_ref,
+        &act.disclosure_digest,
+        REQUEST_BYTES,
+    );
+    let mut moved = body.clone();
+    moved["host_effect_digest"] = other_digest;
+    moved["host_effect_external_idempotency_key"] = json!(other_key);
+    sign_host_effect(&token, &mut moved);
+    assert_eq!(kind_of(&f.runtime(&token, &moved)), "forbidden");
+
+    // (c) the digest of a fragment over a context the act was NOT
+    // authorized under. The presented pair still matches the committed one,
+    // so only the REBUILD catches this.
+    let (wrong_ctx, _, _) = host_effect_binding(
+        body["host_effect_ref"].as_str().unwrap(),
+        &act.intent_id,
+        &act.stable_execution_key,
+        "context-somebody-elses",
+        &portable_digest(0x11),
+        &act.disclosure_manifest_ref,
+        &act.disclosure_digest,
+        REQUEST_BYTES,
+    );
+    let mut wrong = body.clone();
+    wrong["host_effect_digest"] = wrong_ctx;
+    sign_host_effect(&token, &mut wrong);
+    assert_eq!(kind_of(&f.runtime(&token, &wrong)), "forbidden");
+
+    // (d) the two host-owned members are tied to each other and to byom's
+    // one-shot key: an idempotency key that is not
+    // `kovee-model-{key}-{bytes[..16]}` is refused before anything else.
+    let mut untied = body.clone();
+    untied["host_effect_external_idempotency_key"] = json!("kovee-model-something-else");
+    sign_host_effect(&token, &mut untied);
+    let reply = f.runtime(&token, &untied);
+    assert_eq!(kind_of(&reply), "forbidden", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("host_effect_external_idempotency_key must be"),
+        "{reply}"
+    );
+
+    assert_eq!(
+        f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),
+        0,
+        "no receipt is minted for a digest byom could not derive"
+    );
+    // The derived digest — the one the host really computed over the frozen
+    // fragment — consumes exactly once.
+    let ok = f.consume_signed(&token, &body);
+    assert_eq!(ok["outcome"], "ok", "{ok}");
 }

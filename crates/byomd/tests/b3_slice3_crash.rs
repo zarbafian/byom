@@ -29,6 +29,12 @@ const PHASES: [&str; 4] = [
 ];
 
 const BROKER: &str = "kovee-model-broker";
+
+/// The §11.8 typed byte digest of the exact provider-request bytes: the one
+/// genuinely host-owned member of the host-effect binding fragment, and the
+/// only one a consumption chooses. Every other member byom rebuilds from its
+/// own committed act (R3-L01, D-R3-3).
+const REQUEST_BYTES: &str = "f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7";
 const CANDIDATE: &str = "part-cand-onb";
 
 /// Kills at the abort point, restarts, retries the exact request, and
@@ -505,7 +511,7 @@ fn the_execution_permit_consume_commit_point_survives_every_boundary() {
             c.byom_fence_epoch,
             c.kovee_invocation_fence,
             act.revision,
-            portable_digest(0xf7),
+            REQUEST_BYTES,
         );
         sign_host_effect(&token, &mut request);
         let retried = crash_and_replay(&mut f, "runtime", Some(&token), &request);
