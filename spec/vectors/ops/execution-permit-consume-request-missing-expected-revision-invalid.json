@@ -14,25 +14,13 @@
       },
       "stable_execution_key": "stable-execution-key-1",
       "intent_ref": "intent-ref-1",
-      "intent_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "society-key:soc-1/object:intent_digest",
-        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
-      },
       "host_effect_ref": "host-effect-ref-1",
       "host_effect_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "society-key:soc-1/object:host_effect_digest",
-        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        "class": "portable_public",
+        "algorithm": "sha-256",
+        "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
       },
-      "subject_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "society-key:soc-1/object:subject_digest",
-        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
-      },
+      "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "driver_audience": "driver-audience-1",
       "budget_reservation_set_ref": "budget-reservation-set-ref-1",
       "byom_fence_epoch": 1,

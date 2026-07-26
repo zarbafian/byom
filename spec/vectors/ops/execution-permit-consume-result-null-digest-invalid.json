@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-result-null-digest-invalid",
-  "description": "The exact regression the kovee seam found: a receipt that renders a digest member null. The consumer cannot verify a binding it is never told, and an absent digest must never be treated as a match, so the closed \u00a713.1 shape refuses the receipt outright rather than letting a null cross the boundary (gap note G48). Every other member here is the valid receipt's.",
+  "description": "The exact regression the kovee seam found: a receipt that renders a digest member null. The consumer cannot verify a binding it is never told, and an absent digest must never be treated as a match, so the closed §13.1 shape refuses the receipt outright rather than letting a null cross the boundary (gap note G48). Every other member here is the valid receipt's.",
   "input": {
     "schema": "execution-permit-consume-result",
     "value": {
@@ -24,9 +24,8 @@
         "value_hex": "5d0f0c5cbb2c3d0d2f4e6a8b0c1d2e3f405162738495a6b7c8d9eafb0c1d2e3f"
       },
       "disclosure_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "kovee-key:disclosure-0007",
+        "class": "portable_public",
+        "algorithm": "sha-256",
         "value_hex": "1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9fa0b"
       },
       "driver_audience": "kovee-model-broker",
@@ -45,7 +44,7 @@
       "digest": {
         "class": "portable_public",
         "algorithm": "sha-256",
-        "value_hex": "c578d48c4c67b5eb0df9e62e8023c91d6fe273e2a8cfda5de64a61f9e7793c6e"
+        "value_hex": "c773176e33520a91fce3c8a08e11b4bed2d5c3e7de1df066360e6869cd1d8fd9"
       }
     }
   },

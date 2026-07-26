@@ -4,30 +4,38 @@
 //! closed `PositionRequest` (flat assent-mode optionals), exactly as
 //! `mandate_position` does.
 //!
-//! What you write (the one-shot consumption; both fences always):
+//! What you write (the one-shot consumption; both fences always). Every
+//! digest here is KOVEE's own — byom recomputes its own from committed
+//! state and never asks for it (A8, PROFILE.md §6.2):
 //! ```
 //! use bpp_core::ops::ExecutionPermitConsumeRequest;
-//! let d = |k: &str| serde_json::json!({
-//!     "class": "local_erasure_safe", "algorithm": "hmac-sha-256",
-//!     "key_ref": k, "value_hex": "9".repeat(64)});
+//! let p = |v: u8| serde_json::json!({
+//!     "class": "portable_public", "algorithm": "sha-256",
+//!     "value_hex": format!("{v:02x}").repeat(32)});
 //! let body = serde_json::json!({
 //!     "version": "0.2", "op": "execution_permit_consume",
 //!     "meta": {"request_id": "r", "idempotency_key": "k",
 //!              "expected_endpoint_incarnation": "inc",
 //!              "expected_recovery_epoch": 0, "expected_revision": 3},
 //!     "stable_execution_key": "exec-key-1",
-//!     "intent_ref": "intent-1", "intent_digest": d("k1"),
-//!     "host_effect_ref": "kovee-effect-1", "host_effect_digest": d("k2"),
-//!     "subject_digest": d("k3"),
+//!     "intent_ref": "intent-1",
+//!     "host_effect_ref": "kovee-effect-1", "host_effect_digest": p(0x2a),
+//!     "host_effect_credential": "b".repeat(64),
 //!     "driver_audience": "kovee-model-broker",
 //!     "budget_reservation_set_ref": "rset-1",
 //!     "byom_fence_epoch": 3, "host_fence_epoch": 5});
 //! let req = ExecutionPermitConsumeRequest::parse(&body).unwrap();
 //! assert_eq!(req.max_uses_is_one(), true);
-//! // The episode ref/fence pair is all-or-none (the frozen oneOf).
+//! // byom's OWN committed digests are not request members at all (A8):
+//! // an act subject echoed back is refused, never quietly ignored.
+//! let mut echo = body.clone();
+//! echo.as_object_mut().unwrap()
+//!     .insert("subject_digest".into(), p(0x3b));
+//! assert!(ExecutionPermitConsumeRequest::parse(&echo).is_err());
+//! // The disclosure ref/digest pair is all-or-none (the frozen oneOf).
 //! let mut half = body.clone();
 //! half.as_object_mut().unwrap()
-//!     .insert("episode_ref".into(), serde_json::json!("ep-1"));
+//!     .insert("disclosure_manifest_ref".into(), serde_json::json!("d-1"));
 //! assert!(ExecutionPermitConsumeRequest::parse(&half).is_err());
 //! ```
 
@@ -36,11 +44,48 @@ use serde_json::Value;
 
 use super::{
     check_create_meta, check_identifier, check_local_erasure_safe, check_op, check_opt_identifier,
-    check_opt_local_erasure_safe, check_update_meta, check_version, parse_closed,
+    check_update_meta, check_version, parse_closed,
 };
 use crate::canonical::SAFE_MAX;
-use crate::digest::DigestRef;
+use crate::digest::{DigestClass, DigestRef};
 use crate::envelope::MutationMeta;
+
+/// The CROSS-BOUNDARY class rule of the family contract (§A8, PROFILE.md
+/// §6.2), applied to the act family in BOTH directions:
+///
+/// - a digest byom **demands from kovee** is `portable_public` over a
+///   frozen cross-boundary fragment — a keyed class there is an HMAC under
+///   kovee's own per-object secret, which byom could only echo;
+/// - a digest byom **recomputes from its own committed state** stays
+///   `local_erasure_safe` and is **not a request member at all**
+///   (`intent_digest`, `subject_digest` and `episode_fence_digest` are
+///   gone from `execution_permit_consume` for exactly that reason).
+fn check_portable(name: &str, d: &DigestRef) -> Result<(), String> {
+    d.require_class(DigestClass::PortablePublic)
+        .map_err(|e| format!("{name}: {e}"))
+}
+
+fn check_opt_portable(name: &str, d: &Option<DigestRef>) -> Result<(), String> {
+    match d {
+        Some(d) => check_portable(name, d),
+        None => Ok(()),
+    }
+}
+
+/// A 32-byte authenticator on the wire: exactly 64 lowercase hex digits,
+/// carrying no key material of its own.
+fn check_credential(name: &str, v: &str) -> Result<(), String> {
+    if v.len() == 64
+        && v.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "{name} is not a 64-character lowercase hex authenticator"
+        ))
+    }
+}
 
 /// The closed Δ4 act-class list (family contract §4, verbatim), carried in
 /// ActIntent subjects. `kind` stays an open identifier on the frozen wire
@@ -90,6 +135,13 @@ fn check_safe(name: &str, v: u64) -> Result<(), String> {
 /// the authorization dependency set, the Δ4 class subject, and
 /// `expires_at` are ALL server-derived: subject atoms are compiled by the
 /// kernel from the dependency closure (§10.6), never caller-shaped.
+///
+/// The context and disclosure manifests are the HOST's objects, named here
+/// with their exact digests. Both pairs enter the assented act subject and
+/// are compared again, member for member, when the permit is consumed
+/// (R3-A01), so their class is the cross-boundary `portable_public`: the
+/// consuming host has to present the identical value, and a keyed digest
+/// under one side's per-object secret could never be compared at all.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ActIntentPrepareRequest {
@@ -140,13 +192,22 @@ impl ActIntentPrepareRequest {
         check_safe("mandate_revision", req.mandate_revision)?;
         check_local_erasure_safe("mandate_digest", &req.mandate_digest)?;
         check_opt_identifier("context_manifest_ref", &req.context_manifest_ref)?;
-        check_opt_local_erasure_safe("context_manifest_digest", &req.context_manifest_digest)?;
+        check_opt_portable("context_manifest_digest", &req.context_manifest_digest)?;
         check_opt_identifier("disclosure_manifest_ref", &req.disclosure_manifest_ref)?;
-        check_opt_local_erasure_safe(
+        check_opt_portable(
             "disclosure_manifest_digest",
             &req.disclosure_manifest_digest,
         )?;
         check_opt_identifier("driver_audience", &req.driver_audience)?;
+        // Each manifest binding is an all-or-none pair: a reference the
+        // subject carries without its digest is exactly the disclosure a
+        // later consumption could substitute (R3-A01).
+        if req.context_manifest_ref.is_some() != req.context_manifest_digest.is_some() {
+            return Err("context_manifest ref/digest is an all-or-none pair".to_owned());
+        }
+        if req.disclosure_manifest_ref.is_some() != req.disclosure_manifest_digest.is_some() {
+            return Err("disclosure_manifest ref/digest is an all-or-none pair".to_owned());
+        }
         Ok(req)
     }
 
@@ -195,6 +256,25 @@ impl ActIntentFinalizeRequest {
 /// standing, Mandate, decisions, dependencies, ceilings, expiry and both
 /// fences, inserts the MandateUse once, and returns ONE immutable
 /// ExecutionConsumptionReceipt (`max_uses: 1`).
+///
+/// The member set is A8's, per member (R3-L01):
+///
+/// - **byom's own** `intent_digest`, `subject_digest` and
+///   `episode_fence_digest` are NOT members. byom recomputes each from its
+///   committed ActIntent, act subject and ByomEpisodeBinding, and publishes
+///   the committed value on the receipt. Echoing them back proved nothing —
+///   byom compared its own value against itself — while forcing the host to
+///   store per-object keyed digests it can never verify.
+/// - **kovee's own** `host_effect_digest` and `disclosure_digest` are
+///   `portable_public` over frozen cross-boundary fragments, so byom holds
+///   the same bytes the host does. This is also the class
+///   `effect_outcome_admit` already demands for `host_effect_digest`, so the
+///   permit and the later outcome admission now name the SAME value.
+/// - `host_effect_credential` binds the permit to one exact prepared host
+///   Effect (R3-A02): the authenticator over
+///   {intent_ref, stable_execution_key, host_effect_ref, host_effect_digest}
+///   under the permit channel credential byomd itself published. Without it
+///   the request merely *stored* a caller-chosen effect ref and digest.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionPermitConsumeRequest {
@@ -203,10 +283,9 @@ pub struct ExecutionPermitConsumeRequest {
     pub meta: MutationMeta,
     pub stable_execution_key: String,
     pub intent_ref: String,
-    pub intent_digest: DigestRef,
     pub host_effect_ref: String,
     pub host_effect_digest: DigestRef,
-    pub subject_digest: DigestRef,
+    pub host_effect_credential: String,
     #[serde(default)]
     pub disclosure_manifest_ref: Option<String>,
     #[serde(default)]
@@ -215,8 +294,6 @@ pub struct ExecutionPermitConsumeRequest {
     pub budget_reservation_set_ref: String,
     #[serde(default)]
     pub episode_ref: Option<String>,
-    #[serde(default)]
-    pub episode_fence_digest: Option<DigestRef>,
     pub byom_fence_epoch: u64,
     pub host_fence_epoch: u64,
 }
@@ -229,27 +306,22 @@ impl ExecutionPermitConsumeRequest {
         check_update_meta(&req.meta)?;
         check_identifier("stable_execution_key", &req.stable_execution_key)?;
         check_identifier("intent_ref", &req.intent_ref)?;
-        check_local_erasure_safe("intent_digest", &req.intent_digest)?;
         check_identifier("host_effect_ref", &req.host_effect_ref)?;
-        check_local_erasure_safe("host_effect_digest", &req.host_effect_digest)?;
-        check_local_erasure_safe("subject_digest", &req.subject_digest)?;
+        check_portable("host_effect_digest", &req.host_effect_digest)?;
+        check_credential("host_effect_credential", &req.host_effect_credential)?;
         check_opt_identifier("disclosure_manifest_ref", &req.disclosure_manifest_ref)?;
-        check_opt_local_erasure_safe("disclosure_digest", &req.disclosure_digest)?;
+        check_opt_portable("disclosure_digest", &req.disclosure_digest)?;
         check_identifier("driver_audience", &req.driver_audience)?;
         check_identifier(
             "budget_reservation_set_ref",
             &req.budget_reservation_set_ref,
         )?;
         check_opt_identifier("episode_ref", &req.episode_ref)?;
-        check_opt_local_erasure_safe("episode_fence_digest", &req.episode_fence_digest)?;
         check_safe("byom_fence_epoch", req.byom_fence_epoch)?;
         check_safe("host_fence_epoch", req.host_fence_epoch)?;
-        // The frozen oneOf: each optional binding is an all-or-none pair.
+        // The frozen oneOf: the disclosure binding is an all-or-none pair.
         if req.disclosure_manifest_ref.is_some() != req.disclosure_digest.is_some() {
             return Err("disclosure_manifest ref/digest is an all-or-none pair".to_owned());
-        }
-        if req.episode_ref.is_some() != req.episode_fence_digest.is_some() {
-            return Err("episode ref/fence digest is an all-or-none pair".to_owned());
         }
         Ok(req)
     }
@@ -309,5 +381,132 @@ mod tests {
         // And nothing else is an act class.
         assert!(mandatory_domains("legacy_tool_call").is_none());
         assert!(mandatory_domains("").is_none());
+    }
+
+    fn consume_body() -> Value {
+        let portable = |v: u8| {
+            serde_json::json!({"class": "portable_public", "algorithm": "sha-256",
+                               "value_hex": format!("{v:02x}").repeat(32)})
+        };
+        serde_json::json!({
+            "version": "0.2", "op": "execution_permit_consume",
+            "meta": {"request_id": "r", "idempotency_key": "k",
+                     "expected_endpoint_incarnation": "inc",
+                     "expected_recovery_epoch": 0, "expected_revision": 3},
+            "stable_execution_key": "exec-key-1",
+            "intent_ref": "intent-1",
+            "host_effect_ref": "kovee-effect-1",
+            "host_effect_digest": portable(0x2a),
+            "host_effect_credential": "b".repeat(64),
+            "disclosure_manifest_ref": "kovee-disclosure-1",
+            "disclosure_digest": portable(0x7d),
+            "driver_audience": "kovee-model-broker",
+            "budget_reservation_set_ref": "rset-1",
+            "episode_ref": "ep-1",
+            "byom_fence_epoch": 3, "host_fence_epoch": 5})
+    }
+
+    #[test]
+    fn the_consume_request_applies_a8_per_member() {
+        let keyed = serde_json::json!({
+            "class": "local_erasure_safe", "algorithm": "hmac-sha-256",
+            "key_ref": "kovee-object:1", "value_hex": "9".repeat(64)});
+        assert!(ExecutionPermitConsumeRequest::parse(&consume_body()).is_ok());
+        // The converse half: byom's OWN recomputed digests are not members.
+        for owned in ["intent_digest", "subject_digest", "episode_fence_digest"] {
+            let mut body = consume_body();
+            body.as_object_mut()
+                .unwrap()
+                .insert(owned.to_owned(), keyed.clone());
+            assert!(
+                ExecutionPermitConsumeRequest::parse(&body).is_err(),
+                "{owned} is byom's own recomputed digest: the closed shape must refuse it"
+            );
+        }
+        // The demanded half: a host-owned digest byom must verify travels as
+        // a frozen portable_public fragment, never a keyed blob.
+        for peer in ["host_effect_digest", "disclosure_digest"] {
+            let mut body = consume_body();
+            body.as_object_mut()
+                .unwrap()
+                .insert(peer.to_owned(), keyed.clone());
+            assert!(
+                ExecutionPermitConsumeRequest::parse(&body).is_err(),
+                "{peer} must be portable_public: byom holds no key for the host's secret"
+            );
+        }
+        // The registration credential is a 32-byte hex authenticator, and it
+        // is required: an unregistered host Effect never reaches the state.
+        for bad in ["", "not-hex", &"A".repeat(64), &"a".repeat(63)] {
+            let mut body = consume_body();
+            body.as_object_mut()
+                .unwrap()
+                .insert("host_effect_credential".to_owned(), serde_json::json!(bad));
+            assert!(
+                ExecutionPermitConsumeRequest::parse(&body).is_err(),
+                "{bad:?}"
+            );
+        }
+        let mut body = consume_body();
+        body.as_object_mut()
+            .unwrap()
+            .remove("host_effect_credential");
+        assert!(ExecutionPermitConsumeRequest::parse(&body).is_err());
+        // The episode reference now travels ALONE: its fence digest is
+        // byom's own committed record.
+        let mut body = consume_body();
+        body.as_object_mut().unwrap().remove("episode_ref");
+        assert!(ExecutionPermitConsumeRequest::parse(&body).is_ok());
+    }
+
+    #[test]
+    fn each_prepared_manifest_binding_is_an_all_or_none_portable_pair() {
+        let portable = serde_json::json!({
+            "class": "portable_public", "algorithm": "sha-256",
+            "value_hex": "e2".repeat(32)});
+        let keyed = serde_json::json!({
+            "class": "local_erasure_safe", "algorithm": "hmac-sha-256",
+            "key_ref": "society-key:soc-1/object:mandate-1", "value_hex": "9".repeat(64)});
+        let base = serde_json::json!({
+            "version": "0.2", "op": "act_intent_prepare",
+            "meta": {"request_id": "r", "idempotency_key": "k",
+                     "expected_endpoint_incarnation": "inc",
+                     "expected_recovery_epoch": 0},
+            "kind": "model_egress", "execution_kind": "external_effect",
+            "subject_ref": "subject-1", "subject_revision": 1,
+            "mandate_ref": "mandate-1", "mandate_revision": 2,
+            "mandate_digest": keyed,
+            "driver_audience": "kovee-model-broker"});
+        assert!(ActIntentPrepareRequest::parse(&base).is_ok());
+        let with = |members: Vec<(&str, Value)>| {
+            let mut body = base.clone();
+            for (name, value) in members {
+                body.as_object_mut().unwrap().insert(name.to_owned(), value);
+            }
+            body
+        };
+        assert!(ActIntentPrepareRequest::parse(&with(vec![
+            ("disclosure_manifest_ref", serde_json::json!("d-1")),
+            ("disclosure_manifest_digest", portable.clone()),
+        ]))
+        .is_ok());
+        // A reference without its digest is the substitution the pair
+        // exists to refuse (R3-A01).
+        assert!(ActIntentPrepareRequest::parse(&with(vec![(
+            "disclosure_manifest_ref",
+            serde_json::json!("d-1")
+        )]))
+        .is_err());
+        assert!(ActIntentPrepareRequest::parse(&with(vec![(
+            "context_manifest_digest",
+            portable.clone()
+        )]))
+        .is_err());
+        // And the manifest digests are the HOST's: portable_public only.
+        assert!(ActIntentPrepareRequest::parse(&with(vec![
+            ("disclosure_manifest_ref", serde_json::json!("d-1")),
+            ("disclosure_manifest_digest", keyed.clone()),
+        ]))
+        .is_err());
     }
 }

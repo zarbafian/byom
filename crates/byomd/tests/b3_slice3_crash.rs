@@ -17,7 +17,7 @@
 
 mod common;
 
-use common::runtime::{merge, portable_digest, Fixture, Subordinate};
+use common::runtime::{merge, portable_digest, sign_host_effect, Fixture, Subordinate};
 use common::{far_future, test_digest};
 use serde_json::{json, Value};
 
@@ -355,10 +355,12 @@ fn act_prepare_request(f: &Fixture) -> Value {
         "mandate_ref": f.mandate_id,
         "mandate_revision": f.mandate_revision,
         "mandate_digest": f.mandate_subject_digest,
+        // Both manifests are the HOST's, portable_public, and each is an
+        // all-or-none pair pinned into the assented subject (A8/R3-A01).
         "context_manifest_ref": "ctxman-1",
-        "context_manifest_digest": test_digest(0xe1),
+        "context_manifest_digest": portable_digest(0xe1),
         "disclosure_manifest_ref": "disclosure-crash-1",
-        "disclosure_manifest_digest": test_digest(0xe2),
+        "disclosure_manifest_digest": portable_digest(0xe2),
         "driver_audience": BROKER,
     })
 }
@@ -488,25 +490,24 @@ fn the_execution_permit_consume_commit_point_survives_every_boundary() {
         let c = f.claim(&ep.episode_id, "worker-a", 600, 7, "c1");
         let started = f.start_episode(&ep.episode_id, &c, "s1");
         assert_eq!(started["outcome"], "ok", "{started}");
-        let binding_digest = f.binding_digest(&c.binding_ref);
         let act = f.authorized_act("a1", "model_egress", BROKER);
         let token = f.permit_token(&act.intent_id);
-        let request = json!({
-            "version": "0.2", "op": "execution_permit_consume",
-            "meta": f.meta("perm", Some(act.revision)),
-            "stable_execution_key": act.stable_execution_key,
-            "intent_ref": act.intent_id,
-            "intent_digest": act.intent_digest,
-            "host_effect_ref": "kovee-effect-crash-1",
-            "host_effect_digest": test_digest(0xf7),
-            "subject_digest": act.subject_digest,
-            "driver_audience": BROKER,
-            "budget_reservation_set_ref": act.budget_reservation_set_ref,
-            "episode_ref": ep.episode_id,
-            "episode_fence_digest": binding_digest,
-            "byom_fence_epoch": c.byom_fence_epoch,
-            "host_fence_epoch": c.kovee_invocation_fence,
-        });
+        // The consumption the host retries after the crash: the SAME
+        // registered Effect and the same semantic request, so the retry
+        // recovers the retained receipt instead of asking for new authority.
+        let mut request = f.consume_body(
+            &act,
+            "crash",
+            "crash-1",
+            &act.stable_execution_key,
+            BROKER,
+            Some(&ep.episode_id),
+            c.byom_fence_epoch,
+            c.kovee_invocation_fence,
+            act.revision,
+            portable_digest(0xf7),
+        );
+        sign_host_effect(&token, &mut request);
         let retried = crash_and_replay(&mut f, "runtime", Some(&token), &request);
         assert_eq!(retried["result"]["max_uses"], 1, "{phase}");
         // The one-shot never doubles: exactly one MandateUse and one

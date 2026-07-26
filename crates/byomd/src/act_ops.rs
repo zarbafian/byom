@@ -20,7 +20,7 @@
 //! and the egress ceiling — and every mandatory domain of the act's class
 //! must be present or preparation fails closed.
 
-use bpp_core::canonical::{sha256_hex, tagged_canonical};
+use bpp_core::canonical::{hex, hmac_sha256, sha256_hex, tagged_canonical};
 use bpp_core::digest::DigestRef;
 use bpp_core::ops;
 use bpp_core::problem::{Problem, ProblemKind};
@@ -32,7 +32,7 @@ use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 
 use crate::episode_ops::{
-    ensure_runtime_token_files, head_row, verify_runtime_token, RuntimeChannel,
+    ensure_runtime_token_files, head_row, runtime_token, verify_runtime_token, RuntimeChannel,
 };
 use crate::gov_ops::{check_meta_binding, db_err, digest_json, mint, obj_pairs, run};
 use crate::part_common::{
@@ -77,6 +77,17 @@ fn no_permit(detail: &str) -> Problem {
     )
     .with_status(409)
     .with_detail(detail.to_owned())
+}
+
+/// The consumption presents no valid registration for the host Effect it
+/// names (R3-A02). The permit is bound to ONE exact prepared Effect, so a
+/// caller-chosen ref and digest are refused before any state is read.
+fn unregistered_effect(detail: &str) -> Problem {
+    state::forbidden_detail(&format!(
+        "the permit is bound to one exact prepared host Effect: {detail} (§13.1 step 3-4 — the \
+         host durably creates its Effect and registers it under this act's permit credential \
+         BEFORE consuming; an unregistered or different Effect can never consume this permit)"
+    ))
 }
 
 fn opt_json(v: &Option<String>) -> Value {
@@ -303,6 +314,12 @@ fn act_intent_prepare_inner(
         {"kind": "dual_fences_current",
          "detail": "the exact Episode lease fence and the Kovee invocation fence"},
     ]);
+    // The assented subject carries BOTH manifest bindings as exact
+    // ref-AND-digest pairs (R3-A01). A subject that named the disclosure
+    // without pinning its content let the first consumption substitute a
+    // different manifest under the same reference: the seat assented to
+    // "some disclosure called X", and the receipt then published whatever
+    // the caller sent.
     let subject = json!({
         "intent_id": intent_id,
         "kind": req.kind,
@@ -315,7 +332,9 @@ fn act_intent_prepare_inner(
         "mandate_revision": req.mandate_revision,
         "mandate_digest": digest_json(&req.mandate_digest),
         "context_manifest_ref": opt_json(&req.context_manifest_ref),
+        "context_manifest_digest": opt_digest(&req.context_manifest_digest),
         "disclosure_manifest_ref": opt_json(&req.disclosure_manifest_ref),
+        "disclosure_manifest_digest": opt_digest(&req.disclosure_manifest_digest),
         "driver_audience": opt_json(&req.driver_audience),
         "budget_reservation_set_ref": set_ref,
         "preconditions": preconditions,
@@ -846,6 +865,142 @@ pub fn act_intent_position(
     })
 }
 
+// ============================== the locked active Position revisions =====
+
+/// A required seat's assent is not an exact, current PositionRevision any
+/// more: the position was superseded, its subject changed, or the
+/// participant's binding epoch moved (DESIGN.md §1106 — a changed binding
+/// epoch invalidates pending positions rather than silently recasting
+/// them).
+fn positions_invalidated(detail: &str) -> Problem {
+    Problem::new(
+        ProblemKind::DecisionIncomplete,
+        "the required seats hold no exact current Position revisions",
+    )
+    .with_status(409)
+    .with_detail(detail.to_owned())
+}
+
+/// The EXACT active PositionRevision behind each required seat, resolved
+/// and revalidated (R3-A03). Finalization used to check only that a
+/// seat's head said `assent` and then synthesize a seat descriptor: the
+/// decision named no position at all, so nothing tied the authority to
+/// the immutable revision that carried it.
+///
+/// `expected_proposal_revision` is `Some` at finalization (the positions
+/// must be against the exact revision being finalized) and `None` at
+/// consumption, where the act head has already moved — there the
+/// position's own ref and digest are the lock, and a PositionRevision is
+/// immutable, so a different `proposal_revision` would be a different
+/// row.
+fn locked_slots(
+    conn: &Connection,
+    proposal_kind: &str,
+    proposal_ref: &str,
+    subject_digest: &Value,
+    seats: &[Seat],
+    expected_proposal_revision: Option<u64>,
+) -> Result<Vec<Value>, Problem> {
+    let mut slots = Vec::new();
+    for (index, seat) in seats.iter().enumerate() {
+        let position = rows::active_position(conn, proposal_kind, proposal_ref, &seat.seat_ref)
+            .map_err(db_err)?
+            .ok_or_else(|| {
+                positions_invalidated(&format!(
+                    "seat {} holds no active Position revision",
+                    seat.seat_ref
+                ))
+            })?;
+        if rows::str_of(&position, "value") != "assent" {
+            return Err(positions_invalidated(&format!(
+                "seat {} holds {:?}, not assent",
+                seat.seat_ref,
+                rows::str_of(&position, "value")
+            )));
+        }
+        if rows::str_of(&position, "participant_ref") != seat.participant_ref {
+            return Err(positions_invalidated(&format!(
+                "seat {}'s active position was authored for another Participant",
+                seat.seat_ref
+            )));
+        }
+        // The position committed to the subject as it stands NOW.
+        if rows::json_of(&position, "subject_digest") != *subject_digest {
+            return Err(positions_invalidated(&format!(
+                "seat {}'s position commits to a superseded subject digest",
+                seat.seat_ref
+            )));
+        }
+        if let Some(expected) = expected_proposal_revision {
+            if rows::u64_of(&position, "proposal_revision") != expected {
+                return Err(positions_invalidated(&format!(
+                    "seat {}'s position was cast against another proposal revision",
+                    seat.seat_ref
+                )));
+            }
+        }
+        // The binding epoch, revalidated against the participant's CURRENT
+        // standing: a rebound principal invalidates its position.
+        let participant = rows::get_participant(conn, &seat.participant_ref)
+            .map_err(db_err)?
+            .ok_or_else(state::not_found)?;
+        if participant.state != "active" {
+            return Err(positions_invalidated(&format!(
+                "seat {}'s Participant holds no active Standing",
+                seat.seat_ref
+            )));
+        }
+        if rows::u64_of(&position, "participant_binding_epoch") != participant.binding_epoch {
+            return Err(positions_invalidated(&format!(
+                "seat {}'s position was cast at binding epoch {}, and the Participant is now at \
+                 {}: a changed binding epoch invalidates the position instead of recasting it",
+                seat.seat_ref,
+                rows::u64_of(&position, "participant_binding_epoch"),
+                participant.binding_epoch
+            )));
+        }
+        slots.push(json!({
+            "slot_ref": format!("slot-{}", index + 1),
+            "seat_ref": seat.seat_ref,
+            "seat_kind": seat.kind,
+            "participant_ref": seat.participant_ref,
+            "actor_ref": rows::str_of(&position, "actor_ref"),
+            "position_ref": rows::str_of(&position, "position_id"),
+            "position_revision": rows::u64_of(&position, "revision"),
+            "position_digest": rows::json_of(&position, "digest"),
+            "participant_binding_epoch": participant.binding_epoch,
+            "value": rows::str_of(&position, "value"),
+        }));
+    }
+    Ok(slots)
+}
+
+/// The act's `authorization_slot_snapshot_digest`: byom's own keyed
+/// commitment over the LOCKED slots — position refs and digests included —
+/// so a consumption can recompute it from current state and refuse if the
+/// slots it would execute under are not the slots that were authorized.
+fn slot_snapshot_digest(
+    conn: &Connection,
+    society_id: &str,
+    intent_id: &str,
+    subject_digest: &Value,
+    slots: &[Value],
+    seats: &Value,
+) -> Result<DigestRef, Problem> {
+    conn_record_digest(
+        conn,
+        society_id,
+        &format!("{intent_id}-slot-snapshot"),
+        "bpp-act-slot-snapshot-v0",
+        &json!({
+            "intent_ref": intent_id,
+            "subject_digest": subject_digest,
+            "seats": seats,
+            "slot_snapshot": slots,
+        }),
+    )
+}
+
 // ================================================ act_intent_finalize ====
 
 /// `act_intent_finalize` (participant R22 / governance R23): deterministic
@@ -903,20 +1058,33 @@ pub fn act_intent_finalize(
         let seats = seats_from_json(&rows::json_of(&intent, "required_seat_refs"));
         all_seats_assent(conn, "act_intent", &req_c.intent_id, &seats)?;
         let subject_digest: DigestRef = digest_of(&subject)?;
-        let decision_seats: Vec<gov_decision::DecisionSeat> = seats
+        // The EXACT active Position revisions this finalization locks
+        // (R3-A03): each resolved, its binding epoch revalidated, and its
+        // ref and digest committed — never a synthesized seat descriptor.
+        let revision_positioned = rows::u64_of(&intent, "revision");
+        let slots = locked_slots(
+            conn,
+            "act_intent",
+            &req_c.intent_id,
+            &subject,
+            &seats,
+            Some(revision_positioned),
+        )?;
+        let position_refs: Vec<String> = slots
             .iter()
-            .map(|s| {
-                let epoch = rows::get_participant(conn, &s.participant_ref)
-                    .ok()
-                    .flatten()
-                    .map(|p| p.binding_epoch)
-                    .unwrap_or(0);
-                gov_decision::DecisionSeat {
-                    seat_ref: s.seat_ref.clone(),
-                    participant_ref: s.participant_ref.clone(),
-                    actor_ref: crate::gov_ops::ACTOR_GOVERNANCE.to_owned(),
-                    participant_binding_epoch: epoch,
-                }
+            .map(|s| s["position_ref"].as_str().unwrap_or_default().to_owned())
+            .collect();
+        let decision_seats: Vec<gov_decision::DecisionSeat> = slots
+            .iter()
+            .map(|s| gov_decision::DecisionSeat {
+                seat_ref: s["seat_ref"].as_str().unwrap_or_default().to_owned(),
+                participant_ref: s["participant_ref"].as_str().unwrap_or_default().to_owned(),
+                // The actor that AUTHORED the locked position, read off the
+                // PositionRevision — not a constant.
+                actor_ref: s["actor_ref"].as_str().unwrap_or_default().to_owned(),
+                participant_binding_epoch: s["participant_binding_epoch"]
+                    .as_u64()
+                    .unwrap_or_default(),
             })
             .collect();
         let decision = gov_decision::form(
@@ -929,22 +1097,21 @@ pub fn act_intent_finalize(
             &subject_digest,
             rows::str_of(&intent, "authorization_dependency_set_ref"),
             &decision_seats,
-            &[],
+            &position_refs,
             "act_intent_finalize",
             crate::gov_ops::ACTOR_GOVERNANCE,
             now,
         )?;
-        // The exact active slot snapshot this finalization locks.
-        let snapshot_digest = conn_record_digest(
+        // The exact active slot snapshot this finalization locks: the
+        // position refs AND digests, so the consumption can prove the
+        // authorized slots are still the slots it executes under.
+        let snapshot_digest = slot_snapshot_digest(
             conn,
             &society,
-            &format!("{}-slot-snapshot", req_c.intent_id),
-            "bpp-act-slot-snapshot-v0",
-            &json!({
-                "intent_ref": req_c.intent_id,
-                "subject_digest": subject,
-                "seats": seats_json(&seats),
-            }),
+            &req_c.intent_id,
+            &subject,
+            &slots,
+            &seats_json(&seats),
         )?;
         let revision = rows::u64_of(&intent, "revision") + 1;
         let mut authorized = intent.clone();
@@ -962,6 +1129,10 @@ pub fn act_intent_finalize(
                 "state": "authorized",
                 "authorization_decision_ref": decision_c,
                 "authorization_slot_snapshot_digest": digest_json(&snapshot_digest),
+                // The locked slots, published: the exact Position revision
+                // each seat holds, so the caller can see what was locked
+                // instead of trusting a derived decision id (R3-A03).
+                "authorization_slot_snapshot": slots,
                 "stable_execution_key": rows::str_of(&intent, "stable_execution_key"),
                 "expires_at": rows::str_of(&intent, "expires_at"),
             }),
@@ -1001,11 +1172,26 @@ pub fn act_intent_finalize(
 
 /// `execution_permit_consume` (runtime, update; R34). The one-shot
 /// consumption protocol of §13.1 steps 4-6: byom atomically rechecks
-/// charter, standing, Mandate, decisions, dependencies, ceilings, expiry
-/// and BOTH fences, inserts the MandateUse once, and returns ONE immutable
-/// ExecutionConsumptionReceipt. Repeating the same canonical request and
-/// key returns the same receipt; a changed request conflicts; a different
-/// key cannot consume the spent decision.
+/// charter, standing, Mandate, decisions, the locked Position revisions,
+/// dependencies, ceilings, expiry and BOTH fences, inserts the MandateUse
+/// once, and returns ONE immutable ExecutionConsumptionReceipt.
+///
+/// Four things the consumption is bound to, in order:
+///
+/// 1. the exact prepared ACT — the permit channel token (R34);
+/// 2. the exact prepared host EFFECT — the registration credential
+///    (R3-A02): the permit consumes for one attested Effect, never for a
+///    ref and digest a caller merely names;
+/// 3. the exact assented DISCLOSURE — ref and digest compared with the
+///    committed act subject, and the receipt renders the COMMITTED value
+///    (R3-A01);
+/// 4. the exact locked SLOTS — the slot snapshot recomputed from the
+///    current active Position revisions (R3-A03).
+///
+/// Repeating the identical semantic request under the same key returns the
+/// same receipt; a request that changed ANY substantive member conflicts
+/// (R3-A04); a different key cannot consume the spent decision. byom's own
+/// committed digests are recomputed here, never request members (A8).
 pub fn execution_permit_consume(
     store: &mut Store,
     token: &str,
@@ -1019,6 +1205,12 @@ pub fn execution_permit_consume(
     // presenting another one-shot key still reaches byom's spent-decision
     // check rather than a silent forbidden.
     verify_runtime_token(store, token, RuntimeChannel::Permit, &req.intent_ref)?;
+    // ... and the permit is bound to the exact prepared host EFFECT
+    // (R3-A02), verified BEFORE any consumption is attempted: the
+    // registration credential authenticates {intent, one-shot key, effect
+    // ref, effect digest} as one tuple, so the effect ref and digest are
+    // no longer values byom merely stores because a caller sent them.
+    verify_effect_registration(store, req)?;
     let intent = rows::get_row(store.conn(), "act_intents", "intent_id", &req.intent_ref)
         .map_err(db_err)?
         .ok_or_else(state::not_found)?;
@@ -1080,28 +1272,34 @@ pub fn execution_permit_consume(
                         .to_owned(),
                 ));
             }
-            // Only the byte-identical canonical binding replays.
-            let changed = rows::str_of(&stored, "host_effect_ref") != req_c.host_effect_ref
-                || !req_c
-                    .host_effect_digest
-                    .same_ref_json(&rows::json_of(&stored, "host_effect_digest"))
-                || !req_c
-                    .subject_digest
-                    .same_ref_json(&rows::json_of(&stored, "subject_digest"))
-                || rows::str_of(&stored, "driver_audience") != req_c.driver_audience
-                || rows::u64_of(&stored, "byom_fence_epoch") != req_c.byom_fence_epoch
-                || rows::u64_of(&stored, "host_fence_epoch") != req_c.host_fence_epoch;
-            if changed {
+            // Only the IDENTICAL semantic request replays (R3-A04). The
+            // comparison is one frozen digest over EVERY substantive member,
+            // recomputed on both sides inside this transaction: the
+            // presented request against byom's committed record of the
+            // consumption it is replaying. A hand-listed member set is
+            // exactly how the disclosure pair, the budget set and the
+            // episode binding fell out of the check.
+            let presented = presented_semantic_request(&req_c);
+            let committed = committed_semantic_request(
+                &stored,
+                rows::str_of(&intent, "disclosure_manifest_ref"),
+            );
+            let differing = changed_members(&presented, &committed);
+            let presented_digest =
+                semantic_request_digest(conn, &society_c, &req_c.intent_ref, &presented)?;
+            let committed_digest =
+                semantic_request_digest(conn, &society_c, &req_c.intent_ref, &committed)?;
+            if !presented_digest.same_ref(&committed_digest) {
                 return Err(Problem::new(
                     ProblemKind::IdempotencyMismatch,
                     "same one-shot key, different canonical request",
                 )
                 .with_status(409)
-                .with_detail(
-                    "only the byte-identical canonical request replays to the retained receipt \
-                     (§13.1 step 6)"
-                        .to_owned(),
-                ));
+                .with_detail(format!(
+                    "only the identical semantic request replays to the retained receipt (§13.1 \
+                     step 6); these members differ from the consumption byom committed: \
+                     {differing:?}"
+                )));
             }
             return Ok(Prepared {
                 result: receipt_result(&stored, true),
@@ -1133,21 +1331,63 @@ pub fn execution_permit_consume(
         if req_c.meta.expected_revision != Some(rows::u64_of(&intent, "revision")) {
             return Err(state::stale_revision());
         }
-        // The exact intent, subject and disclosure the decision bound.
-        if !req_c
-            .intent_digest
-            .same_ref_json(&rows::json_of(&intent, "intent_digest"))
-        {
+        // The intent record and act subject digests are byom's OWN, taken
+        // from this committed row and published on the receipt (A8): there
+        // is nothing to compare, because there is no caller echo to
+        // compare against.
+        //
+        // The DISCLOSURE binding is the caller's, and it IS compared, ref
+        // and digest, against the pair the seats assented to (R3-A01). The
+        // first consumption used to accept any pair at all and copy it onto
+        // the receipt, so the authorized disclosure and the receipted one
+        // could differ — with nothing in the record showing it.
+        let committed_disclosure_ref = rows::str_of(&intent, "disclosure_manifest_ref").to_owned();
+        let committed_disclosure_digest = rows::json_of(&intent, "disclosure_manifest_digest");
+        let presented_disclosure_ref = req_c.disclosure_manifest_ref.clone().unwrap_or_default();
+        if presented_disclosure_ref != committed_disclosure_ref {
+            return Err(state::stale_binding(&format!(
+                "disclosure_manifest_ref {presented_disclosure_ref:?} is not the disclosure this \
+                 act was authorized for ({committed_disclosure_ref:?}): the assented subject pins \
+                 the exact manifest, and a consumption never substitutes another"
+            )));
+        }
+        let presented_disclosure_digest = opt_digest(&req_c.disclosure_digest);
+        if presented_disclosure_digest != committed_disclosure_digest {
             return Err(state::stale_binding(
-                "intent_digest does not pin the committed ActIntent record",
+                "disclosure_digest does not pin the exact disclosure manifest the assented \
+                 subject committed to: the same reference carrying different content is precisely \
+                 the substitution the pair exists to refuse (R3-A01)",
             ));
         }
-        if !req_c
-            .subject_digest
-            .same_ref_json(&rows::json_of(&intent, "subject_digest"))
-        {
+        // The slots the decision locked are still the slots this
+        // consumption would execute under: the snapshot is recomputed from
+        // the CURRENT active Position revisions and compared with the
+        // committed digest (R3-A03).
+        let seats = seats_from_json(&rows::json_of(&intent, "required_seat_refs"));
+        let current_slots = locked_slots(
+            conn,
+            "act_intent",
+            &req_c.intent_ref,
+            &rows::json_of(&intent, "subject_digest"),
+            &seats,
+            None,
+        )?;
+        let current_snapshot = slot_snapshot_digest(
+            conn,
+            &society_c,
+            &req_c.intent_ref,
+            &rows::json_of(&intent, "subject_digest"),
+            &current_slots,
+            &seats_json(&seats),
+        )?;
+        if !current_snapshot.same_ref_json(&rows::json_of(
+            &intent,
+            "authorization_slot_snapshot_digest",
+        )) {
             return Err(state::stale_binding(
-                "subject_digest does not pin the exact authorized act subject",
+                "the active Position revisions are no longer the ones this act's authorization \
+                 locked: a superseded position or a moved binding epoch invalidates the permit \
+                 rather than silently executing under it",
             ));
         }
         if parse_rfc3339_utc(rows::str_of(&intent, "expires_at")).is_some_and(|t| t <= now) {
@@ -1212,12 +1452,12 @@ pub fn execution_permit_consume(
 
         // -- the DUAL fences (family contract L21) -----------------------
         // Yields the digest of the COMMITTED ByomEpisodeBinding, which is
-        // what the receipt publishes: byom names its own committed record,
-        // never the caller's echo (the two are proven identical by the
-        // comparison below, so publishing the committed one costs nothing
-        // and cannot drift).
-        let episode_fence: Option<Value> = match (&req_c.episode_ref, &req_c.episode_fence_digest) {
-            (Some(episode_ref), Some(fence_digest)) => {
+        // what the receipt publishes: byom names its own committed record
+        // and no longer asks the caller to echo it (A8 — the echo was a
+        // keyed value the host could never verify, and byom compared its
+        // own digest against itself).
+        let episode_fence: Option<Value> = match &req_c.episode_ref {
+            Some(episode_ref) => {
                 let lease = rows::get_row(conn, "episode_lease_heads", "episode_id", episode_ref)
                     .map_err(db_err)?
                     .ok_or_else(state::stale_revision)?;
@@ -1254,19 +1494,13 @@ pub fn execution_permit_consume(
                             .to_owned(),
                     ));
                 }
-                let committed_fence = rows::json_of(&binding, "digest");
-                if !fence_digest.same_ref_json(&committed_fence) {
-                    return Err(state::stale_binding(
-                        "episode_fence_digest does not pin the committed ByomEpisodeBinding",
-                    ));
-                }
-                Some(committed_fence)
+                Some(rows::json_of(&binding, "digest"))
             }
-            _ => {
+            None => {
                 if rows::str_of(&intent, "execution_kind") == "external_effect" {
                     return Err(state::stale_binding(
                         "an external-effect act binds the exact Episode and BOTH fences; the \
-                         episode ref/fence pair is not optional here (family contract L21)",
+                         episode reference is not optional here (family contract L21)",
                     ));
                 }
                 None
@@ -1370,6 +1604,16 @@ pub fn execution_permit_consume(
         // The act's reservation is COMMITTED in the same transition: the
         // authorized quantity is spent exactly once (§11.4 conservation).
         part_common::settle_holder(conn, &mut effects, "act_intent", &req_c.intent_ref, true)?;
+        // The frozen semantic request this consumption commits to
+        // (R3-A04). It is published on the consumption event, and a later
+        // presentation of the same one-shot key is compared against it
+        // member for member.
+        let request_digest = semantic_request_digest(
+            conn,
+            &society_c,
+            &req_c.intent_ref,
+            &presented_semantic_request(&req_c),
+        )?;
 
         // -- the ONE immutable ExecutionConsumptionReceipt ---------------
         // Every §13.1 member is composed ONCE, here. The published receipt
@@ -1388,10 +1632,11 @@ pub fn execution_permit_consume(
             ("mandate_use_ref", json!(mandate_use_id)),
             ("mandate_use_digest", digest_json(&use_binding_digest)),
             ("stable_execution_key", json!(req_c.stable_execution_key)),
-            // The COMMITTED authority subject, not the caller's echo (the
-            // recheck above proved them identical).
+            // The COMMITTED authority subject and the COMMITTED disclosure
+            // (R3-A01): every authority member the receipt publishes is
+            // read out of byom's own row, never copied from the request.
             ("subject_digest", rows::json_of(&intent, "subject_digest")),
-            ("disclosure_digest", opt_digest(&req_c.disclosure_digest)),
+            ("disclosure_digest", committed_disclosure_digest.clone()),
             ("driver_audience", json!(req_c.driver_audience)),
             ("participant_ref", json!(participant_ref)),
             ("episode_ref", opt_json(&req_c.episode_ref)),
@@ -1446,10 +1691,246 @@ pub fn execution_permit_consume(
                        "act_class": act_class,
                        "mandate_use_ref": mandate_use_id,
                        "episode_bound": episode_fence.is_some(),
+                       "host_effect_ref": req_c.host_effect_ref,
+                       "semantic_request_digest": digest_json(&request_digest),
                        "receipt_ref": receipt_id}),
             )],
         })
     })
+}
+
+// ==================== the host-effect registration credential (A02) ======
+//
+// A permit is consumable only for the ONE host Effect the trusted host
+// effect service durably created for this act (§13.1 step 3). byom cannot
+// read kovee's store, so what it verifies is an AUTHENTICATED registration
+// of that Effect: a 32-byte authenticator over the frozen effect tuple,
+// keyed by the permit channel credential byomd itself minted and published
+// `0600` for this exact ActIntent.
+//
+// What it buys, precisely:
+//
+// - the effect ref and digest stop being values byom stores because a
+//   caller sent them: they are covered by an authenticator byom recomputes,
+//   so a consumption for a DIFFERENT effect than the registered one, or for
+//   an effect no one ever registered, is refused before any state is read;
+// - the tuple includes the one-shot key and the intent, so a credential
+//   minted for one act's effect is useless for another;
+// - only a holder of that act's permit token can mint it — the same trust
+//   anchor the channel already rests on, and the token is unforgeable
+//   client-side (it is an HMAC under byom's own store key).
+//
+// What it does NOT claim: byom does not see kovee's `model_effects` row, so
+// this is the host's authenticated attestation of the Effect it created,
+// not proof of a row in another database. A byom-side registration RECORD
+// (its own table and operation, resolved like a GovernanceDecision) is the
+// stronger form and is recorded as a follow-on: it needs a new operation
+// and a new table, both outside this bundle's paths.
+
+/// The canonicalization domain of the host-effect registration tuple.
+pub const HOST_EFFECT_REGISTRATION_TAG: &str = "bpp-host-effect-registration-v0";
+
+/// Its frozen member set, in order. Every member is one the host already
+/// holds, so the host derives the identical authenticator.
+pub const HOST_EFFECT_REGISTRATION_FIELDS: [&str; 4] = [
+    "intent_ref",
+    "stable_execution_key",
+    "host_effect_ref",
+    "host_effect_digest",
+];
+
+/// The authenticator byom expects for one exact registered host Effect:
+/// `HMAC-SHA-256(permit channel token, $domain-tagged canonical tuple)`.
+fn host_effect_registration_credential(
+    permit_token: &str,
+    intent_ref: &str,
+    stable_execution_key: &str,
+    host_effect_ref: &str,
+    host_effect_digest: &DigestRef,
+) -> Result<String, Problem> {
+    let tuple = obj_pairs([
+        ("intent_ref", json!(intent_ref)),
+        ("stable_execution_key", json!(stable_execution_key)),
+        ("host_effect_ref", json!(host_effect_ref)),
+        ("host_effect_digest", digest_json(host_effect_digest)),
+    ]);
+    let bytes = tagged_canonical(HOST_EFFECT_REGISTRATION_TAG, &Value::Object(tuple))
+        .map_err(|e| state::internal(&e.to_string()))?;
+    Ok(hex(&hmac_sha256(permit_token.trim().as_bytes(), &bytes)))
+}
+
+/// Verifies the presented registration in constant time, BEFORE any
+/// consumption state is read (R3-A02).
+fn verify_effect_registration(
+    store: &Store,
+    req: &ops::ExecutionPermitConsumeRequest,
+) -> Result<(), Problem> {
+    let token = runtime_token(store, RuntimeChannel::Permit, &req.intent_ref)
+        .ok_or_else(|| state::internal("runtime channel key unavailable"))?;
+    let expected = host_effect_registration_credential(
+        &token,
+        &req.intent_ref,
+        &req.stable_execution_key,
+        &req.host_effect_ref,
+        &req.host_effect_digest,
+    )?;
+    let a = expected.as_bytes();
+    let b = req.host_effect_credential.as_bytes();
+    let same = a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0;
+    if same {
+        Ok(())
+    } else {
+        Err(unregistered_effect(&format!(
+            "host_effect_credential does not register host effect {:?} with digest {} under this \
+             act's one-shot key",
+            req.host_effect_ref, req.host_effect_digest.value_hex
+        )))
+    }
+}
+
+// ======================= the frozen semantic request (A04) ===============
+
+/// The canonicalization domain of the semantic consumption request.
+pub const CONSUME_REQUEST_TAG: &str = "bpp-execution-permit-consume-request-v0";
+
+/// EVERY substantive member of a consumption, frozen (R3-A04). The replay
+/// comparison used to be a hand-listed subset — it omitted the intent
+/// digest, the disclosure pair, the budget set, the episode ref and the
+/// episode fence — so a changed request could replay the old receipt.
+/// Anything outside this list is transport, not semantics:
+/// `meta.request_id`/`idempotency_key` name the attempt, and
+/// `host_effect_credential` is a deterministic function of four members
+/// that are already here (so a changed effect cannot hide behind it).
+pub const CONSUME_REQUEST_FIELDS: [&str; 11] = [
+    "stable_execution_key",
+    "intent_ref",
+    "host_effect_ref",
+    "host_effect_digest",
+    "disclosure_manifest_ref",
+    "disclosure_digest",
+    "driver_audience",
+    "budget_reservation_set_ref",
+    "episode_ref",
+    "byom_fence_epoch",
+    "host_fence_epoch",
+];
+
+fn insert_present(fragment: &mut Map<String, Value>, name: &str, value: Value) {
+    if !value.is_null() && value != json!("") {
+        fragment.insert(name.to_owned(), value);
+    }
+}
+
+/// The semantic request AS PRESENTED. An absent optional member is ABSENT,
+/// never null: two different requests can never share a preimage.
+fn presented_semantic_request(req: &ops::ExecutionPermitConsumeRequest) -> Map<String, Value> {
+    let mut fragment = Map::new();
+    insert_present(
+        &mut fragment,
+        "stable_execution_key",
+        json!(req.stable_execution_key),
+    );
+    insert_present(&mut fragment, "intent_ref", json!(req.intent_ref));
+    insert_present(&mut fragment, "host_effect_ref", json!(req.host_effect_ref));
+    insert_present(
+        &mut fragment,
+        "host_effect_digest",
+        digest_json(&req.host_effect_digest),
+    );
+    insert_present(
+        &mut fragment,
+        "disclosure_manifest_ref",
+        opt_json(&req.disclosure_manifest_ref),
+    );
+    insert_present(
+        &mut fragment,
+        "disclosure_digest",
+        opt_digest(&req.disclosure_digest),
+    );
+    insert_present(&mut fragment, "driver_audience", json!(req.driver_audience));
+    insert_present(
+        &mut fragment,
+        "budget_reservation_set_ref",
+        json!(req.budget_reservation_set_ref),
+    );
+    insert_present(&mut fragment, "episode_ref", opt_json(&req.episode_ref));
+    fragment.insert("byom_fence_epoch".to_owned(), json!(req.byom_fence_epoch));
+    fragment.insert("host_fence_epoch".to_owned(), json!(req.host_fence_epoch));
+    fragment
+}
+
+/// The same fragment REBUILT FROM COMMITTED STATE: the retained receipt
+/// row carries every member verbatim except the disclosure reference,
+/// which is the ActIntent's own committed one. Nothing is stored twice, so
+/// the summary can never drift from the rows it summarizes.
+fn committed_semantic_request(
+    receipt: &Map<String, Value>,
+    committed_disclosure_ref: &str,
+) -> Map<String, Value> {
+    let mut fragment = Map::new();
+    for name in [
+        "stable_execution_key",
+        "intent_ref",
+        "host_effect_ref",
+        "driver_audience",
+        "budget_reservation_set_ref",
+        "episode_ref",
+    ] {
+        insert_present(&mut fragment, name, json!(rows::str_of(receipt, name)));
+    }
+    for name in ["host_effect_digest", "disclosure_digest"] {
+        insert_present(&mut fragment, name, rows::json_of(receipt, name));
+    }
+    insert_present(
+        &mut fragment,
+        "disclosure_manifest_ref",
+        json!(committed_disclosure_ref),
+    );
+    fragment.insert(
+        "byom_fence_epoch".to_owned(),
+        json!(rows::u64_of(receipt, "byom_fence_epoch")),
+    );
+    fragment.insert(
+        "host_fence_epoch".to_owned(),
+        json!(rows::u64_of(receipt, "host_fence_epoch")),
+    );
+    fragment
+}
+
+/// The members that differ between two semantic requests — named in the
+/// refusal, so a mismatch is diagnosable instead of mysterious.
+fn changed_members(presented: &Map<String, Value>, committed: &Map<String, Value>) -> Vec<String> {
+    CONSUME_REQUEST_FIELDS
+        .iter()
+        .filter(|name| presented.get(**name) != committed.get(**name))
+        .map(|name| (*name).to_owned())
+        .collect()
+}
+
+/// byom's OWN keyed commitment to a semantic request: per-object,
+/// erasable, demanded from nobody (PROFILE.md §6.2 converse half). It is
+/// never a wire member — the receipt publishes the consumption, not this
+/// summary of the request that asked for it.
+fn semantic_request_digest(
+    conn: &Connection,
+    society_id: &str,
+    intent_ref: &str,
+    fragment: &Map<String, Value>,
+) -> Result<DigestRef, Problem> {
+    for name in fragment.keys() {
+        if !CONSUME_REQUEST_FIELDS.contains(&name.as_str()) {
+            return Err(state::internal(&format!(
+                "{CONSUME_REQUEST_TAG}: {name} is not a frozen semantic-request member"
+            )));
+        }
+    }
+    conn_record_digest(
+        conn,
+        society_id,
+        &format!("{intent_ref}-consume-request"),
+        CONSUME_REQUEST_TAG,
+        &Value::Object(fragment.clone()),
+    )
 }
 
 // ============================ the CROSS-BOUNDARY receipt digests (A8) ====
@@ -1458,13 +1939,17 @@ pub fn execution_permit_consume(
 // every digest ON it has to be one the consumer can actually check
 // (PROFILE.md §6.2 cross-boundary class rule, amendment §A8):
 //
-// - `intent_digest`, `subject_digest`, `disclosure_digest` and
-//   `episode_fence_digest` stay `local_erasure_safe`. Each is an ECHO of a
-//   value the consumer itself pinned in the request, rechecked against
-//   byom's committed record inside this transaction, so the consumer
-//   verifies it by exact `DigestRef` identity against the value it holds —
-//   and `subject_digest` is an authority subject, which §6.2 requires to
-//   be per-object keyed and forbids from ever taking a public hash.
+// - `intent_digest`, `subject_digest` and `episode_fence_digest` stay
+//   `local_erasure_safe` AND stop being request members (A8's converse
+//   half, R3-L01): each is byom's own committed record digest, published
+//   here so the consumer can carry it in its own audit, recomputed by byom
+//   rather than echoed by the caller. `subject_digest` is an authority
+//   subject, which §6.2 requires to be per-object keyed and forbids from
+//   ever taking a public hash.
+// - `disclosure_digest` is the HOST's own object, so it is
+//   `portable_public` (A8's demanded half): the host presents it, byom
+//   compares it against the pair the seats assented to, and the receipt
+//   publishes the COMMITTED value — never the presented one.
 // - `mandate_use_digest` and `digest` name records the consumer never
 //   supplied and holds no key for. A keyed class there would be an opaque
 //   blob it could only echo, so both are `portable_public` over a FROZEN

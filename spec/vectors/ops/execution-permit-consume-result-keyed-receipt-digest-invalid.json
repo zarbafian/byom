@@ -1,6 +1,6 @@
 {
   "name": "ops/execution-permit-consume-result-keyed-receipt-digest-invalid",
-  "description": "A8 / PROFILE.md \u00a76.2 cross-boundary class rule: the receipt's own digest offered as a well-constructed local_erasure_safe HMAC under a byom per-object secret. The consumer holds no such secret, so that value is an opaque blob it could only echo \u2014 the rejection is typing-only (the offered ref is arithmetically well-formed for its class), exactly the placement-admit keyed-allocation-digest precedent.",
+  "description": "A8 / PROFILE.md §6.2 cross-boundary class rule: the receipt's own digest offered as a well-constructed local_erasure_safe HMAC under a byom per-object secret. The consumer holds no such secret, so that value is an opaque blob it could only echo — the rejection is typing-only (the offered ref is arithmetically well-formed for its class), exactly the placement-admit keyed-allocation-digest precedent.",
   "input": {
     "schema": "execution-permit-consume-result",
     "value": {
@@ -29,9 +29,8 @@
         "value_hex": "5d0f0c5cbb2c3d0d2f4e6a8b0c1d2e3f405162738495a6b7c8d9eafb0c1d2e3f"
       },
       "disclosure_digest": {
-        "class": "local_erasure_safe",
-        "algorithm": "hmac-sha-256",
-        "key_ref": "kovee-key:disclosure-0007",
+        "class": "portable_public",
+        "algorithm": "sha-256",
         "value_hex": "1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9fa0b"
       },
       "driver_audience": "kovee-model-broker",

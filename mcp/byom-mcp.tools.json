@@ -7701,18 +7701,58 @@
                 "$ref": "#/$defs/identifier"
               },
               "context_manifest_digest": {
-                "$ref": "#/$defs/localErasureSafeDigest"
+                "$ref": "#/$defs/portableBindingDigest",
+                "description": "The host's own context manifest digest, pinned into the assented act subject. portable_public: byom holds no bytes to re-derive it and the consuming host must present the same value (A8, PROFILE.md §6.2)."
               },
               "disclosure_manifest_ref": {
                 "$ref": "#/$defs/identifier"
               },
               "disclosure_manifest_digest": {
-                "$ref": "#/$defs/localErasureSafeDigest"
+                "$ref": "#/$defs/portableBindingDigest",
+                "description": "The host's own disclosure manifest digest, pinned into the assented act subject and compared — ref AND digest — at consumption, so a substituted manifest is refused rather than receipted (R3-A01). portable_public for the same reason (A8)."
               },
               "driver_audience": {
                 "$ref": "#/$defs/identifier"
               }
             },
+            "oneOf": [
+              {
+                "required": [
+                  "context_manifest_ref",
+                  "context_manifest_digest",
+                  "disclosure_manifest_ref",
+                  "disclosure_manifest_digest"
+                ]
+              },
+              {
+                "required": [
+                  "context_manifest_ref",
+                  "context_manifest_digest"
+                ],
+                "properties": {
+                  "disclosure_manifest_ref": false,
+                  "disclosure_manifest_digest": false
+                }
+              },
+              {
+                "required": [
+                  "disclosure_manifest_ref",
+                  "disclosure_manifest_digest"
+                ],
+                "properties": {
+                  "context_manifest_ref": false,
+                  "context_manifest_digest": false
+                }
+              },
+              {
+                "properties": {
+                  "context_manifest_ref": false,
+                  "context_manifest_digest": false,
+                  "disclosure_manifest_ref": false,
+                  "disclosure_manifest_digest": false
+                }
+              }
+            ],
             "$defs": {
               "digestRef": {
                 "type": "object",
@@ -7805,6 +7845,15 @@
                   }
                 },
                 "description": "Contextual digest-class binding (PROFILE.md §6.2, D-R0-1; RT-02): this field commits to an authority subject or other erasable per-object content, so exactly class local_erasure_safe (per-object secret, keyed HMAC) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — never a silent substitution."
+              },
+              "portableBindingDigest": {
+                "$ref": "#/$defs/digestRef",
+                "properties": {
+                  "class": {
+                    "const": "portable_public"
+                  }
+                },
+                "description": "Contextual digest-class binding (PROFILE.md §6.2 cross-boundary class rule, amendment §A8; RT-02): this field commits to a FROZEN cross-boundary fragment the consumer holds and must re-derive without a byom secret, so exactly class portable_public (unkeyed SHA-256 over the $domain-tagged canonical fragment) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — and a keyed one would be a value the consumer could only echo, which is the defect the rule exists to prevent."
               },
               "safeNonNegativeInteger": {
                 "type": "integer",

@@ -36,15 +36,20 @@ pub struct Fixture {
     pub tag: String,
 }
 
-/// The exact disclosure manifest every `consume_permit_with` consumption
-/// pins, so the receipt's optional `disclosure_digest` member is always
-/// exercised (and the consumer's echo check has a value to match).
-pub const CONSUME_DISCLOSURE_REF: &str = "disclosure-consume-1";
+/// The disclosure manifest an act is PREPARED with — the pair the gate
+/// seat assents to. The consumption presents exactly this pair: the helper
+/// used to prepare `disclosure-{key}`/`0xe2` and then consume a different
+/// manifest entirely, which is how the substitution defect stayed green
+/// (R3-A01).
+pub fn act_disclosure_ref(key: &str) -> String {
+    format!("disclosure-{key}")
+}
 
-/// Its digest: Kovee's OWN object, keyed per-object on Kovee's side, which
-/// byom echoes verbatim and never re-derives.
-pub fn consume_disclosure_digest() -> Value {
-    test_digest(0xd9)
+/// Its digest: the HOST's own object, `portable_public` so both sides hold
+/// the same bytes and byom can compare the presented pair with the
+/// assented one (A8, PROFILE.md §6.2).
+pub fn act_disclosure_digest() -> Value {
+    portable_digest(0xe2)
 }
 
 /// One prepared-and-authorized act, with the refs its consumption needs.
@@ -57,6 +62,51 @@ pub struct Act {
     pub stable_execution_key: String,
     pub budget_reservation_set_ref: String,
     pub revision: u64,
+    /// The disclosure pair the act was AUTHORIZED for.
+    pub disclosure_manifest_ref: String,
+    pub disclosure_digest: Value,
+}
+
+/// The `host_effect_credential` a consuming host mints, derived here
+/// INDEPENDENTLY of byomd (the derivation kovee's client must mirror):
+/// `HMAC-SHA-256(permit channel token, $domain-tagged canonical tuple)`
+/// over exactly {intent_ref, stable_execution_key, host_effect_ref,
+/// host_effect_digest}.
+pub fn host_effect_credential(
+    permit_token: &str,
+    intent_ref: &str,
+    stable_execution_key: &str,
+    host_effect_ref: &str,
+    host_effect_digest: &Value,
+) -> String {
+    let tuple = json!({
+        "intent_ref": intent_ref,
+        "stable_execution_key": stable_execution_key,
+        "host_effect_ref": host_effect_ref,
+        "host_effect_digest": host_effect_digest,
+    });
+    let bytes =
+        bpp_core::canonical::tagged_canonical("bpp-host-effect-registration-v0", &tuple).unwrap();
+    bpp_core::canonical::hex(&bpp_core::canonical::hmac_sha256(
+        permit_token.trim().as_bytes(),
+        &bytes,
+    ))
+}
+
+/// Signs a consumption body's host-effect tuple with the permit token: the
+/// host registers the exact Effect it durably created before consuming
+/// (§13.1 step 3). A probe that mutates the effect ref or digest and
+/// re-signs reaches byom's state checks; one that does not is refused as
+/// unregistered.
+pub fn sign_host_effect(permit_token: &str, body: &mut Value) {
+    let credential = host_effect_credential(
+        permit_token,
+        body["intent_ref"].as_str().unwrap_or_default(),
+        body["stable_execution_key"].as_str().unwrap_or_default(),
+        body["host_effect_ref"].as_str().unwrap_or_default(),
+        &body["host_effect_digest"],
+    );
+    merge(body, json!({"host_effect_credential": credential}));
 }
 
 /// One requested Episode with the refs the runtime commands need.
@@ -71,6 +121,10 @@ pub struct Episode {
     /// The allocation pin `episode_request` PUBLISHED (seam finding S-1):
     /// the harness takes it from the reply, never from `byom.db`.
     pub allocation_digest: Value,
+    /// The frozen `portable_public` parent-budget fragment the same reply
+    /// published (R3-L02): exact set/bridge refs, revisions, set digest,
+    /// stable key, and the exact parent items.
+    pub parent_budget: Value,
 }
 
 /// One held lease (the claim CAS result).
@@ -88,8 +142,26 @@ pub struct Claim {
 pub enum Subordinate {
     /// Confirmed, possibly NARROWED to this amount (never above parent).
     Confirmed(u64),
+    /// Confirmed with an EXACT reported item list — what a probe needs to
+    /// report two children against one parent item (R3-U04).
+    ConfirmedItems(Vec<Value>),
     Denied,
     Uncertain,
+}
+
+/// One reported subordinate item pinned to the parent item byom PUBLISHED.
+pub fn subordinate_item(parent: &Value, amount: u64) -> Value {
+    json!({
+        "kovee_account_ref": "kovee-acct-1",
+        "dimension": parent["dimension"],
+        "unit": parent["unit"],
+        "amount": amount,
+        "parent_account_ref": parent["account_ref"],
+        "parent_account_revision": parent["account_revision"],
+        "parent_dimension": parent["dimension"],
+        "parent_unit": parent["unit"],
+        "parent_worst_case_amount": parent["worst_case_amount"],
+    })
 }
 
 pub const WORST_CASE: u64 = 256;
@@ -398,14 +470,29 @@ impl Fixture {
             "the published allocation pin is portable_public — both sides derive it \
              (seam finding S-2): {allocation_digest}"
         );
+        // R3-L02: the reply also publishes the FROZEN parent-budget
+        // fragment, so nothing downstream names a reference by convention
+        // or takes a parent amount from its own caller's arguments.
+        let parent_budget = reply["result"]["parent_budget"].clone();
+        assert_eq!(
+            parent_budget["digest"]["class"], "portable_public",
+            "the parent-budget fragment is portable_public: {parent_budget}"
+        );
         Episode {
             episode_id: reply["result"]["episode_id"].as_str().unwrap().to_owned(),
             wake_intent_ref: wake.to_owned(),
             admission_ref: Fixture::admission_ref(wake),
-            bridge_ref: format!("bridge-{allocation_ref}"),
-            stable_external_key: format!("sub-{allocation_ref}"),
+            bridge_ref: parent_budget["external_budget_bridge_ref"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+            stable_external_key: parent_budget["stable_external_reservation_key"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
             allocation_ref,
             allocation_digest,
+            parent_budget,
         }
     }
 
@@ -466,10 +553,14 @@ impl Fixture {
             "mandate_ref": self.mandate_id,
             "mandate_revision": self.mandate_revision,
             "mandate_digest": self.mandate_subject_digest,
+            // Both manifests are the HOST's objects, pinned as exact
+            // ref-and-digest pairs that enter the assented subject and are
+            // compared again at consumption (R3-A01). `portable_public`,
+            // because the consuming host has to present the same value (A8).
             "context_manifest_ref": "ctxman-1",
-            "context_manifest_digest": test_digest(0xe1),
-            "disclosure_manifest_ref": format!("disclosure-{key}"),
-            "disclosure_manifest_digest": test_digest(0xe2),
+            "context_manifest_digest": portable_digest(0xe1),
+            "disclosure_manifest_ref": act_disclosure_ref(key),
+            "disclosure_manifest_digest": act_disclosure_digest(),
         });
         if let Some(audience) = driver_audience {
             merge(&mut body, json!({"driver_audience": audience}));
@@ -517,6 +608,8 @@ impl Fixture {
                 .unwrap()
                 .to_owned(),
             revision: finalized["result"]["revision"].as_u64().unwrap(),
+            disclosure_manifest_ref: act_disclosure_ref(key),
+            disclosure_digest: act_disclosure_digest(),
             intent_id,
             seat_ref,
             subject_digest,
@@ -546,23 +639,27 @@ impl Fixture {
         serde_json::from_str(&text).unwrap()
     }
 
-    /// `execution_permit_consume` (runtime, R34) under an explicit token,
-    /// key and fence pair, so every refusal can be probed exactly.
+    /// The `execution_permit_consume` body (runtime, R34) under an explicit
+    /// key, effect and fence pair, so every refusal can be probed exactly.
+    /// UNSIGNED: `sign_host_effect` mints the registration credential, and
+    /// a probe may mutate any member before signing.
     ///
-    /// The disclosure pair is ALWAYS carried (`CONSUME_DISCLOSURE_REF` /
-    /// `CONSUME_DISCLOSURE_DIGEST`): the receipt's `disclosure_digest` is a
-    /// member the consumer checks, so the suite exercises it rather than
-    /// leaving the optional binding absent everywhere.
+    /// The disclosure pair carried is the act's OWN authorized pair — the
+    /// receipt publishes byom's committed value, so presenting anything
+    /// else is refused rather than copied (R3-A01).
+    ///
+    /// byom's own digests (`intent_digest`, `subject_digest`,
+    /// `episode_fence_digest`) are NOT members: byom recomputes each from
+    /// its committed state (A8, R3-L01).
     #[allow(clippy::too_many_arguments)]
-    pub fn consume_permit_with(
+    pub fn consume_body(
         &self,
-        token: &str,
         act: &Act,
         key: &str,
         effect_key: &str,
         stable_key: &str,
         driver_audience: &str,
-        episode: Option<(&str, &Value)>,
+        episode: Option<&str>,
         byom_fence: u64,
         host_fence: u64,
         expected_revision: u64,
@@ -573,23 +670,60 @@ impl Fixture {
             "meta": self.meta(&format!("perm-{key}"), Some(expected_revision)),
             "stable_execution_key": stable_key,
             "intent_ref": act.intent_id,
-            "intent_digest": act.intent_digest,
             "host_effect_ref": format!("kovee-effect-{effect_key}"),
             "host_effect_digest": host_effect_digest,
-            "subject_digest": act.subject_digest,
-            "disclosure_manifest_ref": CONSUME_DISCLOSURE_REF,
-            "disclosure_digest": consume_disclosure_digest(),
+            "disclosure_manifest_ref": act.disclosure_manifest_ref,
+            "disclosure_digest": act.disclosure_digest,
             "driver_audience": driver_audience,
             "budget_reservation_set_ref": act.budget_reservation_set_ref,
             "byom_fence_epoch": byom_fence,
             "host_fence_epoch": host_fence,
         });
-        if let Some((episode_ref, fence_digest)) = episode {
-            merge(
-                &mut body,
-                json!({"episode_ref": episode_ref, "episode_fence_digest": fence_digest}),
-            );
+        if let Some(episode_ref) = episode {
+            merge(&mut body, json!({"episode_ref": episode_ref}));
         }
+        body
+    }
+
+    /// The same consumption, signed for the exact host Effect it names and
+    /// sent on the permit channel.
+    #[allow(clippy::too_many_arguments)]
+    pub fn consume_permit_with(
+        &self,
+        token: &str,
+        act: &Act,
+        key: &str,
+        effect_key: &str,
+        stable_key: &str,
+        driver_audience: &str,
+        episode: Option<&str>,
+        byom_fence: u64,
+        host_fence: u64,
+        expected_revision: u64,
+        host_effect_digest: Value,
+    ) -> Value {
+        let mut body = self.consume_body(
+            act,
+            key,
+            effect_key,
+            stable_key,
+            driver_audience,
+            episode,
+            byom_fence,
+            host_fence,
+            expected_revision,
+            host_effect_digest,
+        );
+        sign_host_effect(token, &mut body);
+        self.runtime(token, &body)
+    }
+
+    /// A consumption body a probe has already shaped: signed here for the
+    /// effect it names, so a mutated member reaches byom's own checks
+    /// rather than the registration gate.
+    pub fn consume_signed(&self, token: &str, body: &Value) -> Value {
+        let mut body = body.clone();
+        sign_host_effect(token, &mut body);
         self.runtime(token, &body)
     }
 
@@ -614,20 +748,23 @@ impl Fixture {
         // there is no inspection path left (seam finding S-1).
         let allocation_digest = ep.allocation_digest.clone();
         let subordinate = match sub {
+            // The reported item pins the parent item byom PUBLISHED in the
+            // fragment, not a value this harness names (R3-L02).
             Subordinate::Confirmed(amount) => json!({
                 "stable_external_reservation_key": ep.stable_external_key,
                 "outcome": "confirmed",
                 "subordinate_reservation_ref": format!("kovee-sub-{key}"),
                 "revision": 1,
                 "digest": portable_digest(0x5c),
-                "items": [{
-                    "kovee_account_ref": "kovee-acct-1",
-                    "dimension": "unit", "unit": "unit", "amount": amount,
-                    "parent_account_ref": PARENT_ACCOUNT,
-                    "parent_account_revision": 1,
-                    "parent_dimension": "unit", "parent_unit": "unit",
-                    "parent_worst_case_amount": WORST_CASE,
-                }],
+                "items": [subordinate_item(&ep.parent_budget["items"][0], amount)],
+            }),
+            Subordinate::ConfirmedItems(items) => json!({
+                "stable_external_reservation_key": ep.stable_external_key,
+                "outcome": "confirmed",
+                "subordinate_reservation_ref": format!("kovee-sub-{key}"),
+                "revision": 1,
+                "digest": portable_digest(0x5c),
+                "items": items,
             }),
             Subordinate::Denied => json!({
                 "stable_external_reservation_key": ep.stable_external_key,

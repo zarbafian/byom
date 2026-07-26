@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://byom.example/bpp/v0/ops/act-intent-prepare-request.schema.json",
   "title": "BPP act_intent_prepare request (DESIGN.md §13.1, §10.5, §14.8; registry R19 participant)",
-  "description": "Mutation (meta required). Deterministically prepares the exact ActIntent and PreparationTrace from authenticated typed input and server-owned state (§13.1 step 1). Actor: requesting Participant or collective Manifestation inside current executive policy (R19). The caller cites the exact Mandate (mandate_ref/mandate_revision/mandate_digest — a Mandate is never a reusable bearer credential, §10.1) and exact context/disclosure manifests; intent_id, requested_by_participant, actor_ref, subject_digest, preconditions, stable_execution_key, budget_reservation_set_ref, the authorization dependency set, and expires_at are server-derived — gap note G34. kind is an open identifier pending the Δ4 closed act-class taxonomy (C2) — gap note G34. Stage-capable (R19).",
+  "description": "Mutation (meta required). Deterministically prepares the exact ActIntent and PreparationTrace from authenticated typed input and server-owned state (§13.1 step 1). Actor: requesting Participant or collective Manifestation inside current executive policy (R19). The caller cites the exact Mandate (mandate_ref/mandate_revision/mandate_digest — a Mandate is never a reusable bearer credential, §10.1) and exact context/disclosure manifests — each an all-or-none ref-AND-digest pair that enters the assented act subject and is compared again when the permit is consumed (R3-A01), portable_public because the host owns the manifest and has to present the identical value (A8, PROFILE.md §6.2); intent_id, requested_by_participant, actor_ref, subject_digest, preconditions, stable_execution_key, budget_reservation_set_ref, the authorization dependency set, and expires_at are server-derived — gap note G34. kind is an open identifier pending the Δ4 closed act-class taxonomy (C2) — gap note G34. Stage-capable (R19).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -61,13 +61,15 @@
       "$ref": "#/$defs/identifier"
     },
     "context_manifest_digest": {
-      "$ref": "#/$defs/localErasureSafeDigest"
+      "$ref": "#/$defs/portableBindingDigest",
+      "description": "The host's own context manifest digest, pinned into the assented act subject. portable_public: byom holds no bytes to re-derive it and the consuming host must present the same value (A8, PROFILE.md §6.2)."
     },
     "disclosure_manifest_ref": {
       "$ref": "#/$defs/identifier"
     },
     "disclosure_manifest_digest": {
-      "$ref": "#/$defs/localErasureSafeDigest"
+      "$ref": "#/$defs/portableBindingDigest",
+      "description": "The host's own disclosure manifest digest, pinned into the assented act subject and compared — ref AND digest — at consumption, so a substituted manifest is refused rather than receipted (R3-A01). portable_public for the same reason (A8)."
     },
     "driver_audience": {
       "$ref": "#/$defs/identifier"
@@ -212,6 +214,53 @@
         }
       },
       "description": "Contextual digest-class binding (PROFILE.md §6.2, D-R0-1; RT-02): this field commits to an authority subject or other erasable per-object content, so exactly class local_erasure_safe (per-object secret, keyed HMAC) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — never a silent substitution."
+    },
+    "portableBindingDigest": {
+      "$ref": "#/$defs/digestRef",
+      "properties": {
+        "class": {
+          "const": "portable_public"
+        }
+      },
+      "description": "Contextual digest-class binding (PROFILE.md §6.2 cross-boundary class rule, amendment §A8; RT-02): this field commits to a FROZEN cross-boundary fragment the consumer holds and must re-derive without a byom secret, so exactly class portable_public (unkeyed SHA-256 over the $domain-tagged canonical fragment) is acceptable. A well-constructed digest of any other class here is digest_class_mismatch — and a keyed one would be a value the consumer could only echo, which is the defect the rule exists to prevent."
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "context_manifest_ref",
+        "context_manifest_digest",
+        "disclosure_manifest_ref",
+        "disclosure_manifest_digest"
+      ]
+    },
+    {
+      "required": [
+        "context_manifest_ref",
+        "context_manifest_digest"
+      ],
+      "properties": {
+        "disclosure_manifest_ref": false,
+        "disclosure_manifest_digest": false
+      }
+    },
+    {
+      "required": [
+        "disclosure_manifest_ref",
+        "disclosure_manifest_digest"
+      ],
+      "properties": {
+        "context_manifest_ref": false,
+        "context_manifest_digest": false
+      }
+    },
+    {
+      "properties": {
+        "context_manifest_ref": false,
+        "context_manifest_digest": false,
+        "disclosure_manifest_ref": false,
+        "disclosure_manifest_digest": false
+      }
+    }
+  ]
 }

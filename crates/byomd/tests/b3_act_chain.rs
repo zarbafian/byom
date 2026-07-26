@@ -23,7 +23,8 @@
 mod common;
 
 use common::runtime::{
-    consume_disclosure_digest, portable_digest, Act, Claim, Fixture, Subordinate,
+    act_disclosure_digest, act_disclosure_ref, host_effect_credential, portable_digest, Act, Claim,
+    Fixture, Subordinate,
 };
 use common::{kind_of, test_digest};
 use serde_json::{json, Value};
@@ -187,14 +188,7 @@ fn running(tag: &str) -> (Fixture, String, Claim, Value) {
     (f, ep.episode_id, c, binding_digest)
 }
 
-fn consume(
-    f: &Fixture,
-    act: &Act,
-    episode: &str,
-    binding_digest: &Value,
-    c: &Claim,
-    key: &str,
-) -> Value {
+fn consume(f: &Fixture, act: &Act, episode: &str, c: &Claim, key: &str) -> Value {
     let token = f.permit_token(&act.intent_id);
     f.consume_permit_with(
         &token,
@@ -203,11 +197,11 @@ fn consume(
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((episode, binding_digest)),
+        Some(episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     )
 }
 
@@ -283,6 +277,8 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
         stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
         budget_reservation_set_ref: r["budget_reservation_set_ref"].as_str().unwrap().to_owned(),
         revision: 1,
+        disclosure_manifest_ref: act_disclosure_ref("a1"),
+        disclosure_digest: act_disclosure_digest(),
     };
     assert!(
         f.token_path_exists(&format!("runtime-permit-{intent_id}.token")),
@@ -327,7 +323,7 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
     };
 
     // -- consume: the receipt Kovee's broker must hold before egress ----
-    let consumed = consume(&f, &act, &episode, &binding_digest, &c, "p1");
+    let consumed = consume(&f, &act, &episode, &c, "p1");
     assert_eq!(consumed["outcome"], "ok", "{consumed}");
     let receipt = &consumed["result"];
     assert_eq!(receipt["max_uses"], 1, "one-shot BY CONSTRUCTION");
@@ -351,22 +347,25 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
     // The two cross-boundary pins re-derive here, from the receipt's own
     // published bytes.
     assert_cross_boundary_digests_rederive(receipt);
-    // The four ECHO digests, each compared against an INDEPENDENT source —
-    // byom's committed row, or the exact value the request carried — never
-    // against the receipt itself.
+    // The four published binding digests, each compared against an
+    // INDEPENDENT source — byom's own committed row, or the exact pair the
+    // ACT WAS AUTHORIZED FOR — never against the receipt itself and never
+    // against the request (A8/R3-A01: byom recomputes its own, and renders
+    // the committed value of the host's).
     assert_eq!(
         receipt["intent_digest"],
         f.intent_digest(&intent_id),
-        "intent_digest is the committed ActIntent record digest"
+        "intent_digest is the committed ActIntent record digest, recomputed by byom"
     );
     assert_eq!(
         receipt["subject_digest"], subject_digest,
-        "subject_digest is the exact authorized act subject the caller pinned"
+        "subject_digest is the exact authorized act subject, recomputed by byom"
     );
     assert_eq!(
         receipt["disclosure_digest"],
-        consume_disclosure_digest(),
-        "disclosure_digest is the exact manifest digest the consumption bound"
+        act_disclosure_digest(),
+        "disclosure_digest is the manifest the GATE SEAT assented to, read from \
+         byom's committed act — never the value the consumption carried"
     );
     assert_eq!(
         receipt["episode_fence_digest"], binding_digest,
@@ -410,7 +409,7 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
     assert!(f.ledger().conserves(), "{:?}", f.ledger());
 
     // The exact same canonical request and key returns the SAME receipt.
-    let replayed = consume(&f, &act, &episode, &binding_digest, &c, "p1");
+    let replayed = consume(&f, &act, &episode, &c, "p1");
     assert_eq!(
         replayed, consumed,
         "the exact retry replays byte-identically"
@@ -419,7 +418,7 @@ fn the_model_egress_act_chain_runs_end_to_end_and_yields_one_receipt() {
 
 #[test]
 fn a_consumption_without_an_authorizing_decision_is_refused() {
-    let (f, episode, c, binding_digest) = running("b3-act-nopermit");
+    let (f, episode, c, _binding_digest) = running("b3-act-nopermit");
     let prepared = f.prepare_act_raw("a1", "model_egress", Some(BROKER));
     assert_eq!(prepared["outcome"], "ok", "{prepared}");
     let r = &prepared["result"];
@@ -432,6 +431,8 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
         budget_reservation_set_ref: r["budget_reservation_set_ref"].as_str().unwrap().to_owned(),
         revision: 1,
+        disclosure_manifest_ref: act_disclosure_ref("a1"),
+        disclosure_digest: act_disclosure_digest(),
     };
     // NO PERMIT: the act carries no GovernanceDecision, so there is nothing
     // to consume — and byom says exactly that, on the act's own channel.
@@ -443,11 +444,11 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         1,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(kind_of(&no_permit), "decision_incomplete", "{no_permit}");
     assert!(
@@ -467,11 +468,11 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         1,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(kind_of(&forged), "forbidden", "{forged}");
 
@@ -493,11 +494,11 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         1,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(kind_of(&awaiting), "decision_incomplete", "{awaiting}");
     assert!(awaiting["problem"]["detail"]
@@ -514,9 +515,9 @@ fn a_consumption_without_an_authorizing_decision_is_refused() {
 
 #[test]
 fn a_spent_one_shot_permit_refuses_a_second_consumption() {
-    let (f, episode, c, binding_digest) = running("b3-act-spent");
+    let (f, episode, c, _binding_digest) = running("b3-act-spent");
     let act = f.authorized_act("a1", "model_egress", BROKER);
-    let first = consume(&f, &act, &episode, &binding_digest, &c, "p1");
+    let first = consume(&f, &act, &episode, &c, "p1");
     assert_eq!(first["outcome"], "ok", "{first}");
 
     let token = f.permit_token(&act.intent_id);
@@ -528,11 +529,11 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
         "e1",
         "exec-some-other-key",
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision + 1,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(kind_of(&other_key), "stale_revision", "{other_key}");
     assert!(other_key["problem"]["detail"]
@@ -550,11 +551,11 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision + 1,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(
         replay["outcome"], "ok",
@@ -586,11 +587,11 @@ fn a_spent_one_shot_permit_refuses_a_second_consumption() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision + 1,
-        test_digest(0x0f),
+        portable_digest(0x0f),
     );
     assert_eq!(kind_of(&changed), "idempotency_mismatch", "{changed}");
     // And a second MandateUse was never inserted.
@@ -616,11 +617,11 @@ fn a_stale_fence_cannot_consume_an_execution_permit() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch + 1,
         c.kovee_invocation_fence,
         act.revision,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(kind_of(&stale_byom), "stale_revision", "{stale_byom}");
     assert!(stale_byom["problem"]["detail"]
@@ -637,11 +638,11 @@ fn a_stale_fence_cannot_consume_an_execution_permit() {
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence + 1,
         act.revision,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(kind_of(&stale_host), "stale_revision", "{stale_host}");
     assert!(stale_host["problem"]["detail"]
@@ -649,32 +650,41 @@ fn a_stale_fence_cannot_consume_an_execution_permit() {
         .unwrap()
         .contains("host_fence_epoch"));
 
-    // A fence digest pinning some other binding.
-    let stale_digest = f.consume_permit_with(
+    // An episode_ref naming an Episode that holds no lease at all: the
+    // fence digest is byom's OWN committed value now (A8), so the binding
+    // is located from the named Episode rather than pinned by a caller
+    // echo — and an Episode with no lease head can lend no fences.
+    let no_lease = f.consume_permit_with(
         &token,
         &act,
         "p3",
         "e1",
         &act.stable_execution_key,
         BROKER,
-        Some((&episode, &test_digest(0x11))),
+        Some("ep-nobody-holds-this"),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
-    assert_eq!(kind_of(&stale_digest), "stale_binding", "{stale_digest}");
+    assert_eq!(kind_of(&no_lease), "stale_revision", "{no_lease}");
     assert_eq!(
         f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),
         0,
         "no receipt is minted behind a stale fence"
     );
     assert_eq!(f.count("SELECT COUNT(*) FROM mandate_uses"), 0);
+    // Under the CURRENT fences the same consumption succeeds, and the fence
+    // digest it publishes is byom's own committed binding — which is
+    // exactly why there is no caller echo left to pin (A8).
+    let ok = consume(&f, &act, &episode, &c, "p4");
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+    assert_eq!(ok["result"]["episode_fence_digest"], binding_digest);
 }
 
 #[test]
 fn a_wrong_class_subject_cannot_reach_the_model_egress_driver() {
-    let (f, episode, c, binding_digest) = running("b3-act-class");
+    let (f, episode, c, _binding_digest) = running("b3-act-class");
 
     // (a) The class subject pins the EXACT provider binding: a broker with
     // another audience cannot consume the act.
@@ -687,11 +697,11 @@ fn a_wrong_class_subject_cannot_reach_the_model_egress_driver() {
         "e1",
         &act.stable_execution_key,
         "kovee-other-broker",
-        Some((&episode, &binding_digest)),
+        Some(&episode),
         c.byom_fence_epoch,
         c.kovee_invocation_fence,
         act.revision,
-        test_digest(0xf7),
+        portable_digest(0xf7),
     );
     assert_eq!(
         kind_of(&wrong_audience),
@@ -728,4 +738,420 @@ fn a_wrong_class_subject_cannot_reach_the_model_egress_driver() {
         0
     );
     let _ = portable_digest(0x01);
+}
+
+// ================= the R3 negatives (reviews/2026-07-26-r3-*) ============
+//
+// Each test below IS the review's own live probe, kept as a permanent
+// negative. Every one of them failed against the code this bundle
+// replaces — the failures are quoted in the bundle's report.
+
+/// One authorized act plus its permit channel, and the consumption body a
+/// probe mutates. The body carries the act's OWN authorized disclosure
+/// pair, so a probe that changes it changes exactly one thing.
+fn probe(f: &Fixture, tag: &str) -> (Act, String) {
+    let act = f.authorized_act(tag, "model_egress", BROKER);
+    let token = f.permit_token(&act.intent_id);
+    (act, token)
+}
+
+fn probe_body(f: &Fixture, act: &Act, episode: &str, c: &Claim, key: &str) -> Value {
+    f.consume_body(
+        act,
+        key,
+        "probe-1",
+        &act.stable_execution_key,
+        BROKER,
+        Some(episode),
+        c.byom_fence_epoch,
+        c.kovee_invocation_fence,
+        act.revision,
+        portable_digest(0xf7),
+    )
+}
+
+/// R3-A01: the FIRST consumption cannot substitute a disclosure. The
+/// review's probe consumed with a disclosure the act never carried and the
+/// receipt published the caller's digest, so the authorized manifest and
+/// the receipted one differed with nothing in the record showing it.
+#[test]
+fn a_substituted_disclosure_cannot_consume_the_permit() {
+    let (f, episode, c, _binding) = running("b3-act-disclosure");
+    let (act, token) = probe(&f, "a1");
+
+    // (a) the same reference, DIFFERENT content — R3's exact probe.
+    let mut swapped = probe_body(&f, &act, &episode, &c, "d1");
+    swapped["disclosure_digest"] = portable_digest(0xd9);
+    let reply = f.consume_signed(&token, &swapped);
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("disclosure_digest"),
+        "{reply}"
+    );
+
+    // (b) a different manifest entirely.
+    let mut renamed = probe_body(&f, &act, &episode, &c, "d2");
+    renamed["disclosure_manifest_ref"] = json!("disclosure-somebody-elses");
+    let reply = f.consume_signed(&token, &renamed);
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("disclosure_manifest_ref"),
+        "{reply}"
+    );
+
+    // (c) the pair DROPPED: an act authorized against a disclosure is not
+    // consumable without one.
+    let mut dropped = probe_body(&f, &act, &episode, &c, "d3");
+    let body = dropped.as_object_mut().unwrap();
+    body.remove("disclosure_manifest_ref");
+    body.remove("disclosure_digest");
+    let reply = f.consume_signed(&token, &dropped);
+    assert_eq!(kind_of(&reply), "stale_binding", "{reply}");
+
+    // Nothing was consumed by any of them, and the honest consumption
+    // publishes the COMMITTED digest.
+    assert_eq!(f.count("SELECT COUNT(*) FROM mandate_uses"), 0);
+    let ok = f.consume_signed(&token, &probe_body(&f, &act, &episode, &c, "d4"));
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+    assert_eq!(
+        ok["result"]["disclosure_digest"],
+        act_disclosure_digest(),
+        "the receipt renders the committed disclosure, not the request's"
+    );
+}
+
+/// R3-A02: the permit is bound to one exact REGISTERED host Effect. The
+/// review's probe consumed for a nonexistent, caller-chosen effect with an
+/// arbitrary shaped digest.
+#[test]
+fn an_unregistered_or_different_host_effect_cannot_consume_the_permit() {
+    let (f, episode, c, _binding) = running("b3-act-effect");
+    let (act, token) = probe(&f, "a1");
+    let body = probe_body(&f, &act, &episode, &c, "e1");
+
+    // (a) UNREGISTERED: a caller-chosen effect ref and digest, with no
+    // registration credential that covers them — R3's exact probe.
+    let mut unregistered = body.clone();
+    unregistered["host_effect_credential"] = json!("0".repeat(64));
+    let reply = f.runtime(&token, &unregistered);
+    assert_eq!(kind_of(&reply), "forbidden", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("exact prepared host Effect"),
+        "{reply}"
+    );
+
+    // (b) a DIFFERENT effect than the one registered: the credential is
+    // the host's own, minted for effect A, and the request names B.
+    let mut different = body.clone();
+    different["host_effect_credential"] = json!(host_effect_credential(
+        &token,
+        &act.intent_id,
+        &act.stable_execution_key,
+        "kovee-effect-registered-a",
+        &portable_digest(0xf7),
+    ));
+    different["host_effect_ref"] = json!("kovee-effect-b");
+    let reply = f.runtime(&token, &different);
+    assert_eq!(kind_of(&reply), "forbidden", "{reply}");
+
+    // (c) the same effect ref with a DIFFERENT digest: the registration
+    // covers the digest too, so a re-pointed effect record is refused.
+    let mut repointed = body.clone();
+    repointed["host_effect_credential"] = json!(host_effect_credential(
+        &token,
+        &act.intent_id,
+        &act.stable_execution_key,
+        body["host_effect_ref"].as_str().unwrap(),
+        &portable_digest(0xf7),
+    ));
+    repointed["host_effect_digest"] = portable_digest(0x5a);
+    let reply = f.runtime(&token, &repointed);
+    assert_eq!(kind_of(&reply), "forbidden", "{reply}");
+
+    // (d) a credential minted under ANOTHER act's permit token proves
+    // nothing here.
+    let other = f.authorized_act("a2", "model_egress", BROKER);
+    let other_token = f.permit_token(&other.intent_id);
+    let mut borrowed = body.clone();
+    borrowed["host_effect_credential"] = json!(host_effect_credential(
+        &other_token,
+        &act.intent_id,
+        &act.stable_execution_key,
+        body["host_effect_ref"].as_str().unwrap(),
+        &body["host_effect_digest"],
+    ));
+    let reply = f.runtime(&token, &borrowed);
+    assert_eq!(kind_of(&reply), "forbidden", "{reply}");
+
+    assert_eq!(
+        f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),
+        0,
+        "no receipt is minted for an Effect the host never registered"
+    );
+    assert_eq!(f.count("SELECT COUNT(*) FROM mandate_uses"), 0);
+    // The registered Effect — same ref, same digest, host-minted credential
+    // — consumes exactly once.
+    let ok = f.consume_signed(&token, &body);
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+}
+
+/// R3-A03: finalization locks the EXACT active Position revisions, and the
+/// consumption executes under those same slots. The review found an empty
+/// position-reference list and synthesized seat descriptors.
+#[test]
+fn act_finalization_locks_the_exact_active_position_revisions() {
+    let (f, episode, c, _binding) = running("b3-act-positions");
+    let prepared = f.prepare_act_raw("a1", "model_egress", Some(BROKER));
+    let r = &prepared["result"];
+    let intent_id = r["intent_id"].as_str().unwrap().to_owned();
+    let seat = r["required_seat_refs"][0].as_str().unwrap().to_owned();
+    let subject_digest = r["subject_digest"].clone();
+    let positioned = f.governance(&json!({
+        "version": "0.2", "op": "act_intent_position",
+        "meta": f.meta("actpos-a1", None),
+        "proposal_ref": intent_id,
+        "proposal_revision": 1,
+        "subject_digest": subject_digest,
+        "seat_ref": seat,
+        "value": "assent",
+    }));
+    assert_eq!(positioned["outcome"], "ok", "{positioned}");
+    let position_ref = positioned["result"]["position_id"]
+        .as_str()
+        .expect("the recorded PositionRevision")
+        .to_owned();
+    let position_digest: Value = serde_json::from_str(
+        &f.row(
+            "SELECT digest FROM position_revisions WHERE position_id = ?1",
+            &position_ref,
+        )
+        .expect("the position record digest"),
+    )
+    .unwrap();
+
+    let finalized = f.governance(&json!({
+        "version": "0.2", "op": "act_intent_finalize",
+        "meta": f.meta("actfin-a1", Some(1)),
+        "intent_id": intent_id,
+        "subject_digest": subject_digest,
+    }));
+    assert_eq!(finalized["outcome"], "ok", "{finalized}");
+
+    // The published lock: the exact Position revision, its digest, and the
+    // binding epoch it was cast at.
+    let slots = &finalized["result"]["authorization_slot_snapshot"];
+    assert_eq!(slots[0]["seat_ref"], json!(seat), "{slots}");
+    assert_eq!(slots[0]["position_ref"], json!(position_ref), "{slots}");
+    assert_eq!(slots[0]["position_digest"], position_digest, "{slots}");
+    assert_eq!(slots[0]["value"], "assent", "{slots}");
+    assert_eq!(
+        slots[0]["participant_binding_epoch"],
+        f.number(
+            "SELECT binding_epoch FROM participants WHERE participant_id = ?1",
+            slots[0]["participant_ref"].as_str().unwrap()
+        )
+        .map(|n| json!(n))
+        .unwrap(),
+        "the locked epoch is the participant's CURRENT one: {slots}"
+    );
+
+    // The GovernanceDecision itself names that Position revision — it used
+    // to name none at all — and seats the actor that authored it.
+    let refs = f
+        .row(
+            "SELECT position_refs FROM governance_decisions WHERE decision_id = ?1",
+            &format!("dec-act-{intent_id}"),
+        )
+        .expect("the act authorization decision");
+    assert_eq!(
+        refs,
+        json!([position_ref]).to_string(),
+        "the decision locks the exact active Position revision"
+    );
+    let snapshot = f
+        .row(
+            "SELECT seat_snapshot FROM governance_decisions WHERE decision_id = ?1",
+            &format!("dec-act-{intent_id}"),
+        )
+        .expect("the decision's slot snapshot");
+    let snapshot: Value = serde_json::from_str(&snapshot).unwrap();
+    assert_eq!(
+        snapshot[0]["actor_ref"],
+        json!("governance:sovereign"),
+        "the seat carries the actor that AUTHORED the position: {snapshot}"
+    );
+
+    // And the consumption re-derives the slot snapshot from the CURRENT
+    // active positions: it executes under exactly the locked slots.
+    let act = Act {
+        intent_id: intent_id.clone(),
+        seat_ref: seat,
+        subject_digest,
+        intent_digest: f.intent_digest(&intent_id),
+        stable_execution_key: r["stable_execution_key"].as_str().unwrap().to_owned(),
+        budget_reservation_set_ref: r["budget_reservation_set_ref"].as_str().unwrap().to_owned(),
+        revision: finalized["result"]["revision"].as_u64().unwrap(),
+        disclosure_manifest_ref: act_disclosure_ref("a1"),
+        disclosure_digest: act_disclosure_digest(),
+    };
+    let ok = consume(&f, &act, &episode, &c, "p1");
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+}
+
+/// R3-A04: a CHANGED consumed request never replays. The review changed
+/// the disclosure pair and received `ok`, `replayed: true` with the old
+/// receipt. Every substantive member is mutated here, one at a time.
+#[test]
+fn every_changed_member_of_a_consumed_request_conflicts() {
+    let (f, episode, c, _binding) = running("b3-act-replay");
+    let (act, token) = probe(&f, "a1");
+    let first = f.consume_signed(&token, &probe_body(&f, &act, &episode, &c, "r1"));
+    assert_eq!(first["outcome"], "ok", "{first}");
+
+    // The exact request replays byte-identically — the crash-recovery path.
+    let mut again = probe_body(&f, &act, &episode, &c, "r2");
+    again["meta"]["expected_revision"] = json!(act.revision + 1);
+    let replay = f.consume_signed(&token, &again);
+    assert_eq!(replay["outcome"], "ok", "{replay}");
+    assert_eq!(replay["result"]["replayed"], true);
+    assert_eq!(
+        replay["result"]["receipt_id"],
+        first["result"]["receipt_id"]
+    );
+
+    // The mutation matrix: EVERY substantive member, one at a time.
+    let mutations: Vec<(&str, Value)> = vec![
+        ("host_effect_ref", json!("kovee-effect-other")),
+        ("host_effect_digest", portable_digest(0x0f)),
+        ("disclosure_manifest_ref", json!("disclosure-other")),
+        ("disclosure_digest", portable_digest(0xd9)),
+        ("driver_audience", json!("kovee-other-broker")),
+        ("budget_reservation_set_ref", json!("rset-other")),
+        ("episode_ref", json!("ep-other")),
+        ("byom_fence_epoch", json!(c.byom_fence_epoch + 1)),
+        ("host_fence_epoch", json!(c.kovee_invocation_fence + 1)),
+    ];
+    for (member, value) in mutations {
+        let mut changed = probe_body(&f, &act, &episode, &c, &format!("r-{member}"));
+        changed["meta"]["expected_revision"] = json!(act.revision + 1);
+        changed[member] = value;
+        let reply = f.consume_signed(&token, &changed);
+        assert_eq!(
+            kind_of(&reply),
+            "idempotency_mismatch",
+            "a consumed request with a changed {member} replayed: {reply}"
+        );
+        assert!(
+            reply["problem"]["detail"]
+                .as_str()
+                .unwrap()
+                .contains(member),
+            "the refusal names the member that changed: {reply}"
+        );
+    }
+    // Dropping the optional disclosure pair is a change too.
+    let mut dropped = probe_body(&f, &act, &episode, &c, "r-drop");
+    dropped["meta"]["expected_revision"] = json!(act.revision + 1);
+    let body = dropped.as_object_mut().unwrap();
+    body.remove("disclosure_manifest_ref");
+    body.remove("disclosure_digest");
+    let reply = f.consume_signed(&token, &dropped);
+    assert_eq!(kind_of(&reply), "idempotency_mismatch", "{reply}");
+
+    assert_eq!(
+        f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),
+        1,
+        "not one of the mutations minted a receipt"
+    );
+    assert_eq!(f.count("SELECT COUNT(*) FROM mandate_uses"), 1);
+    assert!(f.ledger().conserves(), "{:?}", f.ledger());
+}
+
+/// R3-L01 / D-R3-3: A8 holds in BOTH directions on this request — checked
+/// against the frozen schema, and against the daemon itself.
+const CONSUME_REQUEST_SCHEMA: &str =
+    include_str!("../../../spec/schemas/ops/execution-permit-consume-request.schema.json");
+const PREPARE_REQUEST_SCHEMA: &str =
+    include_str!("../../../spec/schemas/ops/act-intent-prepare-request.schema.json");
+
+fn class_of(schema: &Value, member: &str) -> String {
+    let def = schema["properties"][member]["$ref"]
+        .as_str()
+        .unwrap_or_default()
+        .strip_prefix("#/$defs/")
+        .unwrap_or_default()
+        .to_owned();
+    schema["$defs"][&def]["properties"]["class"]["const"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[test]
+fn the_act_family_request_shapes_obey_a8_in_both_directions() {
+    let consume: Value = serde_json::from_str(CONSUME_REQUEST_SCHEMA).unwrap();
+    let prepare: Value = serde_json::from_str(PREPARE_REQUEST_SCHEMA).unwrap();
+    // The converse half: a digest byom recomputes from its OWN committed
+    // state is not a request member at all.
+    for owned in ["intent_digest", "subject_digest", "episode_fence_digest"] {
+        assert!(
+            consume["properties"].get(owned).is_none(),
+            "{owned} is byom's own recomputed digest: it must not be a request member (A8)"
+        );
+    }
+    // The demanded half: a peer-owned digest byom must verify travels as a
+    // frozen portable_public fragment.
+    for peer in ["host_effect_digest", "disclosure_digest"] {
+        assert_eq!(
+            class_of(&consume, peer),
+            "portable_public",
+            "{peer} is the host's own value byom cannot derive (A8)"
+        );
+    }
+    for peer in ["context_manifest_digest", "disclosure_manifest_digest"] {
+        assert_eq!(
+            class_of(&prepare, peer),
+            "portable_public",
+            "{peer} is the host's own manifest, compared again at consumption (A8)"
+        );
+    }
+    // byom's own authority subject stays keyed where it IS byom's to
+    // verify: the finalize CAS pin is not a cross-boundary demand.
+    assert_eq!(class_of(&prepare, "mandate_digest"), "local_erasure_safe");
+}
+
+#[test]
+fn the_daemon_refuses_a_request_that_echoes_byoms_own_digests() {
+    let (f, episode, c, binding) = running("b3-act-a8");
+    let (act, token) = probe(&f, "a1");
+    for (member, value) in [
+        ("intent_digest", act.intent_digest.clone()),
+        ("subject_digest", act.subject_digest.clone()),
+        ("episode_fence_digest", binding.clone()),
+    ] {
+        let mut echoed = probe_body(&f, &act, &episode, &c, "a8");
+        echoed[member] = value;
+        let reply = f.consume_signed(&token, &echoed);
+        assert_eq!(
+            kind_of(&reply),
+            "invalid",
+            "echoing byom's own {member} must fail the closed shape, not be \
+             quietly ignored: {reply}"
+        );
+    }
+    // And a host digest offered as a keyed value byom could never derive is
+    // a class mismatch, not a silent acceptance.
+    let mut keyed = probe_body(&f, &act, &episode, &c, "a8-class");
+    keyed["host_effect_digest"] = test_digest(0xf7);
+    let reply = f.consume_signed(&token, &keyed);
+    assert_eq!(kind_of(&reply), "invalid", "{reply}");
 }

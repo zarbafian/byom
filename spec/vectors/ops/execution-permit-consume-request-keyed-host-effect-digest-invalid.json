@@ -1,6 +1,6 @@
 {
-  "name": "ops/execution-permit-consume-request-valid",
-  "description": "one-shot consumption on the A8 member set: the stable execution key, the exact REGISTERED host effect (ref + portable_public digest + the registration credential the host mints under the permit token), the disclosure pair the act was authorized for, the budget set, the episode it runs inside, and both current fences (§13.1, R34, gap note G37). byom's own intent, subject and episode-fence digests are not members: byom recomputes them (R3-L01).",
+  "name": "ops/execution-permit-consume-request-keyed-host-effect-digest-invalid",
+  "description": "A8's demanded half (PROFILE.md §6.2 cross-boundary class rule): host_effect_digest offered as a well-constructed local_erasure_safe HMAC under the HOST's own per-object secret — the class byom used to demand. byom holds no such key, so that value is a blob it could only store; the rejection is typing-only (the offered ref is arithmetically well-formed for its class), and effect_outcome_admit already requires portable_public for the same field, so the two ends of one effect's life could never have named the same value.",
   "input": {
     "schema": "execution-permit-consume-request",
     "value": {
@@ -17,8 +17,9 @@
       "intent_ref": "intent-31",
       "host_effect_ref": "kovee-effect-905",
       "host_effect_digest": {
-        "class": "portable_public",
-        "algorithm": "sha-256",
+        "class": "local_erasure_safe",
+        "algorithm": "hmac-sha-256",
+        "key_ref": "kovee-model-effect-object:kovee-effect-905",
         "value_hex": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
       },
       "host_effect_credential": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -36,6 +37,6 @@
     }
   },
   "expected": {
-    "valid": true
+    "valid": false
   }
 }

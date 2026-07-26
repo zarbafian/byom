@@ -687,17 +687,44 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
     - Receipts minted before this revision keep whatever they committed —
       an immutable record is never rewritten, and a stored receipt replays
       byte-for-byte as it was issued. No store column changed.
-    - **Recorded, not changed: the request side.** The converse half of
-      the rule says a digest the owner recomputes from its own state is
-      never a request member. `execution_permit_consume`'s REQUEST still
-      carries `intent_digest` and `subject_digest`, which byom rechecks
-      against its own committed act — the `claim_subject_digest` shape.
-      Removing them is a change to a frozen request shape a live consumer
-      already calls, so it belongs to the owner decision that removed
-      `claim_subject_digest`, not to this fix. Keeping them costs the
-      consumer nothing (it holds both from byom's own act notice, and both
-      stay keyed), and it is what lets the receipt's echoes be verified by
-      identity.
+    - **The request side, now changed (R3-L01, decision D-R3-3).** The
+      converse half of the rule says a digest the owner recomputes from
+      its own state is never a request member, and the earlier revision
+      recorded `execution_permit_consume`'s request as an exception. R3
+      raised that to P1 — it is the seam rule the program had just
+      ratified — so the request shape moved:
+      - **removed:** `intent_digest`, `subject_digest`,
+        `episode_fence_digest`. byom recomputes each from its committed
+        ActIntent record, act subject and `ByomEpisodeBinding`, and
+        publishes the committed value on the receipt. The echo proved only
+        that byom's own value equalled itself, while costing the host
+        per-object keyed digests it can never verify.
+      - **re-classed to `portable_public`:** `host_effect_digest` and
+        `disclosure_digest` on the request, `disclosure_digest` on the
+        receipt, and `context_manifest_digest`/`disclosure_manifest_digest`
+        on `act_intent_prepare`. Each names a HOST object byom cannot
+        re-derive; `effect_outcome_admit` already demanded
+        `portable_public` for `host_effect_digest`, so the two ends of one
+        Effect's life could not previously name the same value.
+      - **added:** `host_effect_credential`, the host-effect registration
+        authenticator (R3-A02) — `HMAC-SHA-256(permit channel token,
+        $domain-tagged canonical `bpp-host-effect-registration-v0`
+        {intent_ref, stable_execution_key, host_effect_ref,
+        host_effect_digest})`. The permit is bound to ONE exact prepared
+        host Effect; without it the effect ref and digest were merely
+        stored because a caller sent them, and a live probe consumed for a
+        nonexistent effect.
+      - the disclosure pair is compared, ref AND digest, against the pair
+        the gate seat assented to, and the receipt renders the COMMITTED
+        value (R3-A01); a spent key replays only against a frozen
+        semantic-request digest over every substantive member (R3-A04).
+      - Vectors: `-request-valid` on the new member set, plus
+        `-request-owner-recomputed-digest-invalid` (an echoed
+        `subject_digest` fails the closed shape) and
+        `-request-keyed-host-effect-digest-invalid` (the class byom used to
+        demand). The obsolete `-request-unpaired-episode-fence-invalid`
+        vector is retired with the pair it policed. **kovee's client
+        mirrors this shape**; no store column changed.
     - Vectors: `execution-permit-consume-result-valid` (every member
       rendered, both pins the real re-derived values — `b3_act_chain`
       recomputes them from the vector), plus the three negatives
