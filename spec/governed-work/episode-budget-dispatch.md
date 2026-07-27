@@ -100,8 +100,9 @@ result remains `uncertain`, spend stays blocked, and the only release out of
   idempotently staged contract, the exact Akson consent, the current Kovee
   effect fence, and the stable execution/delivery keys.
   `caller: kovee` and `driver_profile: byom_akson_dispatch_v1` are consts:
-  byom's delegation engine *authorizes* and never calls (L63); Sage-only
-  Akson driver authority is not reusable by relabeling (§16.6 item 11).
+  byom's delegation engine *authorizes* and never calls (L63); no
+  pre-existing Akson driver authority becomes authority here by relabeling
+  (§16.6 item 11).
 - `byom-akson-dispatch-outcome-receipt.schema.json` — the §17.2 field list
   verbatim (machine-diffed, 47 fields) with the closed union
   `pre_result_failed | ambiguous | verification_rejected | verified_result`

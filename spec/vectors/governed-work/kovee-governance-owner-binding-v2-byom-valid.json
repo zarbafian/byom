@@ -1,0 +1,30 @@
+{
+  "name": "governed-work/kovee-governance-owner-binding-v2-byom-valid",
+  "description": "v2: the greenfield saga's outcome under the narrowed enum — owner byom at the CAS-committed revision, owner refs set atomically with activation (D10; amendment A9)",
+  "input": {
+    "schema": "kovee-governance-owner-binding-v2",
+    "value": {
+      "realm_ref": "realm-1",
+      "exact_scope_selector": "project/atlas/*",
+      "exact_scope_digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      },
+      "revision": 3,
+      "binding_epoch": 1,
+      "governance_owner": "byom",
+      "owner_endpoint_ref": "byomd-local",
+      "owner_binding_ref": "krbb-1",
+      "status": "active",
+      "digest": {
+        "class": "structural_public",
+        "algorithm": "sha-256",
+        "value_hex": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    }
+  },
+  "expected": {
+    "valid": true
+  }
+}

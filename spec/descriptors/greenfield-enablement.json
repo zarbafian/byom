@@ -151,7 +151,7 @@
         "greenfield-enablement.disabled"
       ],
       "crash_result": "the frozen owner row survives restore; re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine (greenfield-saga §5)",
-      "notes": "Freezes the owner binding (status active→frozen, owner arm retained for audit); derived channels and permits invalidate. Terminal here: re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine. Distinct from §25's GovernanceCutover (sage→none→byom), a different machine (amendment A2)."
+      "notes": "Freezes the owner binding (status active→frozen, owner arm retained for audit); derived channels and permits invalidate. Terminal here: re-enablement after a governed disable is a fresh saga row under a new binding epoch, not a transition of this machine. This is the only machine that sets the owner arm: amendment A9 narrowed the enum to byom|none and withdrew the re-owning cutover, so no other transition can hand a governed scope to anyone."
     }
   ]
 }

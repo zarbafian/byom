@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byom.example/bpp/v0/governed-work/kovee-governance-owner-binding-v2.schema.json",
+  "title": "KoveeGovernanceOwnerBinding (DESIGN.md §16.6; kovee amendment A1/A2; C2) — v2 (owner enum narrowed to byom|none)",
+  "description": "The §16.6 field list with the owner enum narrowed to byom|none. One CAS-protected row per exact governed scope, no overlapping active owner selectors (§16.6 item 1). The greenfield saga (D10) CASes none→byom at the expected revision under the frozen governance_enable authority row — a CAS proves concurrency, not authority (family contract §2.A). V2 SUCCESSOR (amendment A9, design/2026-07-27-amendment-governance-owner-enum.md): byom is the family's only governance layer, reached over the Byom Participation Protocol, so the owner enum admits exactly the two states this stack can be in — byom owns the scope, or nothing does. The third arm of the immutable v1 publication named a discarded predecessor design; it had no writer, no reader, and no machine that consumed it, and a value no implementation may produce is not spec fidelity but an unreachable branch every conformance run had to carry. Removing it is narrowing, so it is a new schema version rather than an edit (spec/README.md bundle-freeze rule). C2 and K2 freeze to this version; v1 stays published and unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "realm_ref",
+    "exact_scope_selector",
+    "exact_scope_digest",
+    "revision",
+    "binding_epoch",
+    "governance_owner",
+    "status",
+    "digest"
+  ],
+  "properties": {
+    "realm_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "exact_scope_selector": {
+      "$ref": "#/$defs/selector"
+    },
+    "exact_scope_digest": {
+      "$ref": "#/$defs/digestRef",
+      "description": "Canonical digest of the exact governed scope; UNIQUE(realm_ref, exact_scope_digest) — cross-record uniqueness and the no-overlapping-active-selectors rule are enforced in code, not expressible here."
+    },
+    "revision": {
+      "$ref": "#/$defs/safeNonNegativeInteger",
+      "description": "CAS field: the owner transition commits only at the expected revision (exact-CAS; retry returns the identical binding)."
+    },
+    "binding_epoch": {
+      "$ref": "#/$defs/safeNonNegativeInteger",
+      "description": "CAS field: the enablement epoch fence. A rolled-back epoch can never activate; re-enablement is a fresh epoch (D10 saga; proof/specs/GreenfieldEnablement.tla NoActivationAfterRollback)."
+    },
+    "governance_owner": {
+      "enum": [
+        "byom",
+        "none"
+      ],
+      "description": "The two states a governed scope can be in: byom owns it, or nothing does (amendment A9). There is no third owner — byom is the family's governance layer, and a scope is never handed to another one."
+    },
+    "owner_endpoint_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "owner_binding_ref": {
+      "$ref": "#/$defs/identifier"
+    },
+    "cutover_ref": {
+      "$ref": "#/$defs/identifier",
+      "description": "Reserved. No machine in this stack produces a row carrying it: the greenfield saga (none→byom) never sets it, and amendment A9 withdrew the only cutover that would have. Kept as an optional member so a future governed re-owning transition has a place to record its authority, rather than widening the closed shape later."
+    },
+    "status": {
+      "enum": [
+        "active",
+        "frozen"
+      ],
+      "description": "Closed §16.6 enum. governance_disable freezes the row (active→frozen) with step-up; a frozen row retains its owner arm for audit and holds no active selector."
+    },
+    "digest": {
+      "$ref": "#/$defs/digestRef"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "governance_owner": {
+          "const": "none"
+        },
+        "owner_endpoint_ref": false,
+        "owner_binding_ref": false
+      },
+      "$comment": "No owner: the owner refs are absent."
+    },
+    {
+      "properties": {
+        "governance_owner": {
+          "const": "byom"
+        }
+      },
+      "required": [
+        "owner_endpoint_ref",
+        "owner_binding_ref"
+      ],
+      "$comment": "The owning arm names its exact byom endpoint and binding; the greenfield CAS sets both atomically with activation."
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,128}$",
+      "description": "Opaque visible-ASCII identifier, at most 128 bytes (§14.9)."
+    },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "I-JSON safe integer (§14.2 rejects unsafe integers)."
+    },
+    "digestRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "algorithm",
+        "value_hex"
+      ],
+      "$comment": "The closed family DigestRef wire (family-vectors/PROFILE.md §6.1, normative; D-R0-1): exactly the members {class, algorithm, key_ref?, value_hex}. The oneOf pins the closed class/algorithm pairing and requires key_ref exactly for the keyed erasure classes; each arm refines members of this already-closed object.",
+      "properties": {
+        "class": {
+          "enum": [
+            "structural_public",
+            "portable_public",
+            "local_erasure_safe",
+            "scope_erasure_safe",
+            "disclosed_party",
+            "ciphertext_public"
+          ],
+          "description": "Digest class (PROFILE.md §6, D-R0-1); substituting one class where a schema requires another is a conformance failure."
+        },
+        "algorithm": {
+          "enum": [
+            "sha-256",
+            "hmac-sha-256"
+          ]
+        },
+        "key_ref": {
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$",
+          "description": "Key id for the keyed erasure classes; raw HMAC keys, per-object secrets, and salts are never part of a DigestRef."
+        },
+        "value_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Exactly 64 lowercase hex characters."
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "structural_public",
+                "portable_public",
+                "disclosed_party",
+                "ciphertext_public"
+              ]
+            },
+            "algorithm": {
+              "const": "sha-256"
+            }
+          },
+          "not": {
+            "required": [
+              "key_ref"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "class": {
+              "enum": [
+                "local_erasure_safe",
+                "scope_erasure_safe"
+              ]
+            },
+            "algorithm": {
+              "const": "hmac-sha-256"
+            }
+          },
+          "required": [
+            "key_ref"
+          ]
+        }
+      ],
+      "description": "Typed DigestRef: every digest field is typed, never an unlabelled hash. Wire shape, class/algorithm pairing, and key_ref presence per the ratified family profile."
+    },
+    "selector": {
+      "type": "string",
+      "pattern": "^[\\x21-\\x7e]{1,256}$",
+      "description": "Kovee project/space/scope selector expression, at most 256 visible-ASCII bytes; selector grammar is Kovee-owned (C2 host schemas), byom pins only the bounded opaque wire shape."
+    }
+  }
+}

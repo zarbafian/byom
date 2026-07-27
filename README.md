@@ -52,5 +52,6 @@ See [DESIGN.md](DESIGN.md) for the normative design and
 [the adversarial review record](reviews/2026-07-25-adversarial-review.md) for the
 independent review passes and dispositions.
 
-**Status:** design specification v0.2 (pre-implementation), 2026-07-25. Byom is a clean successor
-design to Sage; no compatibility or production-readiness claim is made yet.
+**Status:** design specification v0.2 (pre-implementation), 2026-07-25. Byom is
+the family's governance design, reached over the Byom Participation Protocol; no
+compatibility or production-readiness claim is made yet.

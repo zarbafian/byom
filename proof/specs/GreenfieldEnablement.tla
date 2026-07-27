@@ -56,7 +56,7 @@ HoldsSelector(s) == phase[s] \in {"bindings_created", "active"}
 TypeOK ==
   /\ phase \in [Scopes -> Phases]
   /\ epoch \in [Scopes -> 0..MaxEpoch]
-  /\ owner \in [Scopes -> {"sage", "byom", "none"}]
+  /\ owner \in [Scopes -> {"byom", "none"}]
   /\ createCount \in [Scopes -> [Epochs -> 0..2]]
   /\ activateCount \in [Scopes -> [Epochs -> 0..2]]
   /\ activated \in [Scopes -> SUBSET Epochs]
@@ -169,9 +169,12 @@ ActiveEpochNeverRolledBack ==
   \A s \in Scopes :
     phase[s] \in {"active", "disabled"} => epoch[s] \notin rolledBack[s]
 
-(* Kovee amendment A1: the sage arm exists for spec fidelity and is never  *)
-(* exercised in this stack.                                                *)
-SageNeverExercised == \A s \in Scopes : owner[s] # "sage"
+(* Amendment A9 narrowed the owner enum to byom|none, so "no scope is ever *)
+(* owned by anything else" is now carried by TypeOK's domain above rather  *)
+(* than by a separate invariant: the earlier NeverExercised property could *)
+(* only ever be checked against a value the schema no longer admits, which *)
+(* is a vacuous check, not a weaker one.  OwnerMatchesPhase below is what  *)
+(* actually constrains the arm.                                            *)
 
 (* The owner arm flips exactly at the CAS and survives the freeze: byom    *)
 (* iff the saga activated (and was not rolled back before activation).     *)

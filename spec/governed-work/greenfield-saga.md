@@ -111,10 +111,13 @@ fresh saga row under a new epoch, not a transition of this machine.
   or undone by a restore: an active binding stays active at its recorded
   epoch, a rolled-back epoch stays spent.
 
-This saga is a **different machine** from byom §25's `GovernanceCutover`
-(`sage → none → byom`): the `sage` arm of the owner enum exists for spec
-fidelity and is never exercised in this stack (amendment A1; model invariant
-`SageNeverExercised`).
+`none → byom` is the **only** owner transition this stack has. Amendment A9
+narrowed the owner enum to `byom | none` and withdrew the re-owning machine
+that would have consumed a third arm, so there is no second path to
+governance ownership: a scope is owned by byom or by nothing, and it gets
+there through this saga or not at all. The narrowing is carried by
+`kovee-governance-owner-binding-v2.schema.json` and by the model's own type
+domain (`GreenfieldEnablement.tla` `TypeOK`).
 
 ## 6. Conformance and proof pointers
 

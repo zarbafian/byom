@@ -299,7 +299,7 @@ committed in `greenfield-enablement.json` and specified in
 | `NoOverlappingActiveOwners`, `NoOverlappingEnablementSlots` | §16.6 no overlapping active owner selectors — no scope under two owners | `governance_enable` / `owner_cas_none_to_byom` guards (rejection is the absence of a row) |
 | `RetryIdempotent` | frozen row: retry returns the identical binding; exact-CAS at expected revision | the two `governance_enable` self-rows |
 | `NoActivationAfterRollback`, `ActiveEpochNeverRolledBack` | D10: rollback-before-activation; re-enable only under a new binding epoch | `governance_enable_rollback`, `rolled_back → bindings_created` |
-| `SageNeverExercised` | amendment A1: the sage arm is spec fidelity, never exercised | (no row sets it) |
+| `TypeOK` (owner domain) | amendment A9: the owner enum is `byom \| none`, so "no scope has a third owner" is a type fact, not a separate invariant | `kovee-governance-owner-binding-v2.schema.json` |
 | `OwnerMatchesPhase` | the owner arm flips exactly at the CAS and survives the freeze | `owner_cas_none_to_byom`, `governance_disable` |
 
 **Projection**: saga phase, binding epoch, and owner arm per scope; two

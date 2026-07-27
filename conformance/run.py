@@ -413,6 +413,11 @@ GOVERNED_WORK_SCHEMAS = (
     "byom-akson-dispatch-outcome-receipt-head",
     "sender-constrained-worker-credential",
     "sender-constrained-candidate-credential", "act-class-subject",
+    # -- successor versions (published alongside their immutable v1) --
+    # Amendment A9 narrows KoveeGovernanceOwnerBinding.governance_owner to
+    # byom|none. Both versions are checked forever: v1 is the immutable
+    # publication, v2 is what C2/K2 freeze to.
+    "kovee-governance-owner-binding-v2",
 )
 # §16 state/enum lists, transcribed verbatim (order included); the committed
 # schema enums must equal them exactly — the machine-checked "states
@@ -433,6 +438,12 @@ GOVERNED_WORK_ENUMS = {
     ("kovee-governance-owner-binding", "governance_owner"): [
         "sage", "byom", "none"],
     ("kovee-governance-owner-binding", "status"): ["active", "frozen"],
+    # The v2 successor's owner list is NOT a §16.6 transcription: amendment
+    # A9 narrows it to the two states this stack can be in. Pinned here so
+    # the narrowing cannot be quietly widened back.
+    ("kovee-governance-owner-binding-v2", "governance_owner"): [
+        "byom", "none"],
+    ("kovee-governance-owner-binding-v2", "status"): ["active", "frozen"],
     ("kovee-realm-byom-binding", "historical_recovery_mode"): [
         "disabled", "exact_formation_intent_only"],
     ("external-command-result-query-result", "status"): [
