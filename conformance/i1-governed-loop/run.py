@@ -230,6 +230,14 @@ STUB_REPLY = json.dumps({
 # a mid-flow failure never got to return.
 LIVE: list = []
 
+# Every REAL harness CLI session this run launched and reaped: the cell it ran
+# in, its pid and its exit status. It is what the coverage probe for "the CLI
+# session stood in" reads (R3-I01 confirmation): whether a model actually drove
+# the agent's steps is a property of the processes this run started, not of an
+# annotation, and an empty list for a cell is how the gate knows the cell was
+# the deterministic stand-in.
+CLI_SESSIONS: list = []
+
 # The signal an armed abort raises. Both daemons abort with `std::process::
 # abort()` and the broker's `Fault` hooks do the same, so a crash cell may
 # require THIS and not merely "a non-zero exit" (R3-I03).
@@ -285,8 +293,117 @@ def _tracked_blobs(repo: Path) -> dict:
     return blobs
 
 
-def source_pin(repo: Path, binaries: list) -> dict:
-    """The pin, as EXACT SOURCE STATE rather than HEAD equality (R3-I02).
+# Every repository whose source this gate compiles. A compiled input is
+# pinned against the repo whose root CONTAINS it — never against the repo the
+# binary belongs to (R3-I02 confirmation, finding 2). The I1 driver is the
+# case that made this necessary: it lives in byom's tree, links kovee's
+# crates, and was pinned against kovee alone, so its own `src/main.rs` and
+# `build.rs` fell between the two roots and `source_pin` discarded them. A
+# modified, rebuilt driver passed the gate.
+PINNED_REPOS = (("byom", REPO), ("kovee", KOVEE_ROOT))
+
+_sysroot_cache: str | None = None
+
+
+def _sysroot() -> Path:
+    global _sysroot_cache
+    if _sysroot_cache is None:
+        _sysroot_cache = subprocess.check_output(
+            ["rustc", "--print", "sysroot"], text=True).strip()
+    return Path(_sysroot_cache)
+
+
+def _no_revision_class(source: Path) -> str | None:
+    """Which class of build input carrying NO repository revision `source`
+    belongs to, or None if it is unclassifiable.
+
+    Three classes exist, and each is pinned by something this gate already
+    fixes: cargo's registry/source cache (by `Cargo.lock`, which is itself a
+    pinned input), the toolchain (by `rustup`/the sysroot the same lockfile
+    resolves against), and a file some build script generated under a target
+    directory (by that script's own pinned source). Anything else is an
+    input this gate cannot attribute, and `source_pin` FAILS on it rather
+    than skipping it."""
+    classes = [
+        (Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")),
+         "cargo registry/source cache (pinned by Cargo.lock)"),
+        (Path(os.environ.get("RUSTUP_HOME", Path.home() / ".rustup")),
+         "rust toolchain"),
+        (_sysroot(), "rust toolchain")]
+    for repo in (REPO, KOVEE_ROOT, DRIVER_DIR):
+        classes.append((_target_dir(repo), "cargo build output"))
+    for root, label in classes:
+        try:
+            source.relative_to(root)
+        except ValueError:
+            continue
+        return label
+    return None
+
+
+def _depfile_inputs(binary) -> list:
+    """Every source path cargo says `binary` was compiled from."""
+    dep_file = Path(binary).with_suffix(".d")
+    need(dep_file.exists(),
+         f"cargo wrote no dependency record for {binary}: the source state "
+         f"cannot be pinned")
+    seen, inputs = set(), []
+    for line in dep_file.read_text(encoding="utf-8").splitlines():
+        if ": " not in line:
+            continue
+        for token in line.split(": ", 1)[1].split():
+            if token not in seen:
+                seen.add(token)
+                inputs.append(Path(token))
+    return inputs
+
+
+def _attribute(source: Path) -> tuple:
+    """`(repo name, path relative to it)` for a compiled input, or
+    `(None, None)` when no pinned repository contains it. The innermost repo
+    wins, so a nested checkout is attributed to itself."""
+    resolved = source.resolve()
+    best = (None, None, -1)
+    for name, repo in PINNED_REPOS:
+        root = repo.resolve()
+        try:
+            rel = str(resolved.relative_to(root))
+        except ValueError:
+            continue
+        if len(str(root)) > best[2]:
+            best = (name, rel, len(str(root)))
+    return best[0], best[1]
+
+
+def _git_metadata(source: Path) -> bool:
+    """A build script's `rerun-if-changed` on git's OWN files.
+
+    `build.rs` declares these to follow the tree it is compiling against.
+    They are the repository, not source it compiled: git never tracks them,
+    and `packed-refs` in particular comes and goes with `git gc`. So they
+    are neither pinned nor required to exist — while every real compiled
+    input is both."""
+    name, rel = _attribute(source)
+    return name is not None and (rel == ".git" or rel.startswith(".git/"))
+
+
+def _repo_local_inputs(binary) -> list:
+    """The compiled inputs of `binary` that live in a pinned repository —
+    the only ones whose bytes this gate can be running the wrong version
+    of."""
+    local = []
+    for source in _depfile_inputs(binary):
+        if _git_metadata(source) or not source.exists():
+            continue
+        if _attribute(source)[0] is None:
+            continue
+        local.append(source)
+    return local
+
+
+def source_pin(binaries: list) -> dict:
+    """The pin, as EXACT SOURCE STATE rather than HEAD equality (R3-I02),
+    over EVERY compiled input of EVERY binary the gate runs.
 
     `assert_pinned` used to compare commits only, so the confirmer made the
     pinned kovee tree dirty WITHOUT moving HEAD and the gate accepted it —
@@ -295,68 +412,93 @@ def source_pin(repo: Path, binaries: list) -> dict:
 
     What is compared here is the set of files cargo itself says each binary
     was built from (`<target>/debug/<name>.d`, the same record
-    `assert_fresh` reads). Every one of them that lives in `repo` must be
-    TRACKED at HEAD and byte-identical to the blob HEAD holds, and so must
-    every manifest and the lockfile. A modified, staged, deleted or
-    never-committed source file therefore fails the gate, whatever HEAD
-    says.
+    `assert_fresh` reads). Each one is attributed to the repository that
+    CONTAINS it, and must be TRACKED at that repo's HEAD and byte-identical
+    to the blob HEAD holds — and so must every manifest and every lockfile.
+    A modified, staged, deleted or never-committed source file therefore
+    fails the gate, whatever HEAD says.
+
+    Two ways of not looking are closed here (R3 confirmation, findings 2
+    and 3):
+
+      * an input in NO pinned repository is only accepted if it belongs to
+        a build-input class that carries no revision at all
+        ([`_no_revision_class`]); anything else fails. It used to be
+        `continue`, which is how the driver's own source — byom's tree,
+        checked against kovee's root — was silently dropped;
+      * an input the depfile names that no longer EXISTS fails. It used to
+        be `if not source.is_file(): continue`, so deleting a compiled
+        source was accepted by both this and `assert_fresh`.
 
     It is deliberately not `git status --porcelain`: that would also fail on
     an untracked file in some crate this gate never compiles, which says
     nothing about the revision under test. The dep files name exactly the
     inputs that CAN change what this run observes."""
-    blobs = _tracked_blobs(repo)
-    inputs: set = set()
+    blobs = {name: _tracked_blobs(repo) for name, repo in PINNED_REPOS}
+    inputs: dict = {name: set() for name, _ in PINNED_REPOS}
+    external: dict = {}
+    missing, unattributed = [], []
     for binary in binaries:
-        dep_file = Path(binary).with_suffix(".d")
-        need(dep_file.exists(),
-             f"cargo wrote no dependency record for {binary}: the source "
-             f"state cannot be pinned")
-        for line in dep_file.read_text(encoding="utf-8").splitlines():
-            if ": " not in line:
+        for source in _depfile_inputs(binary):
+            if _git_metadata(source):
+                external["git metadata a build script follows"] = \
+                    external.get("git metadata a build script follows", 0) + 1
                 continue
-            for token in line.split(": ", 1)[1].split():
-                source = Path(token)
-                if not source.is_file():
-                    continue
-                try:
-                    rel = str(source.resolve().relative_to(repo.resolve()))
-                except ValueError:
-                    continue  # a registry/toolchain path, not this repo
-                # `build.rs` scripts declare `rerun-if-changed` on git's own
-                # files to follow the tree; those are the repository, not
-                # source it compiled, and git never tracks them.
-                if rel == ".git" or rel.startswith(".git/"):
-                    continue
-                inputs.add(rel)
-    # The manifests and the lockfile decide WHICH sources those are.
-    inputs |= {p for p in blobs
-               if p == "Cargo.lock" or p.endswith("Cargo.toml")}
-    untracked, modified = [], []
-    for rel in sorted(inputs):
-        if rel not in blobs:
-            untracked.append(rel)
-            continue
-        actual = subprocess.check_output(
-            ["git", "-C", str(repo), "hash-object", "--", rel],
-            text=True).strip()
-        if actual != blobs[rel]:
-            modified.append(rel)
-    need(not untracked,
-         f"{repo.name}: {len(untracked)} compiled input(s) are not committed "
-         f"at {git_out(repo, 'rev-parse', 'HEAD')[:12]}, so this run is not "
-         f"the pinned revision: {untracked[:8]}")
-    need(not modified,
-         f"{repo.name}: {len(modified)} compiled input(s) differ from the "
-         f"pinned commit {git_out(repo, 'rev-parse', 'HEAD')[:12]} — the "
-         f"gate would be testing source that exists nowhere in history: "
-         f"{modified[:8]}")
-    digest = hashlib.sha256()
-    for rel in sorted(inputs):
-        digest.update(f"{rel}\0{blobs[rel]}\n".encode())
-    return {"compiled_inputs": len(inputs),
-            "source_digest": digest.hexdigest(),
-            "matches_pinned_commit": True}
+            if not source.exists():
+                missing.append(f"{Path(binary).name} <- {source}")
+                continue
+            name, rel = _attribute(source)
+            if name is None:
+                label = _no_revision_class(source)
+                if label is None:
+                    unattributed.append(f"{Path(binary).name} <- {source}")
+                else:
+                    external[label] = external.get(label, 0) + 1
+                continue
+            inputs[name].add(rel)
+    need(not missing,
+         f"{len(missing)} compiled input(s) cargo's own dependency record "
+         f"names no longer exist, so what this gate is running cannot be "
+         f"established: {missing[:8]}")
+    need(not unattributed,
+         f"{len(unattributed)} compiled input(s) belong to no pinned "
+         f"repository and to no build-input class that carries no revision, "
+         f"so this run's source state is unknown: {unattributed[:8]}")
+    pins = {}
+    for name, repo in PINNED_REPOS:
+        held = blobs[name]
+        # The manifests and the lockfiles decide WHICH sources those are —
+        # including the I1 driver's own workspace, which has both.
+        rels = inputs[name] | {p for p in held
+                               if p.endswith("Cargo.lock")
+                               or p.endswith("Cargo.toml")}
+        untracked, modified = [], []
+        for rel in sorted(rels):
+            if rel not in held:
+                untracked.append(rel)
+                continue
+            actual = subprocess.check_output(
+                ["git", "-C", str(repo), "hash-object", "--", rel],
+                text=True).strip()
+            if actual != held[rel]:
+                modified.append(rel)
+        head = git_out(repo, "rev-parse", "HEAD")[:12]
+        need(not untracked,
+             f"{name}: {len(untracked)} compiled input(s) are not committed "
+             f"at {head}, so this run is not the pinned revision: "
+             f"{untracked[:8]}")
+        need(not modified,
+             f"{name}: {len(modified)} compiled input(s) differ from the "
+             f"pinned commit {head} — the gate would be testing source that "
+             f"exists nowhere in history: {modified[:8]}")
+        digest = hashlib.sha256()
+        for rel in sorted(rels):
+            digest.update(f"{rel}\0{held[rel]}\n".encode())
+        pins[name] = {"compiled_inputs": len(rels),
+                      "source_digest": digest.hexdigest(),
+                      "matches_pinned_commit": True}
+    pins["inputs_carrying_no_revision"] = external
+    return pins
 
 
 def assert_fresh(binary: Path):
@@ -366,22 +508,78 @@ def assert_fresh(binary: Path):
     compiled from, so this is exact: no guessing which crates a binary
     links, and no false alarm from a test file that cannot change it. A
     binary older than one of its own inputs means the gate would be
-    running a revision that no longer exists in the tree (R3-I02)."""
-    dep_file = binary.with_suffix(".d")
-    need(dep_file.exists(),
-         f"cargo wrote no dependency record for {binary.name}: freshness "
-         f"cannot be checked")
+    running a revision that no longer exists in the tree (R3-I02).
+
+    A named input that has VANISHED fails too (R3 confirmation, finding 3):
+    it used to `continue`, so deleting a compiled source made the gate stop
+    asking about it."""
     stamp = binary.stat().st_mtime
-    for line in dep_file.read_text(encoding="utf-8").splitlines():
-        if ": " not in line:
+    for source in _depfile_inputs(binary):
+        if _git_metadata(source):
             continue
-        for token in line.split(": ", 1)[1].split():
-            source = Path(token)
-            if not source.is_file():
-                continue
-            need(source.stat().st_mtime <= stamp,
-                 f"{binary.name} is older than its own input {source}: the "
-                 f"gate would be testing a stale revision")
+        need(source.exists(),
+             f"{binary.name} was compiled from {source}, which no longer "
+             f"exists: the gate cannot say what it is running")
+        need(source.stat().st_mtime <= stamp,
+             f"{binary.name} is older than its own input {source}: the "
+             f"gate would be testing a stale revision")
+
+
+# Every forced rebuild [`_assert_built_from_source`] had to perform, reported
+# in each mode's `pinned-revisions.json`.
+REBUILT: list = []
+
+
+def _input_stamp(binary: Path) -> str:
+    """A digest of the BYTES of every repo-local input of `binary`."""
+    digest = hashlib.sha256()
+    for source in sorted(_repo_local_inputs(binary), key=str):
+        digest.update(f"{source}\0".encode())
+        digest.update(hashlib.sha256(source.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def _assert_built_from_source(binaries: list, rebuild) -> None:
+    """The artifacts were compiled from the bytes that are on disk NOW.
+
+    cargo decides freshness by MTIME, so an artifact built from one version
+    of a file and then confronted with DIFFERENT bytes carrying an older
+    timestamp is still "fresh" — which is how this gate came to run a
+    `koveed` compiled from source that exists nowhere in the tree while
+    every other check passed: the binary was newer than every input
+    (`assert_fresh`), and every input was byte-identical to HEAD
+    (`source_pin`); only the BINARY was not what either of them described.
+    The daemon then refused a digest its own repository derives correctly.
+
+    So each build records the content digest of its own repo-local inputs
+    beside the artifact. A mismatch is not a failure — it is a stale cache —
+    and the remedy is to make cargo rebuild: every repo-local input is
+    touched, the group is built again, and the artifact must actually have
+    been rewritten."""
+    stamps = {b: Path(f"{b}.i1-built-from") for b in binaries}
+    stale = [b for b in binaries
+             if not stamps[b].exists()
+             or stamps[b].read_text(encoding="utf-8").strip()
+             != _input_stamp(b)]
+    if not stale:
+        return
+    before = {b: b.stat().st_mtime for b in binaries}
+    touched = {s for b in binaries for s in _repo_local_inputs(b)}
+    for source in touched:
+        source.touch()
+    rebuild()
+    for b in stale:
+        need(b.stat().st_mtime > before[b],
+             f"{b.name} was not rebuilt even though every one of its "
+             f"{len(touched)} inputs was touched: cargo is serving an "
+             f"artifact this gate cannot attribute to any source")
+    for b in binaries:
+        stamps[b].write_text(_input_stamp(b) + "\n", encoding="utf-8")
+    REBUILT.append({"binaries": [b.name for b in stale],
+                    "touched_inputs": len(touched),
+                    "why": "the recorded build did not match the bytes on "
+                           "disk: cargo's mtime freshness had accepted an "
+                           "artifact compiled from other source"})
 
 
 # One cargo invocation per repo, so each side is resolved with ONE feature
@@ -397,26 +595,51 @@ def assert_fresh(binary: Path):
 # label says which build it ran.
 KOVEE_TEST_FEATURE = "koveed/testing"
 BUILD_GROUPS = {
-    "byom": (["byomd", "byom-cli", "byom-mcp"], []),
-    "kovee": (["koveed", "kovee-cli", "kovee-mcp"], [KOVEE_TEST_FEATURE]),
+    "byom": (["byomd", "byom-cli", "byom-mcp"], [],
+             ["byomd", "byom", "byom-mcp"]),
+    "kovee": (["koveed", "kovee-cli", "kovee-mcp"], [KOVEE_TEST_FEATURE],
+              ["koveed", "kovee", "kovee-mcp"]),
 }
+
+
+def _build_group(repo: Path, group: str) -> None:
+    """One cargo invocation for one repo's binaries, RUN INSIDE THAT REPO.
+
+    `cwd` is not cosmetic here: cargo discovers `.cargo/config.toml` from the
+    working directory, not from `--manifest-path`, and both repos set
+    `build.target-dir` there. Building kovee's packages from byom's directory
+    therefore compiled them into BYOM's target directory while the gate went
+    on running `<kovee target>/debug/koveed` — a binary this gate had never
+    built, of whatever revision last happened to leave one there. That is
+    exactly the "reuse of an existing binary can mix revisions" R3-I02 set
+    out to close, and it was still open: the koveed the gate ran was months
+    of edits away from the tree it pinned, and refused a host-effect digest
+    its own repository derives correctly."""
+    packages, features, _ = BUILD_GROUPS[group]
+    args = ["cargo", "build", "-q",
+            "--manifest-path", str(repo / "Cargo.toml")]
+    for package in packages:
+        args += ["-p", package]
+    for feature in features:
+        args += ["--features", feature]
+    subprocess.check_call(args, cwd=str(repo))
 
 
 def _binary(repo: Path, group: str, name: str) -> str:
     """One daemon/CLI binary, ALWAYS rebuilt once per run (R3-I02:
     "reuse of an existing binary can mix revisions"), then checked against
     its own repo's newest source file — so a build that silently failed to
-    pick a change up cannot pass the gate."""
-    packages, features = BUILD_GROUPS[group]
+    pick a change up cannot pass the gate — and against the BYTES of its own
+    inputs, so a cargo cache whose mtimes lie cannot pass either."""
     path = _target_dir(repo) / "debug" / name
     if group not in _built:
-        args = ["cargo", "build", "-q",
-                "--manifest-path", str(repo / "Cargo.toml")]
-        for package in packages:
-            args += ["-p", package]
-        for feature in features:
-            args += ["--features", feature]
-        subprocess.check_call(args)
+        _build_group(repo, group)
+        group_binaries = [_target_dir(repo) / "debug" / b
+                          for b in BUILD_GROUPS[group][2]]
+        for binary in group_binaries:
+            need(binary.exists(), f"binary missing after build: {binary}")
+        _assert_built_from_source(group_binaries,
+                                  lambda: _build_group(repo, group))
         _built.add(group)
     need(path.exists(), f"binary missing after build: {path}")
     assert_fresh(path)
@@ -456,13 +679,23 @@ def driver_bin() -> str:
     silently mixes kovee revisions); the build is handed the commit this
     run means to gate and the driver's `build.rs` REFUSES TO COMPILE if
     the tree it links is at another one; and the built binary is checked
-    against kovee's newest source file, so a stale artifact cannot pass."""
+    against kovee's newest source file, so a stale artifact cannot pass.
+
+    Its own source is pinned like everything else now: [`source_pin`]
+    attributes each input to the repository that contains it, so the
+    driver's `src/main.rs`, its `build.rs`, its manifest AND its lockfile
+    are checked against byom's HEAD, while the kovee crates it links are
+    checked against kovee's. The confirmation found all four unpinned."""
     path = _target_dir(DRIVER_DIR) / "debug" / "i1-kovee-driver"
     kovee = head_of(KOVEE_ROOT)
-    subprocess.check_call(["cargo", "build", "-q"], cwd=DRIVER_DIR,
-                          env={**os.environ,
-                               "I1_KOVEE_COMMIT": kovee["commit"]})
+
+    def build():
+        subprocess.check_call(["cargo", "build", "-q"], cwd=DRIVER_DIR,
+                              env={**os.environ,
+                                   "I1_KOVEE_COMMIT": kovee["commit"]})
+    build()
     need(path.exists(), f"driver missing after build: {path}")
+    _assert_built_from_source([path], build)
     assert_fresh(path)
     return str(path)
 
@@ -478,11 +711,13 @@ def assert_pinned(ev: Evidence) -> dict:
     `$I1_KOVEE_COMMIT`/`$I1_BYOM_COMMIT` pin the pair explicitly when CI
     wants to.
 
-    Then [`source_pin`] takes every file cargo says the binaries under test
-    were compiled from and requires it to be committed AT that commit, byte
-    for byte. A dirty tree with the right HEAD used to pass — it printed
-    `dirty: true` and passed anyway — and it no longer does, from either
-    repo, in any mode.
+    Then [`source_pin`] takes every file cargo says EVERY binary this gate
+    runs was compiled from — the two daemons, the four CLIs and the driver —
+    and requires it to be committed AT the HEAD of whichever repository
+    contains it, byte for byte. A dirty tree with the right HEAD used to
+    pass — it printed `dirty: true` and passed anyway — and so, until the
+    confirmation found it, did a modified and rebuilt driver, because the
+    driver's own source lay outside the one repo it was checked against.
 
     EVERY mode calls this, including the real-harness ones, which used not
     to call it at all."""
@@ -505,18 +740,23 @@ def assert_pinned(ev: Evidence) -> dict:
         if expected:
             need(actual.startswith(expected.strip()),
                  f"${name} pins {expected}, the tree is at {actual}")
-    byom_sources = source_pin(REPO, [byomd_bin(), byom_cli_bin(),
-                                     byom_mcp_bin()])
-    kovee_sources = source_pin(KOVEE_ROOT, [koveed_bin(), kovee_cli_bin(),
-                                            kovee_mcp_bin(), driver_bin()])
+    # ONE pass over every binary the gate runs, each input attributed to the
+    # repository that contains it — so nothing can fall between the two
+    # roots the way the driver's own source did.
+    pins = source_pin([byomd_bin(), byom_cli_bin(), byom_mcp_bin(),
+                       koveed_bin(), kovee_cli_bin(), kovee_mcp_bin(),
+                       driver_bin()])
     # The driver's build.rs read the same thing at COMPILE time, from inside
     # cargo — a second, independent witness that the tree it linked was the
     # committed one.
     need(built.get("kovee_worktree_dirty") is False,
          f"the driver was COMPILED against a dirty kovee worktree: the "
          f"binary contains source that is committed nowhere ({built})")
-    pinned = {"byom": {**byom, "sources": byom_sources},
-              "kovee": {**kovee, "sources": kovee_sources},
+    pinned = {"byom": {**byom, "sources": pins["byom"]},
+              "kovee": {**kovee, "sources": pins["kovee"]},
+              "compiled_inputs_carrying_no_revision":
+                  pins["inputs_carrying_no_revision"],
+              "forced_rebuilds": list(REBUILT),
               "driver_built_against": built,
               "explicit_pins": {k: os.environ.get(k) for k in
                                 ("I1_KOVEE_COMMIT", "I1_BYOM_COMMIT")}}
@@ -549,6 +789,15 @@ class Evidence:
         # it: a coverage claim has to point at a step this run actually
         # printed, not at a string its caller composed (R3-I01).
         self.titles: list = []
+        # The FACTS behind the coverage statement (R3-I01 confirmation):
+        # `records` is every row `coverage_evidence` read back out of a
+        # daemon's own store for a named item, `probes` is every substitution
+        # probe it ran, and `substitutions` is the per-cell verdict those
+        # probes produced. `plan_coverage` derives the status from these, so
+        # neither presence nor an annotation can certify anything.
+        self.records: list = []
+        self.probes: list = []
+        self.substitutions: dict = {}
         self._steps = (self.dir / "steps.jsonl").open("w", encoding="utf-8")
 
     def namespace(self, slug: str | None):
@@ -1053,6 +1302,15 @@ class ByomDaemon(Killable):
         shutil.rmtree(self.run_dir, ignore_errors=True)
 
 
+# What `koveed/src/main.rs` prints on the one line where it INSTALLS the
+# no-network egress (`Daemon::with_recording_egress`). The seal reads this out
+# of the daemon's own startup report: the `recording-test-double` profile
+# string stays linked into a testing binary whether or not `main.rs` ever
+# installs the transport, so grepping the binary for it could never tell the
+# difference (R3-I02 confirmation, finding 5).
+KOVEED_INSTALLED_RECORDING = "egress is kovee-effects' RecordingTransport"
+
+
 class Koveed(Killable):
     """koveed on its two sockets: the external client surface and the
     disjoint worker surface (§23.3)."""
@@ -1090,9 +1348,17 @@ class Koveed(Killable):
         full = {**os.environ, **self.base_env()}
         full.pop("KOVEED_ABORT", None)
         full.update(env or {})
+        # The daemon's own startup report is kept, not discarded: it is where
+        # koveed says which egress its `main.rs` INSTALLED, and the seal
+        # behind the no-network wire is checked against it rather than
+        # against a string that is merely linked into the binary (R3-I02
+        # confirmation, finding 5).
+        self.log = self.base / "koveed.log"
+        stream = self.log.open("ab")
         self.proc = subprocess.Popen(
             [koveed_bin(), "--data-dir", str(self.data_dir)], env=full,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=stream, stderr=stream)
+        stream.close()
         deadline = time.time() + 30
         while True:
             reply = _unix_call(self.run_dir / "kovee.sock",
@@ -1110,6 +1376,18 @@ class Koveed(Killable):
 
     def store_path(self) -> Path:
         return self.data_dir / "kovee.db"
+
+    def startup_report(self) -> str:
+        """Everything the daemon has said on its own streams."""
+        try:
+            return self.log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    def installed_recording_egress(self) -> bool:
+        """Whether THIS daemon's `main.rs` installed kovee's recording
+        transport — the daemon's own words, at the moment it did it."""
+        return KOVEED_INSTALLED_RECORDING in self.startup_report()
 
     def call_raw(self, request: dict, worker: bool = False) -> str | None:
         sock = "kovee-worker.sock" if worker else "kovee.sock"
@@ -2532,6 +2810,12 @@ def close_the_loop(ctx: dict, ev: Evidence, tag: str, transport: dict,
             reservations=byom.reservations(),
             episode_complete=completed["episode_complete"].get("state"))
 
+    # The whole arc is done and both daemons are still up: read this cell's
+    # coverage evidence out of their own stores before anything is torn down
+    # (R3-I01 confirmation). This covers `governed-loop` in --scripted and
+    # --verify-trails and the `attached-<which>`/`harness-<which>` cells,
+    # since the cell is whatever namespace the mode is writing under.
+    coverage_evidence(ev, byom=byom, kovee=kovee)
     return ctx
 
 
@@ -3798,6 +4082,7 @@ def continuation_resume_cell(ev: Evidence) -> None:
                     " manifestation_revisions"),
                 attributed_event_kinds=sorted({r["kind"]
                                                for r in attribution}))
+        coverage_evidence(ev, byom=byom, kovee=kovee)
     finally:
         cleanup_live()
 
@@ -4006,21 +4291,74 @@ def ambiguous_effect_cell(ev: Evidence) -> None:
                 retry_refused_as=retry.get("type"),
                 attributed_event_kinds=sorted({r["kind"]
                                                for r in attribution}))
+        coverage_evidence(ev, byom=byom, kovee=kovee)
     finally:
         cleanup_live()
 
 
+def koveed_startup(binary: str, label: str) -> dict:
+    """One koveed of any build, booted alone with the recording egress
+    REQUESTED, and what it said about the egress it installed.
+
+    Everything else this daemon needs is absent on purpose: it is asked to
+    come up and to answer for its own wire, nothing more."""
+    base = Path(tempfile.mkdtemp(prefix=f"i1-seal-{label}-"))
+    log = base / "koveed.log"
+    (base / "data").mkdir()
+    (base / "run").mkdir()
+    stream = log.open("wb")
+    proc = subprocess.Popen(
+        [binary, "--data-dir", str(base / "data")],
+        env={**os.environ,
+             "KOVEE_RUNTIME_DIR": str(base / "run"),
+             "KOVEE_TESTING_RECORDING_EGRESS": STUB_REPLY},
+        stdout=stream, stderr=stream)
+    stream.close()
+    try:
+        deadline = time.time() + 30
+        up = False
+        while time.time() < deadline:
+            if (base / "run" / "kovee.sock").exists():
+                up = True
+                break
+            if proc.poll() is not None:
+                break
+            time.sleep(0.03)
+        report = log.read_text(encoding="utf-8", errors="replace")
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+        shutil.rmtree(base, ignore_errors=True)
+    return {"binary": binary, "came_up": up,
+            "installed_recording_egress": KOVEED_INSTALLED_RECORDING in report,
+            "startup_report": report.strip().splitlines()[-3:]}
+
+
 def production_seal(ev: Evidence) -> dict:
-    """The seal behind the daemon's no-network wire, checked on ARTIFACTS
-    rather than asserted (R3-I02).
+    """The seal behind the daemon's no-network wire — INSTALLATION, not a
+    string that happens to be linked in (R3-I02 and its confirmation).
 
     The gate runs a `koveed/testing` build so the daemon has a recording
-    wire to offer. The claim that a PRODUCTION build has none is then
-    checked the only way it can be: build `koveed` with no features into a
-    separate target directory and look for the recording transport's own
-    profile string in the two binaries. It must be in the one this gate
-    runs and absent from the production one — the seal is the absence of
-    the code, not a flag."""
+    wire to offer. Two different claims hang on that, and this checks both
+    on running daemons rather than on `grep`:
+
+      * the gate's daemon INSTALLS it. `main.rs` reads
+        `$KOVEE_TESTING_RECORDING_EGRESS` and hands the daemon a
+        `RecordingTransport`; the daemon says so on the line where it does
+        it, and that line is what is required here. The old check looked for
+        the `recording-test-double` profile string in the binary — which
+        stays linked whether or not `main.rs` ever installs anything, so a
+        binary that had stopped installing the transport passed the seal
+        unchanged. (The other half of installation — that the op then USED
+        the installed wire — is kovee's own attempt row, asserted in the
+        cell and carried on this record.)
+
+      * a PRODUCTION build cannot. It is built with no features into a
+        separate target directory, must contain the profile string nowhere
+        at all, and — asked for the recording egress in its environment
+        exactly as the gate's daemon is — must come up and install nothing,
+        because there is no such wire to select. The seal is the absence of
+        the code, not a flag."""
     # Inside kovee's own target directory, which is always ignored: a second
     # target dir is what makes this a second BUILD rather than an overwrite
     # of the binary the daemons in this run are using.
@@ -4028,6 +4366,7 @@ def production_seal(ev: Evidence) -> dict:
     subprocess.check_call(
         ["cargo", "build", "-q", "-p", "koveed",
          "--manifest-path", str(KOVEE_ROOT / "Cargo.toml")],
+        cwd=str(KOVEE_ROOT),
         env={**os.environ, "CARGO_TARGET_DIR": str(seal_dir)})
     production = seal_dir / "debug" / "koveed"
     need(production.exists(), f"no production koveed at {production}")
@@ -4042,11 +4381,32 @@ def production_seal(ev: Evidence) -> dict:
          f"a production `cargo build -p koveed` still contains "
          f"{mark.decode()}: the no-network wire is not sealed behind the "
          f"`testing` feature after all ({production})")
+    gate_boot = koveed_startup(koveed_bin(), "testing")
+    production_boot = koveed_startup(str(production), "production")
+    need(gate_boot["came_up"] and gate_boot["installed_recording_egress"],
+         f"the koveed this gate runs was handed "
+         f"$KOVEE_TESTING_RECORDING_EGRESS and did NOT install kovee's "
+         f"recording transport, so its `model_complete` would dispatch over "
+         f"the live TLS wire: {gate_boot}")
+    need(production_boot["came_up"],
+         f"the production koveed must still be a working daemon: "
+         f"{production_boot}")
+    need(not production_boot["installed_recording_egress"],
+         f"a production koveed handed $KOVEE_TESTING_RECORDING_EGRESS "
+         f"installed a recording transport: the wire is not sealed behind "
+         f"the `testing` feature ({production_boot})")
     return {"gate_binary": koveed_bin(), "gate_build": "koveed/testing",
             "gate_binary_has_recording_wire": testing_has,
+            "gate_daemon_installed_recording_egress": True,
+            "gate_daemon_said": gate_boot["startup_report"],
             "production_binary": str(production),
             "production_build": "cargo build -p koveed (no features)",
-            "production_binary_has_recording_wire": production_has}
+            "production_binary_has_recording_wire": production_has,
+            "production_daemon_came_up": production_boot["came_up"],
+            "production_daemon_installed_recording_egress": False,
+            "checked_on": "two RUNNING daemons, each handed "
+                          "$KOVEE_TESTING_RECORDING_EGRESS, plus the absence "
+                          "of the profile string from the production binary"}
 
 
 def daemon_egress_cell(ev: Evidence) -> None:
@@ -4078,10 +4438,16 @@ def daemon_egress_cell(ev: Evidence) -> None:
     ev.namespace("daemon-egress")
     tag = "i1deg"
     seal = production_seal(ev)
-    ev.step("R3-I02: the egress the DAEMON offers, and the seal behind it "
-            "— this gate runs a `koveed/testing` build whose binary carries "
-            "kovee's recording transport, and a production "
-            "`cargo build -p koveed` built beside it carries none",
+    ev.step("R3-I02: the egress the DAEMON offers, and the seal behind it — "
+            "both checked on RUNNING daemons. A `koveed/testing` daemon "
+            "handed $KOVEE_TESTING_RECORDING_EGRESS says, on the line where "
+            "it does it, that it installed kovee's RecordingTransport; a "
+            "production `cargo build -p koveed` built beside it contains the "
+            "profile string nowhere at all and, handed exactly the same "
+            "environment, comes up and installs nothing. The old seal only "
+            "grepped the binaries for the profile string, which stays linked "
+            "in a testing build whether or not `main.rs` installs the "
+            "transport",
             **seal)
     ctx = governed_setup(ev, tag, {"ANTHROPIC_API_KEY": PLACEHOLDER_KEY})
     try:
@@ -4118,6 +4484,18 @@ def daemon_egress_cell(ev: Evidence) -> None:
              and attempts[0]["transport_profile"] == RECORDING["profile"],
              f"exactly one attempt, on the daemon's recorded wire: "
              f"{attempts}")
+        # The other half of the installation oracle: the daemon that served
+        # this op is the one that said it installed the wire, and the wire it
+        # installed is the one the op used.
+        need(kovee.installed_recording_egress(),
+             f"the koveed that served this `model_complete` never said it "
+             f"installed kovee's recording transport, so the op's egress was "
+             f"chosen somewhere this gate cannot see: "
+             f"{kovee.startup_report()[-600:]}")
+        seal = {**seal,
+                "cell_daemon_installed_recording_egress": True,
+                "cell_daemon_attempt_transport_profile":
+                    attempts[0]["transport_profile"]}
 
         # The driver never dispatched anything here: every driver call
         # writes `driver-NN-<command>.json`, and no `complete` is among them.
@@ -4193,6 +4571,7 @@ def daemon_egress_cell(ev: Evidence) -> None:
                 production_seal=seal,
                 attributed_event_kinds=sorted({row["kind"]
                                                for row in attribution}))
+        coverage_evidence(ev, byom=byom, kovee=kovee)
     finally:
         cleanup_live()
 
@@ -4454,6 +4833,7 @@ def onboarding_compute_cell(ev: Evidence) -> None:
                     "disclosure_manifest_digest", "model_profile_digest"],
                 attributed_event_kinds=sorted({r["kind"]
                                                for r in attribution}))
+        coverage_evidence(ev, byom=byom, kovee=kovee)
     finally:
         cleanup_live()
 
@@ -4470,13 +4850,20 @@ RECORDING = {
 
 
 # The plan-§8 I1 item list and, per item, the PROOFS this gate accepts for
-# it: which cell of which mode may certify it, the step that cell has to
-# have printed, the artifacts it has to have written, and what — if
-# anything — is still standing in (R3-I01).
+# it: which cell of which mode may certify it, the step that cell has to have
+# printed, the artifacts it has to have written, the RECORD each daemon has to
+# hold for that item, and what — if anything — stood in (R3-I01).
 #
-# The old map validated only that its caller supplied a non-default string
-# per cell. A run of no-op cells satisfied it, so "coverage" certified
-# nothing but the caller's own prose. Every proof now names:
+# The first map validated only that its caller supplied a non-default string
+# per cell. A run of no-op cells satisfied it. The second added the step and
+# the artifacts, and the confirmation broke it too: a fixture that printed the
+# configured markers and wrote non-empty `{}` files was certified as 6
+# exercised of 13, and deleting ONE `simulated` annotation promoted an item to
+# `exercised` with nothing else in the run changing. Presence is not evidence,
+# and a constant is not an observation.
+#
+# So every proof now names four things, and none of them is satisfiable by
+# this file's own prose:
 #
 #   step:      a substring of a step title THIS run printed in that cell,
 #              read back from the Evidence object's own record of what it
@@ -4485,146 +4872,444 @@ RECORDING = {
 #              each of which must exist, be non-empty and be one this
 #              process wrote (`Evidence` tracks every path it writes, so a
 #              file left behind by an earlier run is not evidence);
-#   simulated: exactly what is standing in. A simulated proof is REPORTED
-#              AS SIMULATED — in the coverage blob, in the step detail and
-#              on stdout — and is never counted as covered.
+#   records:   rows THIS ITEM must have left in byomd's or koveed's OWN
+#              store, read back out of the daemon that committed them while
+#              it is still live, by a query THIS TABLE fixes. The cell does
+#              not supply the question and cannot supply the answer: the only
+#              way to satisfy it is for the operations the item names to have
+#              actually run against the daemons;
+#   stands_in: which registered SUBSTITUTIONS were in play — a claim that is
+#              compared with what the probes observed, not trusted. See
+#              [`SUBSTITUTIONS`].
 #
 # An item with two proofs (the attached execution paths) is covered by
-# whichever ran; an unsimulated proof supersedes a simulated one, so the
-# real CLI session upgrades the deterministic stand-in when `--all-checks`
-# runs both.
+# whichever ran; an unsimulated proof supersedes a simulated one, so the real
+# CLI session upgrades the deterministic stand-in when `--all-checks` runs
+# both.
+
+# The items, named once, so the substitution registry and the proof table
+# cannot drift apart on a typo.
+I_GREENFIELD = "greenfield binding saga"
+I_ATTENTION = "AttentionContract notification (never a wake)"
+I_ACTIVATION = "the complete activation pipeline in A8 order"
+I_HOSTED_EPISODE = "hosted episode"
+I_CONTINUATION = "cross-Manifestation Continuation resume"
+I_HOSTED_MANIFESTATION = "a distinct hosted Manifestation"
+I_AMBIGUOUS = ("ambiguous effect: EOA -> disposition, lock order, "
+               "conservative settlement")
+I_BROKER = ("execution path 1/3: hosted invocation through the disclosed "
+            "metered broker")
+I_DAEMON_EGRESS = ("the completing model dispatch inside koveed's OWN "
+                   "worker-socket `model_complete`")
+I_ATTACHED_CLAUDE = "execution path 2/3: attached Claude Code"
+I_ATTACHED_CODEX = "execution path 3/3: attached Codex"
+I_ONBOARDING = "the one-shot OnboardingCompute path"
+I_DATA_BOUNDARY = ("data boundary: synthetic data, provider claims bound by "
+                   "ref+digest, honest developer/confined labels")
+
 WIRE_ONLY = (
     "the WIRE, and only the wire. The provider is kovee's own "
     "`RecordingTransport`, which opens no socket and stamps "
-    "`recording-test-double` on the effect. A real provider call is "
-    "`--real-model` (it spends money).")
+    "`recording-test-double` on the effect — which is how this probe knows it "
+    "stood in. A real provider call is `--real-model` (it spends money).")
 
+
+# ----------------------------------- what stood in, as an OBSERVATION ----
+#
+# R3-I01 confirmation, finding 1: `simulated` was a string this file carried,
+# so deleting one turned 6 exercised/7 simulated into 7/6 with no change to
+# any real path. Simulation status is now DERIVED, and three rules together
+# mean no single edit can promote an item:
+#
+#   * each substitution names the ITEMS it stands in for, and a fired probe
+#     makes those items SIMULATED whatever the proof says. Deleting a proof's
+#     annotation therefore promotes nothing;
+#   * a proof's `stands_in` must EQUAL what the probes observed for its item
+#     in its cell, so deleting the annotation is also, separately, a failure;
+#   * a substitution whose trace a cell POSITIVELY leaves behind must be
+#     accounted for by some item that cell proves, so deleting the mapping in
+#     the registry does not hide it either.
+#
+# Each probe reads something this file cannot author: a row in a daemon's own
+# store, a process this run launched and reaped, or the pinned tree itself.
+#
+#   kovee_rows / byom_rows  run the SQL against that daemon's live store.
+#                           `stands_in_when` is "rows" (the substitution left
+#                           its own trace) or "no rows" (what would have to
+#                           exist for the item to be real does not).
+#   cli_sessions            no real harness CLI process ran in this cell.
+#   absent_code             the code that would have to exist for the item to
+#                           be the system's own doing is not in the pinned
+#                           tree at all: simulated BY CONSTRUCTION, derived
+#                           from the tree rather than annotated.
+SUBSTITUTIONS = {
+    "recording-wire": {
+        "what": WIRE_ONLY,
+        "items": [I_AMBIGUOUS, I_BROKER, I_DAEMON_EGRESS,
+                  I_ATTACHED_CLAUDE, I_ATTACHED_CODEX],
+        "probe": "kovee_rows",
+        "sql": "SELECT effect_attempt_id, transport_profile"
+               " FROM model_effect_attempts"
+               " WHERE transport_profile = 'recording-test-double'",
+        "stands_in_when": "rows",
+    },
+    "no-cli-session": {
+        "what": "the CLI SESSION. Every agent step goes through the real "
+                "byom-mcp participant surface with the exact tool allowlist "
+                "and launch argv `--harness <which>` uses, and no harness CLI "
+                "process was launched in this cell — which is how this probe "
+                "knows — so the cell is deterministic. The real session is "
+                "`--harness <which>` under I1_REAL_HARNESS=1, which "
+                "`--all-checks` runs and reports, and which supersedes this "
+                "proof when it passes.",
+        "items": [I_ATTACHED_CLAUDE, I_ATTACHED_CODEX],
+        "probe": "cli_sessions",
+        "stands_in_when": "no process",
+    },
+    "scenario-attention-trigger": {
+        "what": "the TRIGGER. kovee's `kovee-attention` crate is a two-line "
+                "stub: the pinned tree contains no `AttentionContract` and no "
+                "`Workload::Attention` at all, so no subsystem can DECIDE to "
+                "notify and this scenario decides instead. Simulated BY "
+                "CONSTRUCTION, and this probe re-derives that from the tree "
+                "every run, so the day kovee ships the subsystem the item "
+                "stops being simulated on its own. The notice itself is real "
+                "— kovee's own byom client verifies the event is in koveed's "
+                "ledger, derives the source digest and sends it on byomd's "
+                "narrow attention channel — and byom's no-effect arm is "
+                "asserted from byom's own rows.",
+        "items": [I_ATTENTION],
+        "probe": "absent_code",
+        "repo": "kovee",
+        "pattern": "AttentionContract|Workload::Attention",
+        "paths": ["crates"],
+    },
+    "no-byom-hosted-manifestation-revision": {
+        "what": "the byom ManifestationRevision. byom mints revisions only "
+                "inside `membership_offer`, which fixes `kind: "
+                "attached_harness`; no byom operation admits a `host_kind: "
+                "kovee_deployment` revision and `placement_admit` does not "
+                "resolve `selected_manifestation_ref` against that table. "
+                "This probe is byom's OWN table: it holds zero "
+                "non-attached_harness revisions. So the distinct hosted "
+                "Manifestation is the ref kovee SELECTS at placement from its "
+                "own active deployment row and byom COMMITS on the Episode "
+                "and the PlacementAdmission — asserted in both stores — and "
+                "NOT a byom `host_kind` row.",
+        "items": [I_HOSTED_MANIFESTATION],
+        "probe": "byom_rows",
+        "sql": "SELECT manifestation_id, kind FROM manifestation_revisions"
+               " WHERE kind <> 'attached_harness'",
+        "stands_in_when": "no rows",
+    },
+    "no-kovee-onboarding-code": {
+        "what": "the CALLER and three digests. The pinned kovee tree contains "
+                "no `onboarding` outside its own test helpers at all — this "
+                "probe searches it — so no kovee subsystem owns this call: "
+                "the consume, the claim and the completion are sent by "
+                "kovee's own byom client acting as the hosted candidate's "
+                "runtime, and the decision to call is this scenario's. byom's "
+                "`onboarding_compute_permit_consume` also still demands "
+                "byom-keyed (`local_erasure_safe`) digests for three "
+                "KOVEE-owned objects — the A8 direction R3-L01 closed for "
+                "`execution_permit_consume` — so those three values come from "
+                "this scenario. Every value the receipt is CHECKED against is "
+                "byom's own.",
+        "items": [I_ONBOARDING],
+        "probe": "absent_code",
+        "repo": "kovee",
+        "pattern": "onboarding",
+        "paths": ["crates", ":(exclude)*/tests/*"],
+    },
+}
+
+
+def _substitutions_for(item: str) -> list:
+    return sorted(sid for sid, spec in SUBSTITUTIONS.items()
+                  if item in spec["items"])
+
+
+# The rows an AGENT-driven arc leaves in byomd's own store, whichever harness
+# drove it. The first is the one that matters: byom-mcp derives a request id
+# from the session salt, the tool and the JCS of the arguments byomd was
+# actually sent, and byomd stores it as the event's `correlation_ref` — so
+# these rows are byomd's own record that the agent's steps went through the
+# real participant surface, and they are the identity the real-harness oracle
+# selects on. A cell that printed its marker and wrote non-empty files has
+# none of them.
+AGENT_STEP_RECORDS = [
+    {"store": "byom",
+     "of": "byomd's own events, correlated to the byom-mcp logical call keys "
+           "of the agent's own steps",
+     "sql": "SELECT event_id, kind, correlation_ref FROM events"
+            f" WHERE correlation_ref LIKE '{MCP_REQUEST_PREFIX}%'",
+     "least": 6},
+    {"store": "byom",
+     "of": "the delivery the PLEDGOR submitted over its own channel",
+     "sql": "SELECT delivery_id, state, submitted_by FROM deliveries"},
+    {"store": "byom",
+     "of": "and the Pledge the beneficiary's review closed",
+     "sql": "SELECT pledge_id, state FROM pledges WHERE state = 'fulfilled'"},
+]
+
+
+# The rows the two daemons must hold for each item, and what stood in. Every
+# `sql` runs against the named daemon's OWN store, in the cell, while it is
+# live.
 PLAN_8_I1_ITEMS = [
-    {"item": "greenfield binding saga",
+    {"item": I_GREENFIELD,
      "proofs": {"governed-loop": {
          "step": "governance_enable — the D10 GREENFIELD saga",
          "artifacts": ["driver-01-host-binding.json",
-                       "byom-timeline.json"]}}},
-    {"item": "AttentionContract notification (never a wake)",
+                       "byom-timeline.json"],
+         "records": [
+             {"store": "kovee",
+              "of": "kovee's own owner binding, CAS'd from none to byom",
+              "sql": "SELECT realm_ref, governance_owner, status"
+                     " FROM kovee_governance_owner_bindings"
+                     " WHERE governance_owner = 'byom'"},
+             {"store": "kovee",
+              "of": "the greenfield enablement kovee committed",
+              "sql": "SELECT enablement_id, state, binding_epoch"
+                     " FROM greenfield_enablements"},
+             {"store": "byom",
+              "of": "byom's own society, whose genesis actor is the human",
+              "sql": "SELECT society_id, state FROM societies"
+                     " WHERE state = 'active'"}],
+         "stands_in": []}}},
+    {"item": I_ATTENTION,
      "proofs": {"governed-loop": {
          "step": "attention_notice_record",
          "artifacts": ["driver-02-attention-notice.json"],
-         "simulated":
-             "the TRIGGER. kovee's `kovee-attention` crate is a two-line "
-             "stub, so no AttentionContract subsystem DECIDES to notify and "
-             "kovee has no `Workload::Attention` channel class; this "
-             "scenario decides. The notice itself is real — kovee's own "
-             "byom client verifies the event is in koveed's ledger, derives "
-             "the source digest and sends it on byomd's narrow attention "
-             "channel — and byom's no-effect arm is asserted from byom's "
-             "own rows."}}},
-    {"item": "the complete activation pipeline in A8 order",
+         "records": [
+             {"store": "byom",
+              "of": "byom's own AttentionNotice with NO effect on activation",
+              "sql": "SELECT notice_id, eligibility_effect, source_event_ref"
+                     " FROM attention_notices"
+                     " WHERE eligibility_effect = 'no_effect'"}],
+         "stands_in": ["scenario-attention-trigger"]}}},
+    {"item": I_ACTIVATION,
      "proofs": {"governed-loop": {
          "step": "episode_request (participant)",
-         "artifacts": ["byom-timeline.json"]}}},
-    {"item": "hosted episode",
+         "artifacts": ["byom-timeline.json"],
+         "records": [
+             {"store": "byom",
+              "of": "the kernel's own stage-2 ActivationAdmission",
+              "sql": "SELECT admission_id, state, wake_intent_ref"
+                     " FROM activation_admissions"},
+             {"store": "byom",
+              "of": "the stage-3 ResourceAllocation and the §11.4 bridge it "
+                    "was committed with (the allocation's own state moves on "
+                    "when the Episode terminalizes; the bridge it holds does "
+                    "not)",
+              "sql": "SELECT allocation_id, state, external_budget_bridge_ref"
+                     " FROM resource_allocations"
+                     " WHERE external_budget_bridge_ref IS NOT NULL"},
+             {"store": "byom",
+              "of": "the §11.4 external budget bridge it persisted",
+              "sql": "SELECT bridge_id, state FROM external_budget_bridges"}],
+         "stands_in": []}}},
+    {"item": I_HOSTED_EPISODE,
      "proofs": {"governed-loop": {
          "step": "PlacementBinding (the ONE activation record Kovee owns)",
-         "artifacts": ["driver-06-episode-activate.json"]}}},
-    {"item": "cross-Manifestation Continuation resume",
+         "artifacts": ["driver-06-episode-activate.json"],
+         "records": [
+             {"store": "byom",
+              "of": "byom's own Episode, claimed and started",
+              "sql": "SELECT episode_id, state FROM episodes"
+                     " WHERE state IN ('running', 'completed')"},
+             {"store": "byom",
+              "of": "the PlacementAdmission byom committed",
+              "sql": "SELECT admission_id, kovee_placement_ref,"
+                     " verification_status FROM placement_admissions"},
+             {"store": "kovee",
+              "of": "kovee's own episode binding, holding the same DUAL FENCE "
+                    "pair byom does",
+              "sql": "SELECT binding_id, state, byom_fence_epoch,"
+                     " kovee_invocation_fence FROM byom_episode_bindings"
+                     " WHERE byom_fence_epoch > 0"
+                     " AND kovee_invocation_fence > 0"}],
+         "stands_in": []}}},
+    {"item": I_CONTINUATION,
      "proofs": {"continuation-resume": {
          "step": "CROSS-MANIFESTATION CONTINUATION RESUME",
          "artifacts": ["continuations.json",
-                       "driver-07-episode-yield.json"]}}},
-    {"item": "a distinct hosted Manifestation",
+                       "driver-07-episode-yield.json"],
+         "records": [
+             {"store": "byom",
+              "of": "the ONE ContinuationHead, advanced past its first "
+                    "revision by the successor",
+              "sql": "SELECT activity_stream_id, continuation_head_ref,"
+                     " continuation_head_revision FROM activity_streams"
+                     " WHERE continuation_head_revision >= 2"},
+             {"store": "byom",
+              "of": "the participant-owned Continuations, the successor "
+                    "citing its predecessor",
+              "sql": "SELECT continuation_id, head_revision,"
+                     " prior_continuation_ref FROM continuations"
+                     " WHERE prior_continuation_ref IS NOT NULL"}],
+         "stands_in": []}}},
+    {"item": I_HOSTED_MANIFESTATION,
      "proofs": {"continuation-resume": {
          "step": "CROSS-MANIFESTATION CONTINUATION RESUME",
          "artifacts": ["driver-08-episode-activate.json"],
-         "simulated":
-             "the byom ManifestationRevision. byom mints revisions only "
-             "inside `membership_offer`, which fixes `kind: "
-             "attached_harness`; no byom operation admits a `host_kind: "
-             "kovee_deployment` revision and `placement_admit` does not "
-             "resolve `selected_manifestation_ref` against that table. The "
-             "cell CHECKS exactly that — byom holds zero "
-             "non-attached_harness revisions — so the distinct hosted "
-             "Manifestation is the ref kovee SELECTS at placement from its "
-             "own active deployment row and byom COMMITS on the Episode and "
-             "the PlacementAdmission, asserted in both stores, and NOT a "
-             "byom `host_kind` row."}}},
-    {"item": "ambiguous effect: EOA -> disposition, lock order, "
-             "conservative settlement",
+         "records": [
+             {"store": "byom",
+              "of": "byom's own Episode row recording the DIFFERENT, hosted "
+                    "Manifestation",
+              "sql": "SELECT episode_id, manifestation_ref FROM episodes"
+                     f" WHERE manifestation_ref = '{HOSTED_MANIFESTATION}'"},
+             {"store": "byom",
+              "of": "and the PlacementAdmission byom committed for it",
+              "sql": "SELECT admission_id, selected_manifestation_ref"
+                     " FROM placement_admissions WHERE"
+                     f" selected_manifestation_ref = "
+                     f"'{HOSTED_MANIFESTATION}'"},
+             {"store": "kovee",
+              "of": "kovee's own placement row, which SELECTED it, backed by "
+                    "its own active deployment",
+              "sql": "SELECT p.placement_id, p.selected_manifestation_ref,"
+                     " d.status FROM byom_placement_bindings p"
+                     " JOIN assistant_deployments d"
+                     f" ON d.deployment_id = '{KOVEE_DEPLOYMENT}'"
+                     f" WHERE p.selected_manifestation_ref = "
+                     f"'{HOSTED_MANIFESTATION}' AND d.status = 'active'"}],
+         "stands_in": ["no-byom-hosted-manifestation-revision"]}}},
+    {"item": I_AMBIGUOUS,
      "proofs": {"ambiguous-effect": {
          "step": "AMBIGUOUS EFFECT walked through EOA",
-         "artifacts": ["effect-heads.json", "driver-09-complete.json"]}}},
-    {"item": "execution path 1/3: hosted invocation through the disclosed "
-             "metered broker",
+         "artifacts": ["effect-heads.json", "driver-09-complete.json"],
+         "records": [
+             {"store": "byom",
+              "of": "the EffectOutcomeAdmission byom committed with an "
+                    "AMBIGUOUS outcome",
+              "sql": "SELECT admission_id, outcome, verification_status,"
+                     " host_effect_ref FROM effect_outcome_admissions"
+                     " WHERE outcome = 'ambiguous'"},
+             {"store": "byom",
+              "of": "the governance disposition over it: no result use, "
+                    "quarantine and redecide on a late source",
+              "sql": "SELECT disposition_id, result_use, late_source_policy,"
+                     " basis_source_outcome"
+                     " FROM effect_governance_dispositions"
+                     " WHERE result_use = 'unavailable'"},
+             {"store": "kovee",
+              "of": "kovee's own attempt, frozen for retry with the outcome "
+                    "unknown to it",
+              "sql": "SELECT effect_attempt_id, state, retry_frozen"
+                     " FROM model_effect_attempts WHERE retry_frozen = 1"}],
+         "stands_in": ["recording-wire"]}}},
+    {"item": I_BROKER,
      "proofs": {"governed-loop": {
          "step": "kovee broker PROCEEDS with the permit",
          "artifacts": ["kovee-broker-chain.json"],
-         "simulated": WIRE_ONLY}}},
-    {"item": "the completing model dispatch inside koveed's OWN "
-             "worker-socket `model_complete`",
+         "records": [
+             {"store": "kovee",
+              "of": "kovee's own completed dispatch attempt",
+              "sql": "SELECT effect_attempt_id, state, transport_profile,"
+                     " input_tokens, output_tokens"
+                     " FROM model_effect_attempts WHERE state = 'completed'"},
+             {"store": "byom",
+              "of": "byom's ONE-SHOT consumption receipt and its MandateUse",
+              "sql": "SELECT r.receipt_id, r.max_uses, u.mandate_use_id"
+                     " FROM execution_consumption_receipts r"
+                     " JOIN mandate_uses u ON u.intent_ref = r.intent_ref"
+                     " WHERE r.max_uses = 1"},
+             {"store": "byom",
+              "of": "and the metered charge byom settled from kovee's report",
+              "sql": "SELECT settlement_id, charged_quantities, status"
+                     " FROM usage_settlements"}],
+         "stands_in": ["recording-wire"]}}},
+    {"item": I_DAEMON_EGRESS,
      "proofs": {"daemon-egress": {
          "step": "R3-I02 CLOSED",
          "artifacts": ["daemon-completing-dispatch.json"],
-         "simulated":
-             "the WIRE, and only the wire — chosen by the DAEMON, not by "
-             "this harness. koveed is built `--features testing`, the only "
-             "build in which it has a `RecordingTransport` to offer; the "
-             "production binary is built beside it in the same cell and "
-             "checked to contain no such wire at all."}}},
-    {"item": "execution path 2/3: attached Claude Code",
+         "records": [
+             {"store": "kovee",
+              "of": "the attempt KOVEED's own worker-socket dispatch "
+                    "completed, on the wire the DAEMON installed",
+              "sql": "SELECT effect_attempt_id, state, transport_profile"
+                     " FROM model_effect_attempts WHERE state = 'completed'"
+                     " AND transport_profile = 'recording-test-double'"},
+             {"store": "byom",
+              "of": "the one-shot permit, spent exactly once",
+              "sql": "SELECT mandate_use_id, intent_ref, use_ordinal"
+                     " FROM mandate_uses", "exactly": 1},
+             {"store": "byom",
+              "of": "and byom's settlement of the DAEMON's metered total",
+              "sql": "SELECT settlement_id, charged_quantities"
+                     " FROM usage_settlements"}],
+         "stands_in": ["recording-wire"]}}},
+    {"item": I_ATTACHED_CLAUDE,
      "proofs": {
          "attached-claude": {
              "step": "ATTACHED claude",
              "artifacts": ["attached-steps.json", "participant-tools.json"],
-             "simulated":
-                 "the CLI SESSION. Every agent step goes through the real "
-                 "byom-mcp participant surface with the exact tool "
-                 "allowlist and launch argv `--harness claude` uses, and no "
-                 "claude CLI is invoked, so the cell is deterministic. The "
-                 "real session is `--harness claude` under "
-                 "I1_REAL_HARNESS=1, which `--all-checks` runs and reports "
-                 "— and which supersedes this proof when it passes."},
+             "records": AGENT_STEP_RECORDS,
+             "stands_in": ["no-cli-session", "recording-wire"]},
          "harness-claude": {
              "step": "real claude sessions drove the agent's own steps",
              "artifacts": ["session-01-byom_mandate_prepare.txt",
                            "session-01-byom_mandate_prepare.byom-wire.jsonl"],
-             "simulated": WIRE_ONLY}}},
-    {"item": "execution path 3/3: attached Codex",
+             "records": AGENT_STEP_RECORDS,
+             "stands_in": ["recording-wire"]}}},
+    {"item": I_ATTACHED_CODEX,
      "proofs": {
          "attached-codex": {
              "step": "ATTACHED codex",
              "artifacts": ["attached-steps.json", "participant-tools.json"],
-             "simulated":
-                 "the CLI SESSION. Every agent step goes through the real "
-                 "byom-mcp participant surface with the exact tool "
-                 "allowlist and launch argv `--harness codex` uses, and no "
-                 "codex CLI is invoked, so the cell is deterministic. The "
-                 "real session is `--harness codex` under "
-                 "I1_REAL_HARNESS=1, which `--all-checks` runs and reports "
-                 "— and which supersedes this proof when it passes."},
+             "records": AGENT_STEP_RECORDS,
+             "stands_in": ["no-cli-session", "recording-wire"]},
          "harness-codex": {
              "step": "real codex sessions drove the agent's own steps",
              "artifacts": ["session-01-byom_mandate_prepare.txt",
                            "session-01-byom_mandate_prepare.byom-wire.jsonl"],
-             "simulated": WIRE_ONLY}}},
-    {"item": "the one-shot OnboardingCompute path",
+             "records": AGENT_STEP_RECORDS,
+             "stands_in": ["recording-wire"]}}},
+    {"item": I_ONBOARDING,
      "proofs": {"onboarding-compute": {
          "step": "ONE-SHOT OnboardingCompute path",
          "artifacts": ["driver-07-onboarding-complete.json"],
-         "simulated":
-             "the CALLER and three digests. kovee ships no onboarding code "
-             "at all, so the consume/claim/complete are sent by kovee's own "
-             "byom client acting as the hosted candidate's runtime and the "
-             "decision to call is this scenario's; and byom's "
-             "`onboarding_compute_permit_consume` still demands byom-keyed "
-             "(`local_erasure_safe`) digests for three KOVEE-owned objects "
-             "— the A8 direction R3-L01 closed for "
-             "`execution_permit_consume` — so those three values come from "
-             "this scenario. Every value the receipt is CHECKED against is "
-             "byom's own."}}},
-    {"item": "data boundary: synthetic data, provider claims bound by "
-             "ref+digest, honest developer/confined labels",
+         "records": [
+             {"store": "byom",
+              "of": "byom's own OnboardingComputeReceipt, max_uses 1",
+              "sql": "SELECT receipt_id, max_uses, compute_intent_ref"
+                     " FROM onboarding_compute_receipts WHERE max_uses = 1"},
+             {"store": "byom",
+              "of": "the ONE onboarding Episode, claimed against that receipt",
+              "sql": "SELECT onboarding_episode_id, state, compute_receipt_ref"
+                     " FROM onboarding_episodes", "exactly": 1},
+             {"store": "byom",
+              "of": "and the bounded onboarding activation the Society funded "
+                    "— ONE episode, and completion is evidence only: no "
+                    "Standing and no participant authority came of it",
+              "sql": "SELECT onboarding_id, state, max_episodes,"
+                     " general_effect_and_child_authority"
+                     " FROM onboarding_offers WHERE max_episodes = 1"}],
+         "stands_in": ["no-kovee-onboarding-code"]}}},
+    {"item": I_DATA_BOUNDARY,
      "proofs": {"governed-loop": {
          "step": "assurance profile, labeled honestly",
-         "artifacts": ["byom-attribution.json"]}}},
+         "artifacts": ["byom-attribution.json"],
+         "records": [
+             {"store": "kovee",
+              "of": "kovee's own committed DisclosureManifest — the provider "
+                    "claims themselves",
+              "sql": "SELECT disclosure_id FROM disclosure_manifests"},
+             {"store": "byom",
+              "of": "byom's committed act, bound to that disclosure by REF "
+                    "AND PORTABLE DIGEST rather than by its contents",
+              "sql": "SELECT intent_id, disclosure_manifest_ref,"
+                     " disclosure_manifest_digest FROM act_intents"
+                     " WHERE disclosure_manifest_ref LIKE 'disc-%'"
+                     " AND disclosure_manifest_digest LIKE"
+                     " '%portable_public%'"},
+             {"store": "byom",
+              "of": "and the receipt byom issued against that same digest",
+              "sql": "SELECT receipt_id, disclosure_digest, driver_audience"
+                     " FROM execution_consumption_receipts"
+                     " WHERE disclosure_digest LIKE '%portable_public%'"}],
+         "stands_in": []}}},
 ]
 
 # Where a mode's coverage statement lands, so `--all-checks` can hold the
@@ -4632,23 +5317,280 @@ PLAN_8_I1_ITEMS = [
 COVERAGE_BLOB = "plan-8-i1-coverage.json"
 
 
+def _cell_rows(check: dict, byom, kovee) -> list:
+    """One record query, against the daemon that OWNS the record."""
+    store = check["store"]
+    daemon = {"byom": byom, "kovee": kovee}[store]
+    need(daemon is not None,
+         f"the coverage record {check['of']!r} is {store}'s own, and this "
+         f"cell handed no live {store} daemon to read it from")
+    return (daemon.rows(check["sql"]) if store == "byom"
+            else daemon.query(check["sql"]))
+
+
+def _probe_stands_in(sid: str, ev: Evidence, cell: str, byom, kovee) -> dict:
+    """Did substitution `sid` stand in, in THIS cell? Observed, never
+    declared."""
+    spec = SUBSTITUTIONS[sid]
+    kind = spec["probe"]
+    if kind in ("byom_rows", "kovee_rows"):
+        store = "byom" if kind == "byom_rows" else "kovee"
+        rows = _cell_rows({**spec, "store": store, "of": sid}, byom, kovee)
+        present = bool(rows) if spec["stands_in_when"] == "rows" \
+            else not rows
+        return {"substitution": sid, "cell": cell, "probe": kind,
+                "read": f"{store}: {spec['sql']}",
+                "rows": len(rows), "sample": rows[:1],
+                "stood_in": present}
+    if kind == "cli_sessions":
+        mine = [s for s in CLI_SESSIONS if s["cell"] == cell]
+        return {"substitution": sid, "cell": cell, "probe": kind,
+                "read": "the harness CLI processes THIS run launched and "
+                        "reaped in this cell",
+                "sessions": mine, "stood_in": not mine}
+    if kind == "absent_code":
+        repo = {"byom": REPO, "kovee": KOVEE_ROOT}[spec["repo"]]
+        found = subprocess.run(
+            ["git", "-C", str(repo), "grep", "-lIiE", spec["pattern"],
+             "--", *spec["paths"]], capture_output=True, text=True)
+        need(found.returncode in (0, 1),
+             f"git grep failed in {repo}: {found.stderr[-300:]}")
+        files = [f for f in found.stdout.splitlines() if f.strip()]
+        return {"substitution": sid, "cell": cell, "probe": kind,
+                "read": f"git grep -E {spec['pattern']!r} in "
+                        f"{spec['repo']}/{' '.join(spec['paths'])} at "
+                        f"{git_out(repo, 'rev-parse', 'HEAD')[:12]}",
+                "files_found": files, "stood_in": not files}
+    raise Fail(f"unknown substitution probe kind {kind!r}")
+
+
+def coverage_evidence(ev: Evidence, byom=None, kovee=None) -> None:
+    """The FACTS this cell's coverage claims will be held to, read out of the
+    daemons' own stores while they are still live (R3-I01 confirmation).
+
+    Called at the end of every cell that can prove a plan-§8 item. For each
+    such item it runs the queries the item list fixes — the cell chooses
+    neither the question nor the answer — and then probes every substitution
+    registered for those items. A no-op cell reaches this point with empty
+    stores and fails HERE, naming the item and the query, rather than being
+    certified by the marker it printed."""
+    cell = ev.ns
+    need(cell is not None,
+         "coverage evidence has to be read inside a cell namespace")
+    items = [spec["item"] for spec in PLAN_8_I1_ITEMS
+             if cell in spec["proofs"]]
+    for spec in PLAN_8_I1_ITEMS:
+        proof = spec["proofs"].get(cell)
+        if proof is None:
+            continue
+        need(proof.get("records"),
+             f"the coverage proof for {spec['item']!r} in {cell} names no "
+             f"daemon record, so nothing but its own prose would back it")
+        for check in proof["records"]:
+            rows = _cell_rows(check, byom, kovee)
+            exactly = check.get("exactly")
+            least = check.get("least", 1 if exactly is None else exactly)
+            wanted = (f"exactly {exactly}" if exactly is not None
+                      else f"at least {least}")
+            need(len(rows) >= least and (exactly is None
+                                         or len(rows) == exactly),
+                 f"{cell} claims the plan-§8 item {spec['item']!r}, and "
+                 f"{check['store']}d's own store does not hold "
+                 f"{check['of']}: {len(rows)} row(s) for `{check['sql']}` "
+                 f"(needed {wanted})")
+            ev.records.append({"cell": cell, "item": spec["item"],
+                               "store": check["store"], "of": check["of"],
+                               "sql": check["sql"], "rows": len(rows),
+                               "read_at_step": ev.n, "sample": rows[:1]})
+    observed = ev.substitutions.setdefault(cell, {})
+    # Every substitution registered for an item this cell proves — and, on
+    # top of that, every substitution that leaves a POSITIVE TRACE of its own,
+    # whether or not the registry maps it to anything here. That is what makes
+    # deleting a mapping useless: the trace is still in the daemon's store and
+    # the item that would have to account for it no longer does.
+    probed = {s for item in items for s in _substitutions_for(item)}
+    probed |= {sid for sid, spec in SUBSTITUTIONS.items()
+               if spec.get("stands_in_when") == "rows"}
+    for sid in sorted(probed if items else set()):
+        probe = _probe_stands_in(sid, ev, cell, byom, kovee)
+        observed[sid] = probe["stood_in"]
+        ev.probes.append(probe)
+        if probe["stood_in"] and \
+                SUBSTITUTIONS[sid].get("stands_in_when") == "rows":
+            need(any(item in SUBSTITUTIONS[sid]["items"] for item in items),
+                 f"{cell} left the trace of {sid!r} in a daemon's own store "
+                 f"and no plan-§8 item this cell proves accounts for it: a "
+                 f"substitution nobody declares is a substitution nobody "
+                 f"reports")
+    ev.step(f"the coverage evidence for this cell, READ BACK from the "
+            f"daemons' own stores: "
+            f"{len([r for r in ev.records if r['cell'] == cell])} record(s) "
+            f"for {len(items)} plan-§8 item(s), and every substitution "
+            f"registered for them PROBED rather than annotated — what stood "
+            f"in is what the probes found",
+            cell=cell, items=items,
+            records=[{"item": r["item"], "of": r["of"], "rows": r["rows"]}
+                     for r in ev.records if r["cell"] == cell],
+            stood_in={s: observed[s] for s in sorted(observed)})
+
+
+def coverage_validator_self_test(ev: Evidence) -> None:
+    """The coverage VALIDATOR, held to its own failure modes.
+
+    R3-I01 confirmation: "positive coverage stayed green after deleting the
+    step validation, the written-by-this-run validation or the non-empty
+    validation". Nothing tested the validator — only the thing it validates —
+    so each check could be removed without a single case going red.
+
+    This is that test. It builds, on a THROWAWAY Evidence under this mode's
+    own directory, the minimum that would satisfy `plan_coverage` for one
+    cell, and then five DEFICIENT versions of it. Only the complete one may
+    be certified; each deficiency must be refused, or reported as not covered
+    where that is the honest answer. Deleting any one check in
+    `plan_coverage` turns one of these green.
+
+    The fabricated evidence exists ONLY so those refusals can be observed. It
+    is written into its own Evidence object and never enters this run's own
+    records: the mode's real coverage still comes from the live daemons in
+    [`coverage_evidence`], which is the whole point of the map."""
+    cell = "governed-loop"
+    items = [spec for spec in PLAN_8_I1_ITEMS if cell in spec["proofs"]]
+
+    def satisfying(label: str) -> Evidence:
+        """Everything `plan_coverage` demands for `cell`, and nothing more."""
+        probe = Evidence(f"{ev.test_id}/coverage-validator-{label}")
+        probe.namespace(cell)
+        probe.substitutions[cell] = {}
+        for spec in items:
+            proof = spec["proofs"][cell]
+            probe.step(proof["step"])
+            for name in proof["artifacts"]:
+                if f"{cell}/{name}" not in probe._written:
+                    probe.blob(name, "{}\n")
+            for check in proof["records"]:
+                probe.records.append({
+                    "cell": cell, "item": spec["item"],
+                    "store": check["store"], "of": check["of"],
+                    "sql": check["sql"], "rows": 1,
+                    "read_at_step": probe.n, "sample": []})
+            for sid in _substitutions_for(spec["item"]):
+                probe.substitutions[cell][sid] = True
+        return probe
+
+    subject = items[0]["item"]
+    cases = []
+
+    def case(label: str, damage, expect: str, because: str):
+        probe = satisfying(label)
+        damage(probe)
+        try:
+            rows = plan_coverage(probe, {cell: f"the validator's own {label}"})
+            got = next(r["status"] for r in rows
+                       if r["plan_8_I1_item"] == subject)
+            detail = json.dumps(got)
+        except Fail as refusal:
+            got, detail = "REFUSED", str(refusal)
+        finally:
+            probe.close()
+        need(got == expect,
+             f"the coverage validator's self-test {label!r}: expected "
+             f"{expect}, got {got} — {because}. Detail: {detail[:500]}")
+        cases.append({"case": label, "expected": expect, "got": got,
+                      "why": because, "detail": detail[:300]})
+
+    def drop_step(probe: Evidence):
+        probe.titles = [(c, t) for c, t in probe.titles
+                        if items[0]["proofs"][cell]["step"] not in t]
+
+    def unregister_artifact(probe: Evidence):
+        # The file is on disk, but THIS run did not write it.
+        probe._written.pop(
+            f"{cell}/{items[0]['proofs'][cell]['artifacts'][0]}")
+
+    def empty_artifact(probe: Evidence):
+        (probe.dir / cell
+         / items[0]["proofs"][cell]["artifacts"][0]).write_text("")
+
+    def drop_records(probe: Evidence):
+        probe.records = [r for r in probe.records if r["item"] != subject]
+
+    def drop_probe_result(probe: Evidence):
+        # The proof for the ATTENTION item declares a stand-in; a run whose
+        # probes found none of it must not be certified either way.
+        probe.substitutions[cell]["scenario-attention-trigger"] = False
+
+    case("complete", lambda probe: None, "exercised",
+         "a claim backed by a printed step, an artifact this run wrote "
+         "non-empty, that item's daemon records and a stand-in state the "
+         "probes agree with is the one thing that may pass")
+    case("step-never-printed", drop_step, "not covered by this mode",
+         "an item whose proving step this cell never printed is not covered "
+         "HERE, and must not be counted as covered anywhere")
+    case("artifact-not-written-by-this-run", unregister_artifact, "REFUSED",
+         "a file this run did not write is a leftover, not evidence")
+    case("artifact-empty", empty_artifact, "REFUSED",
+         "an empty file is presence, not evidence")
+    case("no-daemon-record", drop_records, "REFUSED",
+         "an item whose own rows were never read back out of the daemon that "
+         "committed them is certified by nothing but its own prose")
+    case("stand-in-declared-but-not-observed", drop_probe_result, "REFUSED",
+         "the item list and the probes must agree about what stood in; a "
+         "declaration nothing observed is as wrong as an observation nothing "
+         "declares")
+
+    ev.namespace("coverage-validator")
+    ev.blob("coverage-validator-self-test.json", json.dumps(cases, indent=1))
+    ev.step("the coverage VALIDATOR, driven over its own failure modes: the "
+            "shipped `plan_coverage` was given the minimum that satisfies it "
+            "for one cell and then five DEFICIENT versions — a step the cell "
+            "never printed, an artifact this run did not write, an artifact "
+            "left empty, an item with no daemon record, and a stand-in "
+            "declared that no probe observed. One passes and five are "
+            "refused, so deleting any one of those checks turns a case green. "
+            "Nothing here touches this run's own coverage evidence",
+            cases=cases,
+            refused=[c["case"] for c in cases if c["got"] == "REFUSED"])
+
+
+def _grade(row: dict) -> None:
+    """One item's status, from the proofs that survived: `exercised` if any of
+    them had NOTHING standing in, else SIMULATED reported through the
+    STRONGEST proof — the one with the fewest substitutions. That is what
+    makes a real CLI session supersede its deterministic stand-in: both are
+    simulated (the wire is), but the real session has one fewer thing
+    standing in and the report says so."""
+    if any(not p["simulated"] for p in row["proofs"]):
+        row["status"] = "exercised"
+    elif row["proofs"]:
+        best = min(row["proofs"], key=lambda p: len(p["stood_in"]))
+        row["status"] = "SIMULATED"
+        row["simulated"] = best["simulated"]
+        row["stood_in"] = best["stood_in"]
+
+
 def plan_coverage(ev: Evidence, covered: dict) -> list:
     """This MODE's coverage statement, checked against its OWN evidence.
 
-    `covered` maps the cells this mode ran to how it ran them. For each
-    such cell the item's proof must hold: the step it claims must be one
-    THIS run printed in that cell, and every artifact it names must be a
-    file THIS run wrote and left non-empty. A cell that did nothing cannot
-    be certified — which is exactly what the old string map allowed.
+    `covered` maps the cells this mode ran to how it ran them. For each such
+    cell the item's proof must hold: the step it claims must be one THIS run
+    printed in that cell, every artifact it names must be a file THIS run
+    wrote and left non-empty, and every record the item list demands must
+    have been read back out of the daemon that owns it — by
+    [`coverage_evidence`], in the cell, from a query this file fixes. A cell
+    that did nothing cannot be certified, which is what both earlier versions
+    of this map allowed.
 
     A cell this mode did not run is reported `not covered by this mode`;
-    `mode_all_checks` is where the union has to cover every item. A mode
-    can therefore no longer certify what it did not do, and the gate can no
+    `mode_all_checks` is where the union has to cover every item. A mode can
+    therefore no longer certify what it did not do, and the gate can no
     longer pass with an item nobody did.
 
-    Anything standing in is reported as `simulated` with the reason. That
-    is an honest state and does not fail the mode; an item with a cell but
-    no step or no artifact IS a failure."""
+    What stood in is DERIVED (R3-I01 confirmation): a proof is SIMULATED
+    because a probe found the substitution, not because this file says so,
+    and a proof whose declaration disagrees with the probes is a FAILURE
+    rather than a promotion. Simulation is an honest state and does not fail
+    the mode; an item with a cell but no step, no artifact or no record IS a
+    failure."""
     printed = {}
     for cell, title in ev.titles:
         printed.setdefault(cell, []).append(title)
@@ -4661,6 +5603,14 @@ def plan_coverage(ev: Evidence, covered: dict) -> list:
                "status": "not covered by this mode", "proofs": []}
         for cell in ran:
             proof = spec["proofs"][cell]
+            # A proof that names no records and a proof that declares no
+            # stand-in state are both FAILURES, never quiet promotions: the
+            # confirmation's mutation was to delete exactly such a field.
+            need("records" in proof and "stands_in" in proof,
+                 f"the coverage proof for {item!r} in {cell} is missing "
+                 f"{[k for k in ('records', 'stands_in') if k not in proof]}: "
+                 f"an item with no daemon record, or with nothing said about "
+                 f"what stood in, cannot be certified either way")
             marker = proof.get("step")
             if not any(marker in title for title in printed.get(cell, [])):
                 # This mode ran the cell but not the step that proves this
@@ -4686,24 +5636,60 @@ def plan_coverage(ev: Evidence, covered: dict) -> list:
                     continue
                 artifacts.append({"path": key, "bytes": path.stat().st_size,
                                   "written_at_step": ev._written[key]})
+            # The daemon records for THIS item in THIS cell. A cell that
+            # printed the step and wrote the files but never read a record
+            # back certifies nothing: `coverage_evidence` is what reads them,
+            # and it fails in the cell if a record is not there.
+            facts = [r for r in ev.records
+                     if r["cell"] == cell and r["item"] == item]
+            if len(facts) != len(proof["records"]):
+                missing.append(
+                    f"{item!r}: {cell} read {len(facts)} of "
+                    f"{len(proof['records'])} required daemon record(s) — a "
+                    f"cell certifies an item only by reading that item's own "
+                    f"rows out of the daemon that committed them")
+                ok = False
+            # What stood in, as OBSERVED in this cell, against what the proof
+            # declares. Neither side alone decides: the probes set the status,
+            # and a disagreement is a failure.
+            observed = ev.substitutions.get(cell, {})
+            fired = sorted(sid for sid in _substitutions_for(item)
+                           if observed.get(sid))
+            declared = sorted(proof["stands_in"])
+            unknown = [sid for sid in declared if sid not in SUBSTITUTIONS]
+            if unknown:
+                missing.append(f"{item!r}: {cell} declares substitution(s) no "
+                               f"registry entry defines: {unknown}")
+                ok = False
+            elif declared != fired:
+                missing.append(
+                    f"{item!r}: {cell} declares that "
+                    f"{declared or 'nothing'} stood in, and the probes of "
+                    f"this run found {fired or 'nothing'} — the item list and "
+                    f"the daemons disagree about what actually happened")
+                ok = False
             if not ok:
                 continue
             row["proofs"].append({
                 "cell": cell, "how": covered[cell], "proved_by_step": marker,
                 "proved_by_artifacts": artifacts,
-                "simulated": proof.get("simulated")})
-        real = [p for p in row["proofs"] if not p["simulated"]]
-        if real:
-            row["status"] = "exercised"
-        elif row["proofs"]:
-            row["status"] = "SIMULATED"
-            row["simulated"] = row["proofs"][0]["simulated"]
+                "proved_by_records": [{"store": f["store"], "of": f["of"],
+                                       "sql": f["sql"], "rows": f["rows"],
+                                       "read_at_step": f["read_at_step"]}
+                                      for f in facts],
+                "stood_in": fired,
+                "simulated": ("; ".join(SUBSTITUTIONS[s]["what"]
+                                        for s in fired) or None)})
+        _grade(row)
         rows.append(row)
     need(not missing,
          "plan §8 I1 coverage is not backed by this run's own evidence:\n  "
          + "\n  ".join(missing))
     ev.namespace(None)
     ev.blob(COVERAGE_BLOB, json.dumps(rows, indent=1))
+    ev.blob("plan-8-i1-coverage-probes.json",
+            json.dumps({"daemon_records": ev.records,
+                        "substitution_probes": ev.probes}, indent=1))
     return rows
 
 
@@ -4722,12 +5708,7 @@ def merge_coverage(per_mode: list) -> list:
                 continue
             target["proofs"] += row.get("proofs", [])
     for row in merged.values():
-        real = [p for p in row["proofs"] if not p["simulated"]]
-        if real:
-            row["status"] = "exercised"
-        elif row["proofs"]:
-            row["status"] = "SIMULATED"
-            row["simulated"] = row["proofs"][0]["simulated"]
+        _grade(row)
     return list(merged.values())
 
 
@@ -4747,8 +5728,10 @@ def print_coverage(rows: list, heading: str):
           f"{len(simulated)} are SIMULATED and {len(absent)} are not "
           f"covered here.")
     for row in simulated:
-        print(f"    - SIMULATED: {row['plan_8_I1_item']}\n"
-              f"      what stands in: {row['simulated']}")
+        print(f"    - SIMULATED ({', '.join(row.get('stood_in') or [])}): "
+              f"{row['plan_8_I1_item']}\n"
+              f"      what stood in: {row['simulated']}")
+
 
 def mode_scripted() -> int:
     ev = Evidence("i1-flow-scripted")
@@ -4787,6 +5770,7 @@ def mode_scripted() -> int:
         daemon_egress_cell(ev)
         onboarding_compute_cell(ev)
         oracle_self_test(ev)
+        coverage_validator_self_test(ev)
         rows = plan_coverage(ev, {
             "governed-loop": "exercised live in this run",
             "continuation-resume": "exercised live in this run",
@@ -4794,16 +5778,22 @@ def mode_scripted() -> int:
             "daemon-egress": "exercised live in this run",
             "onboarding-compute": "exercised live in this run"})
         ev.step("plan §8 I1 coverage, item by item, CHECKED AGAINST THIS "
-                "RUN'S OWN EVIDENCE: every claim above names a step this "
-                "run printed in that cell and artifacts this run wrote and "
-                "left non-empty, so a no-op cell cannot certify anything. "
-                "The two ATTACHED execution paths are not in this mode at "
-                "all and are reported as such; they are covered by "
-                "`--attached-path <which>` and, for real, by "
-                "`--harness <which>`. Everything still standing in is "
-                "named as SIMULATED with its reason and is NOT counted as "
-                "covered",
-                coverage=rows)
+                "RUN'S OWN EVIDENCE: every claim above names a step this run "
+                "printed in that cell, artifacts this run wrote and left "
+                "non-empty, and — the part a no-op cannot fake — the ROWS "
+                "that item left in byomd's or koveed's own store, read back "
+                "out of the daemon that committed them by a query the item "
+                "table fixes. The two ATTACHED execution paths are not in "
+                "this mode at all and are reported as such; they are covered "
+                "by `--attached-path <which>` and, for real, by `--harness "
+                "<which>`. What stood in is what this run's PROBES found — "
+                "kovee's own attempt row on the recording wire, the harness "
+                "processes this run launched, the code absent from the pinned "
+                "tree — never an annotation: a SIMULATED item is named with "
+                "what stood in and is NOT counted as covered",
+                coverage=rows,
+                daemon_records_read=len(ev.records),
+                substitution_probes=len(ev.probes))
         print_coverage(rows, "i1-flow-scripted: plan §8 I1 coverage "
                              "(this mode):")
         print(f"i1-flow-scripted: PASS ({ev.n} steps; evidence "
@@ -5305,6 +6295,13 @@ class HarnessAgent:
             os.killpg(proc.pid, signal.SIGKILL)
             stdout, stderr = proc.communicate()
         leaked = self.release_group(proc.pid)
+        # A REAL CLI process ran, in this cell: the fact the coverage probe
+        # for "the CLI session stood in" reads. Recorded before this method
+        # can fail, because a session that ran and failed still ran.
+        CLI_SESSIONS.append({"cell": self.ev.ns, "which": self.which,
+                             "session": n, "tool": tool, "pid": proc.pid,
+                             "exit": proc.returncode, "argv0": argv[0],
+                             "timed_out": timed_out})
         wire = wire_report(logs["byom"], tool)
         wire["stdout"] = stdout
         self.ev.blob(f"{stem}.txt", "\n".join([
@@ -5885,8 +6882,20 @@ class OracleProbe(HarnessAgent):
         return wire
 
     def recover(self, tool: str, args: dict) -> dict:
+        """The production selection path, over this case's ledger.
+
+        R3-I04 confirmation: this used to record the mark and return, so the
+        SECOND request-identity filter — the one in `HarnessAgent.last()`,
+        which decides WHICH event a step's result is recovered FROM — was
+        never executed by any deterministic test, and deleting it left the
+        whole self-test green. `last()` is the shipped method; the cases
+        below assert which event it picked, so removing its filter turns one
+        of them red."""
+        event = self.last(HARNESS_EFFECT[tool])
         self.recovered = {"tool": tool, "correlation": self.correlation,
-                          "mark": self.mark}
+                          "mark": self.mark,
+                          "recovered_event": event["event_id"],
+                          "recovered_object": event["object_ref"]}
         return {"result": self.recovered}
 
 
@@ -5930,7 +6939,8 @@ def oracle_self_test(ev: Evidence) -> None:
     cases = []
 
     def case(label: str, wires: list, after: list, expect: str,
-             because: str, before: list | None = None):
+             because: str, before: list | None = None,
+             recovers: str | None = None, sessions: int | None = None):
         probe = OracleProbe(ev, label, wires, before or [], after)
         try:
             probe.one(tool, args)
@@ -5940,8 +6950,28 @@ def oracle_self_test(ev: Evidence) -> None:
         need(got == expect,
              f"oracle self-test {label!r}: expected {expect}, got {got} — "
              f"{because}. Detail: {detail[:700]}")
+        if recovers is not None:
+            # WHICH event the production `last()` selected, not merely that
+            # something was recovered (R3-I04 confirmation).
+            need((probe.recovered or {}).get("recovered_event") == recovers,
+                 f"oracle self-test {label!r}: the step's result must be "
+                 f"recovered from {recovers}, the event THIS call committed, "
+                 f"and `HarnessAgent.last()` returned "
+                 f"{(probe.recovered or {}).get('recovered_event')} — "
+                 f"{because}")
+        if sessions is not None:
+            # HOW the case ended, not merely that it ended red: a step whose
+            # own effect byomd never committed is RETRIED to the bound, and a
+            # gate that stopped retrying stopped distinguishing "this call
+            # did nothing" from "some other call did something".
+            need(probe.sessions == sessions,
+                 f"oracle self-test {label!r}: {sessions} session(s) had to "
+                 f"run and {probe.sessions} did — {because}")
         cases.append({"case": label, "expected": expect, "got": got,
                       "sessions": probe.sessions, "why": because,
+                      "recovered_from": (probe.recovered or {}).get(
+                          "recovered_event"),
+                      "required_recovery": recovers,
                       "detail": detail[:400]})
 
     # The one case that must PASS: the exact bytes, and byomd holding the
@@ -5949,7 +6979,36 @@ def oracle_self_test(ev: Evidence) -> None:
     case("exact-call-recovers", [[(exact, False)]],
          [mine("exact-call-recovers")], "RECOVERED",
          "the session sent the exact bytes and byomd holds the event that "
-         "call committed, so the step is done")
+         "call committed, so the step is done",
+         recovers="evt-exact-call-recovers")
+
+    # R3-I04 confirmation: the two request-identity filters, each killed by
+    # its own case. Removing BOTH used to leave every case green — the
+    # refusal cases stayed red through an independent short-circuit, and
+    # nothing deterministic ever ran production `last()` at all.
+    #
+    # The first filter is in `one()`: it decides whether byomd committed the
+    # effect of THIS call. Here the exact bytes went out and were accepted,
+    # and the only event on the ledger belongs to some other call — so no
+    # event of this step exists and the step must fail, bounded retries and
+    # all. Without the filter the other call's event passes this step.
+    case("exact-success-plus-unrelated-event-only-is-red",
+         [[(exact, False)]] * HarnessAgent.ATTEMPTS, [someone_else], "RED",
+         "byomd holds no event correlated to THIS call, and a same-kind "
+         "event some other call committed is not this step's effect — which "
+         "is a step this session did not perform, so it is retried to the "
+         "bound rather than answered by the other call's event",
+         sessions=HarnessAgent.ATTEMPTS)
+
+    # The second filter is in `last()`: having established that this call's
+    # event exists, recovery must read THAT event and not merely the newest
+    # one of its kind. Both are on the ledger here, the unrelated one last.
+    case("recovery-reads-this-calls-event", [[(exact, False)]],
+         [mine("recovery-reads-this-calls-event"), someone_else],
+         "RECOVERED",
+         "the result of a step is recovered from the event this call "
+         "committed; the newest same-kind event belongs to another call",
+         recovers="evt-recovery-reads-this-calls-event")
 
     # R3-I04(a). The event is even correlated to this call — the ONLY thing
     # that makes this red is the byte comparison.
@@ -5995,19 +7054,33 @@ def oracle_self_test(ev: Evidence) -> None:
          before=[mine("pre-mark-event-is-red")])
 
     ev.blob("oracle-self-test.json", json.dumps(cases, indent=1))
+    recovered = [c["case"] for c in cases if c["got"] == "RECOVERED"]
+    red = [c["case"] for c in cases if c["got"] == "RED"]
     ev.step("R3-I04: the real-harness oracle, driven DETERMINISTICALLY over "
             "its own failure modes — the shipped `HarnessAgent.one()`, the "
-            "shipped `wire_report`, the shipped canonical byte comparison "
-            "and the shipped correlation by request identity, with only the "
-            "CLI session and byomd stood in for. Two cases must pass and "
-            "six must go RED, including the two false positives an external "
-            "probe found: a respelled number accepted as the driver's "
-            "argument, and an exact REFUSED invocation masked by an "
-            "unrelated same-kind event after the mark",
+            "shipped `wire_report`, the shipped canonical byte comparison, "
+            "the shipped correlation by request identity AND the shipped "
+            "`last()` that selects the event a step's result comes from, "
+            "with only the CLI session and byomd stood in for. Three cases "
+            "must pass and seven must go RED, including the two false "
+            "positives an external probe found (a respelled number accepted "
+            "as the driver's argument; an exact REFUSED invocation masked by "
+            "an unrelated same-kind event after the mark) and the two the "
+            "confirmation found: BOTH request-identity filters could be "
+            "deleted with every case still green, because the refusal cases "
+            "stayed red through an independent short-circuit and nothing "
+            "deterministic executed the production selection at all",
             cases=cases,
             attempts_before_giving_up=HarnessAgent.ATTEMPTS,
-            recovered=[c["case"] for c in cases if c["got"] == "RECOVERED"],
-            red=[c["case"] for c in cases if c["got"] == "RED"])
+            recovered=recovered, red=red,
+            filters_locked_by=["exact-success-plus-unrelated-event-only-is-red"
+                               " (HarnessAgent.one)",
+                               "recovery-reads-this-calls-event"
+                               " (HarnessAgent.last)"])
+    need(len(recovered) == 3 and len(red) == 7,
+         f"the oracle self-test is a fixed matrix: 3 recoveries and 7 "
+         f"refusals, not {len(recovered)}/{len(red)} — a case that stopped "
+         f"running is a case that stopped locking anything")
 
 
 
