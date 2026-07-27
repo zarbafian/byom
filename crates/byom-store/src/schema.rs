@@ -1361,7 +1361,23 @@ ALTER TABLE execution_consumption_receipts
     ADD COLUMN semantic_request_digest TEXT;
 "#;
 
-const MIGRATIONS: [&str; 10] = [V1, V2, V3, V4, V5, V6, V7, V8, V9, V10];
+/// V11 (R3-A04, second wave): the two host-owned members of the L01 binding
+/// fragment, retained on the receipt.
+///
+/// `host_effect_external_idempotency_key` and `host_effect_request_byte_digest`
+/// joined the wire in the L01 wave and never joined the frozen
+/// semantic-request set, so changing either on a consumed request replayed the
+/// old receipt. They are covered by the frozen digest now; these columns are
+/// what let a refusal NAME which of them changed, exactly as every other
+/// retained member does.
+const V11: &str = r#"
+ALTER TABLE execution_consumption_receipts
+    ADD COLUMN host_effect_external_idempotency_key TEXT;
+ALTER TABLE execution_consumption_receipts
+    ADD COLUMN host_effect_request_byte_digest TEXT;
+"#;
+
+const MIGRATIONS: [&str; 11] = [V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11];
 
 #[derive(Debug, thiserror::Error)]
 pub enum SchemaError {

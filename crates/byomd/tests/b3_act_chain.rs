@@ -944,6 +944,54 @@ fn a_substituted_disclosure_cannot_consume_the_permit() {
         act_context_digest(),
         "and its committed digest: {consumed}"
     );
+
+    // -- and the RENDERING SOURCE, which no wire probe can see -------------
+    //
+    // Every echo above is proved equal to the committed pair before anything
+    // is rendered, so "rendered from the row" and "rendered from the request"
+    // produce identical bytes on every request that gets this far: the
+    // confirmation replaced the rendering source with the request's echoes and
+    // this test stayed green. What is rendered now comes off ONE value whose
+    // only constructor takes byom's committed `act_intents` row, and this is
+    // that value answering a row that agrees with no request at all.
+    use byomd::act_ops::CommittedActBinding;
+    let mut row = serde_json::Map::new();
+    row.insert("intent_id".into(), json!("act-rendered-1"));
+    row.insert("stable_execution_key".into(), json!("exec-act-rendered-1"));
+    row.insert(
+        "context_manifest_ref".into(),
+        json!("kovee-context-committed-only"),
+    );
+    row.insert("context_manifest_digest".into(), portable_digest(0x71));
+    row.insert(
+        "disclosure_manifest_ref".into(),
+        json!("kovee-disclosure-committed-only"),
+    );
+    row.insert("disclosure_manifest_digest".into(), portable_digest(0x72));
+    let committed = CommittedActBinding::from_committed_intent(&row);
+    assert_eq!(
+        committed.context_manifest_ref(),
+        "kovee-context-committed-only",
+        "the rendered context ref is the row's `context_manifest_ref` column"
+    );
+    assert_eq!(
+        committed.context_digest(),
+        &portable_digest(0x71),
+        "the rendered context digest is the row's `context_manifest_digest` column"
+    );
+    assert_eq!(
+        committed.disclosure_manifest_ref(),
+        "kovee-disclosure-committed-only",
+        "the rendered disclosure ref is the row's `disclosure_manifest_ref` column"
+    );
+    assert_eq!(
+        committed.disclosure_digest(),
+        &portable_digest(0x72),
+        "the receipt's rendered disclosure digest is the row's \
+         `disclosure_manifest_digest` column, never the caller's echo"
+    );
+    assert_eq!(committed.intent_ref(), "act-rendered-1");
+    assert_eq!(committed.stable_execution_key(), "exec-act-rendered-1");
 }
 
 /// R3-A02: the permit is bound to one exact REGISTERED host Effect. The
@@ -1234,10 +1282,52 @@ fn act_finalization_locks_the_exact_active_position_revisions() {
         .is_none(),
         "and no decision was formed over the invalidated position"
     );
+    // (d) An EDITED lock. The locks are not a side note beside the decision:
+    // they are inside the decision's own immutable record digest, so a stored
+    // row whose `position_locks` were rewritten cannot resolve at all. The
+    // confirmation removed the member from that preimage and this test stayed
+    // green, because nothing ever edited the column.
+    let edited_act = f.authorized_act("a5", "model_egress", BROKER);
+    let decision = format!("dec-act-{}", edited_act.intent_id);
+    let honest_locks = f
+        .row(
+            "SELECT position_locks FROM governance_decisions WHERE decision_id = ?1",
+            &decision,
+        )
+        .expect("the act authorization decision");
+    let mut forged: Value = serde_json::from_str(&honest_locks).unwrap();
+    forged[0]["position_digest"] = test_digest(0x99);
+    assert_ne!(
+        forged.to_string(),
+        honest_locks,
+        "the probe must actually change the locks"
+    );
+    f.execute(
+        "UPDATE governance_decisions SET position_locks = ?2 WHERE decision_id = ?1",
+        &[&decision, &forged.to_string()],
+    );
+    let reply = consume(&f, &edited_act, &episode, &c, "p4");
+    assert_eq!(kind_of(&reply), "decision_incomplete", "{reply}");
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("re-derive its own digest"),
+        "the locks are covered BY the decision's record digest, so an edited lock breaks \
+         the decision rather than being believed: {reply}"
+    );
+    // Restored, the same act consumes: the refusal was the edit's doing.
+    f.execute(
+        "UPDATE governance_decisions SET position_locks = ?2 WHERE decision_id = ?1",
+        &[&decision, &honest_locks],
+    );
+    let ok = consume(&f, &edited_act, &episode, &c, "p5");
+    assert_eq!(ok["outcome"], "ok", "{ok}");
+
     assert_eq!(
         f.count("SELECT COUNT(*) FROM execution_consumption_receipts"),
-        1,
-        "only the honest consumption minted a receipt"
+        2,
+        "only the honest consumptions minted receipts"
     );
 }
 
@@ -1300,10 +1390,20 @@ fn every_changed_member_of_a_consumed_request_conflicts() {
         "the event publishes the SAME frozen digest the receipt stores: {consumed}"
     );
 
-    // The mutation matrix: EVERY substantive member, one at a time.
+    // The mutation matrix: EVERY substantive member, one at a time. Driven
+    // BY the frozen set, so a member added to `CONSUME_REQUEST_FIELDS`
+    // without a probe here fails the completeness assertion below — which is
+    // how `host_effect_external_idempotency_key` and
+    // `host_effect_request_byte_digest` joined the wire in the L01 wave and
+    // stayed out of this check for a whole wave.
     let mutations: Vec<(&str, Value)> = vec![
         ("host_effect_ref", json!("kovee-effect-other")),
         ("host_effect_digest", portable_digest(0x0f)),
+        (
+            "host_effect_external_idempotency_key",
+            json!("kovee-model-other-0f0f0f0f0f0f0f0f"),
+        ),
+        ("host_effect_request_byte_digest", portable_digest(0x0f)),
         ("context_manifest_ref", json!("context-other")),
         ("context_digest", portable_digest(0xc9)),
         ("disclosure_manifest_ref", json!("disclosure-other")),
@@ -1314,6 +1414,39 @@ fn every_changed_member_of_a_consumed_request_conflicts() {
         ("byom_fence_epoch", json!(c.byom_fence_epoch + 1)),
         ("host_fence_epoch", json!(c.kovee_invocation_fence + 1)),
     ];
+    // Completeness, machine-checked: `stable_execution_key` and `intent_ref`
+    // are answered EARLIER and more strongly (a different one-shot key can
+    // never claim the spent decision; a different intent is a different row),
+    // so they are named here rather than probed below. Every other frozen
+    // member has a probe.
+    let structurally_covered = ["stable_execution_key", "intent_ref"];
+    let probed: Vec<&str> = mutations.iter().map(|(name, _)| *name).collect();
+    for member in byomd::act_ops::CONSUME_REQUEST_FIELDS {
+        assert!(
+            probed.contains(&member) || structurally_covered.contains(&member),
+            "{member} is a frozen semantic-request member with no mutation probe: a member \
+             added to the wire and not to this matrix is exactly how the L01 wave reopened \
+             R3-A04"
+        );
+    }
+    // ...and the earlier, stronger answers, so "covered" is not an excuse.
+    let mut rekeyed = probe_body(&f, &act, &episode, &c, "r-key");
+    rekeyed["meta"]["expected_revision"] = json!(act.revision + 1);
+    rekeyed["stable_execution_key"] = json!("exec-key-somebody-elses");
+    assert_eq!(
+        kind_of(&f.consume_signed(&token, &rekeyed)),
+        "stale_revision",
+        "a different one-shot key can never claim the spent decision"
+    );
+    let mut reintended = probe_body(&f, &act, &episode, &c, "r-intent");
+    reintended["meta"]["expected_revision"] = json!(act.revision + 1);
+    reintended["intent_ref"] = json!("act-somebody-elses");
+    assert_ne!(
+        f.consume_signed(&token, &reintended)["outcome"],
+        json!("ok"),
+        "a different intent is a different row, never this receipt"
+    );
+
     for (member, value) in mutations {
         let mut changed = probe_body(&f, &act, &episode, &c, &format!("r-{member}"));
         changed["meta"]["expected_revision"] = json!(act.revision + 1);
@@ -1357,6 +1490,331 @@ fn every_changed_member_of_a_consumed_request_conflicts() {
     );
     assert_eq!(f.count("SELECT COUNT(*) FROM mandate_uses"), 1);
     assert!(f.ledger().conserves(), "{:?}", f.ledger());
+
+    // -- the STORED digest is what the replay is compared against ---------
+    //
+    // Every probe above changes the request, so a "committed" side that is
+    // RECOMPUTED from the receipt row answers them identically — which is why
+    // restoring the recompute left this test green. The discriminator is a
+    // byte-identical request against an EDITED commitment: with the stored
+    // value load-bearing it is refused, and a recompute cannot see it at all
+    // because it never reads the column.
+    let honest = stored_digest.clone();
+    let mut edited = honest.clone();
+    edited["value_hex"] = json!("a".repeat(64));
+    f.execute(
+        "UPDATE execution_consumption_receipts SET semantic_request_digest = ?2
+           WHERE stable_execution_key = ?1",
+        &[&act.stable_execution_key, &edited.to_string()],
+    );
+    let mut identical = probe_body(&f, &act, &episode, &c, "r-edited");
+    identical["meta"]["expected_revision"] = json!(act.revision + 1);
+    let reply = f.consume_signed(&token, &identical);
+    assert_eq!(
+        kind_of(&reply),
+        "idempotency_mismatch",
+        "an EDITED frozen commitment must not serve a replay: the stored digest is the \
+         value the presentation is compared against, not a second recomputation: {reply}"
+    );
+    assert!(
+        reply["problem"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("STORED frozen digest"),
+        "the refusal says which side moved: {reply}"
+    );
+    // A receipt with NO commitment cannot serve one either.
+    f.execute(
+        "UPDATE execution_consumption_receipts SET semantic_request_digest = NULL
+           WHERE stable_execution_key = ?1",
+        &[&act.stable_execution_key],
+    );
+    let mut orphaned = probe_body(&f, &act, &episode, &c, "r-null");
+    orphaned["meta"]["expected_revision"] = json!(act.revision + 1);
+    assert_ne!(
+        f.consume_signed(&token, &orphaned)["outcome"],
+        json!("ok"),
+        "a receipt that carries no frozen commitment cannot answer a replay"
+    );
+    // Restored: the honest commitment replays again, so the refusals above
+    // are the commitment's doing and not a poisoned fixture.
+    f.execute(
+        "UPDATE execution_consumption_receipts SET semantic_request_digest = ?2
+           WHERE stable_execution_key = ?1",
+        &[&act.stable_execution_key, &honest.to_string()],
+    );
+    let mut restored = probe_body(&f, &act, &episode, &c, "r-restored");
+    restored["meta"]["expected_revision"] = json!(act.revision + 1);
+    let reply = f.consume_signed(&token, &restored);
+    assert_eq!(reply["result"]["replayed"], true, "{reply}");
+}
+
+/// **R3-L01, the frozen member set — the guard, not its happy path.**
+///
+/// The member check lived inline in the deriver, guarding a fragment the
+/// deriver itself composes, so deleting it changed nothing observable and all
+/// thirteen act tests stayed green. It is a named function now, and this is
+/// what it is for: a preimage with one member more or one member fewer than
+/// the set kovee published is not digestible AT ALL, because a one-sided member
+/// change silently moves bytes the other side already verified.
+#[test]
+fn the_frozen_binding_member_set_is_the_only_digestible_shape() {
+    use byomd::act_ops::{check_frozen_binding_members, HOST_EFFECT_BINDING_FIELDS};
+
+    let (_, _, honest) = host_effect_binding(
+        "kovee-effect-1",
+        "act-1",
+        "exec-act-1",
+        act_context_ref("a1").as_str(),
+        &act_context_digest(),
+        act_disclosure_ref("a1").as_str(),
+        &act_disclosure_digest(),
+        REQUEST_BYTES,
+    );
+    check_frozen_binding_members(&honest).expect("kovee's own fragment shape is digestible");
+
+    // One member MORE — the shape kovee would have to publish for this to be
+    // honest, and has not.
+    let mut widened = honest.clone();
+    widened.as_object_mut().unwrap().insert(
+        "provider_ref".to_owned(),
+        json!("kovee-provider-somebody-elses"),
+    );
+    let refused = check_frozen_binding_members(&widened)
+        .expect_err("a widened preimage must not be digestible");
+    assert!(
+        format!("{refused:?}").contains("frozen member set"),
+        "{refused:?}"
+    );
+    // One member FEWER, for each of the nine in turn: dropping any of them
+    // makes the remaining preimage a different fragment under the same tag.
+    for member in HOST_EFFECT_BINDING_FIELDS {
+        let mut narrowed = honest.clone();
+        narrowed.as_object_mut().unwrap().remove(member);
+        assert!(
+            check_frozen_binding_members(&narrowed).is_err(),
+            "a preimage without {member} must not be digestible"
+        );
+    }
+}
+
+/// **R3-L01, the source of the six members — the part the wire cannot see.**
+///
+/// `the_host_effect_digest_must_re_derive_from_the_frozen_binding_fragment`
+/// above proves the digest re-derives. It cannot prove WHAT it re-derives
+/// from: the confirmation replaced five of the six committed members with the
+/// caller's echoes and every act test stayed green, because those echoes are
+/// compared for equality a few lines earlier and so can never differ by the
+/// time the deriver runs. No wire probe can distinguish the two sources.
+///
+/// So the deriver is fed directly here, with a committed row and a request
+/// that DISAGREE — the state the production path refuses before it gets this
+/// far, and the only state in which the source is observable.
+#[test]
+fn the_committed_act_binding_reads_only_byoms_own_row() {
+    use bpp_core::ops::ExecutionPermitConsumeRequest;
+    use byomd::act_ops::{verify_host_effect_binding, CommittedActBinding};
+
+    // byom's OWN committed act, as one `act_intents` row.
+    let row = |ctx_ref: &str, ctx: Value, disc_ref: &str, disc: Value, key: &str, id: &str| {
+        let mut intent = serde_json::Map::new();
+        intent.insert("intent_id".into(), json!(id));
+        intent.insert("stable_execution_key".into(), json!(key));
+        intent.insert("context_manifest_ref".into(), json!(ctx_ref));
+        intent.insert("context_manifest_digest".into(), ctx);
+        intent.insert("disclosure_manifest_ref".into(), json!(disc_ref));
+        intent.insert("disclosure_manifest_digest".into(), disc);
+        intent
+    };
+    const ID: &str = "act-committed-1";
+    const KEY: &str = "exec-act-committed-1";
+    const CTX: &str = "kovee-context-committed";
+    const DISC: &str = "kovee-disclosure-committed";
+    let ctx_digest = portable_digest(0xa1);
+    let disc_digest = portable_digest(0xb2);
+    let committed = row(CTX, ctx_digest.clone(), DISC, disc_digest.clone(), KEY, ID);
+    let binding = CommittedActBinding::from_committed_intent(&committed);
+    assert_eq!(binding.stable_execution_key(), KEY);
+
+    // The host's digest, over the fragment byom's ROW describes.
+    let (over_the_row, idempotency_key, _) = host_effect_binding(
+        "kovee-effect-1",
+        ID,
+        KEY,
+        CTX,
+        &ctx_digest,
+        DISC,
+        &disc_digest,
+        REQUEST_BYTES,
+    );
+    // A request whose every echo DISAGREES with that row. In production this
+    // never reaches the deriver; here it is the whole experiment.
+    let request = |host_effect_digest: &Value| {
+        ExecutionPermitConsumeRequest::parse(&json!({
+            "version": "0.2", "op": "execution_permit_consume",
+            "meta": {"request_id": "r", "idempotency_key": "k",
+                     "expected_endpoint_incarnation": "inc",
+                     "expected_recovery_epoch": 0, "expected_revision": 1},
+            "stable_execution_key": "exec-act-echoed-9",
+            "intent_ref": "act-echoed-9",
+            "host_effect_ref": "kovee-effect-1",
+            "host_effect_digest": host_effect_digest,
+            "host_effect_credential": "b".repeat(64),
+            "host_effect_external_idempotency_key": idempotency_key,
+            "host_effect_request_byte_digest": {
+                "class": "portable_public", "algorithm": "sha-256",
+                "value_hex": REQUEST_BYTES,
+            },
+            "context_manifest_ref": "kovee-context-echoed",
+            "context_digest": portable_digest(0x11),
+            "disclosure_manifest_ref": "kovee-disclosure-echoed",
+            "disclosure_digest": portable_digest(0x22),
+            "driver_audience": BROKER,
+            "budget_reservation_set_ref": "rset-1",
+            "byom_fence_epoch": 1, "host_fence_epoch": 1,
+        }))
+        .expect("the probe request parses")
+    };
+    // The digest over BYOM'S ROW verifies, against a request that echoes
+    // something else entirely. A deriver reading the echoes could not accept
+    // this.
+    verify_host_effect_binding(&request(&over_the_row), &binding)
+        .expect("the fragment is rebuilt from byom's committed row, not the request's echoes");
+    // And the digest over the REQUEST'S ECHOES does not. A deriver reading the
+    // echoes could not refuse this.
+    let (over_the_echoes, _, _) = host_effect_binding(
+        "kovee-effect-1",
+        "act-echoed-9",
+        "exec-act-echoed-9",
+        "kovee-context-echoed",
+        &portable_digest(0x11),
+        "kovee-disclosure-echoed",
+        &portable_digest(0x22),
+        REQUEST_BYTES,
+    );
+    let refused = verify_host_effect_binding(&request(&over_the_echoes), &binding)
+        .expect_err("a fragment over the caller's echoes is not byom's committed act");
+    assert!(
+        format!("{refused:?}").contains("kovee-host-effect-binding-v1"),
+        "{refused:?}"
+    );
+
+    // Each of the six, one at a time: change it in the ROW and the honest
+    // digest stops re-deriving. This is what pins WHICH column each member of
+    // the fragment is read from.
+    let variants: Vec<(&str, serde_json::Map<String, Value>)> = vec![
+        (
+            "intent_id",
+            row(
+                CTX,
+                ctx_digest.clone(),
+                DISC,
+                disc_digest.clone(),
+                KEY,
+                "act-committed-2",
+            ),
+        ),
+        (
+            "stable_execution_key",
+            row(
+                CTX,
+                ctx_digest.clone(),
+                DISC,
+                disc_digest.clone(),
+                "exec-act-committed-2",
+                ID,
+            ),
+        ),
+        (
+            "context_manifest_ref",
+            row(
+                "kovee-context-elsewhere",
+                ctx_digest.clone(),
+                DISC,
+                disc_digest.clone(),
+                KEY,
+                ID,
+            ),
+        ),
+        (
+            "context_manifest_digest",
+            row(
+                CTX,
+                portable_digest(0xa2),
+                DISC,
+                disc_digest.clone(),
+                KEY,
+                ID,
+            ),
+        ),
+        (
+            "disclosure_manifest_ref",
+            row(
+                CTX,
+                ctx_digest.clone(),
+                "kovee-disclosure-elsewhere",
+                disc_digest.clone(),
+                KEY,
+                ID,
+            ),
+        ),
+        (
+            "disclosure_manifest_digest",
+            row(
+                CTX,
+                ctx_digest.clone(),
+                DISC,
+                portable_digest(0xb3),
+                KEY,
+                ID,
+            ),
+        ),
+    ];
+    for (column, altered) in variants {
+        let binding = CommittedActBinding::from_committed_intent(&altered);
+        assert!(
+            verify_host_effect_binding(&request(&over_the_row), &binding).is_err(),
+            "{column} is not read from byom's committed row: the fragment still re-derived \
+             after that column moved"
+        );
+    }
+}
+
+/// **R3-A04, the cross-fix regression itself.** `CONSUME_REQUEST_FIELDS` is a
+/// hand-listed set, and the L01 wave added two wire members without extending
+/// it — so a consumed request could change what `host_effect_digest` was the
+/// digest OF and still replay. A hand-listed set is only safe if something
+/// notices when the wire outgrows it, so the frozen shape and the semantic set
+/// are compared against each other here: every wire member is either semantic
+/// or explicitly transport, and nothing is both or neither.
+#[test]
+fn the_frozen_semantic_set_covers_every_wire_member() {
+    let schema: Value = serde_json::from_str(CONSUME_REQUEST_SCHEMA).unwrap();
+    let semantic = byomd::act_ops::CONSUME_REQUEST_FIELDS;
+    let transport = byomd::act_ops::CONSUME_REQUEST_TRANSPORT;
+    let wire: Vec<String> = schema["properties"]
+        .as_object()
+        .expect("the frozen request shape names its members")
+        .keys()
+        .cloned()
+        .collect();
+    assert!(wire.len() >= semantic.len(), "{wire:?}");
+    for member in &wire {
+        let is_semantic = semantic.contains(&member.as_str());
+        let is_transport = transport.contains(&member.as_str());
+        assert!(
+            is_semantic ^ is_transport,
+            "{member} is a wire member that is neither frozen as semantic nor declared as \
+             transport (or is both): a member the replay comparison does not cover can be \
+             changed on a consumed request and still replay (R3-A04)"
+        );
+    }
+    for member in semantic.iter().chain(transport.iter()) {
+        assert!(
+            wire.contains(&(*member).to_owned()),
+            "{member} is named by byom's frozen sets but is not a member of the wire shape"
+        );
+    }
 }
 
 /// R3-L01 / D-R3-3: A8 holds in BOTH directions on this request — checked

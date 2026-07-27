@@ -1415,6 +1415,23 @@ pub fn execution_permit_consume(
                 ));
             }
             if !presented_digest.same_ref_json(&stored_digest) {
+                // A byte-identical request whose digest still disagrees with
+                // the STORED one means the retained commitment is not the one
+                // this consumption wrote — an edited receipt row, not a
+                // changed request. It is refused for the same reason: the
+                // replay answers from byom's own commitment or not at all. A
+                // recomputed "committed" side cannot tell these two apart,
+                // because it never reads the commitment.
+                let why = if differing.is_empty() {
+                    "no presented member differs from the retained receipt, so the STORED frozen \
+                     digest is not the one this consumption committed: an edited commitment does \
+                     not serve a replay"
+                        .to_owned()
+                } else {
+                    format!(
+                        "these members differ from the consumption byom committed: {differing:?}"
+                    )
+                };
                 return Err(Problem::new(
                     ProblemKind::IdempotencyMismatch,
                     "same one-shot key, different canonical request",
@@ -1422,8 +1439,7 @@ pub fn execution_permit_consume(
                 .with_status(409)
                 .with_detail(format!(
                     "only the identical semantic request replays to the retained receipt (§13.1 \
-                     step 6); these members differ from the consumption byom committed: \
-                     {differing:?}"
+                     step 6); {why}"
                 )));
             }
             return Ok(Prepared {
@@ -1468,38 +1484,42 @@ pub fn execution_permit_consume(
         // and the receipted one could differ, with nothing in the record
         // showing it — and the CONTEXT pair was never presented at all, so
         // the act could execute under a context no seat ever saw.
-        let committed_context_ref = rows::str_of(&intent, "context_manifest_ref").to_owned();
-        let committed_context_digest = rows::json_of(&intent, "context_manifest_digest");
+        //
+        // Both the comparison and the later RENDERING read this one value,
+        // whose only constructor is byom's committed row: the confirmation's
+        // mutation replaced the rendering source with the caller's echoes and
+        // nothing noticed, because an echo that reached this point had already
+        // been proved equal. There is no longer an argument to swap.
+        // ONE value, compared AND rendered. The comparison below proves the
+        // caller echoed exactly these, which is what makes rendering them
+        // safe: with the two bound together a rendering that drifts from the
+        // compared value is not expressible, and a comparison that drifts from
+        // the rendered value refuses every substitution probe in
+        // `a_substituted_disclosure_cannot_consume_the_permit`.
+        let committed = CommittedActBinding::from_committed_intent(&intent);
+        let rendered_context_ref = committed.context_manifest_ref().to_owned();
+        let rendered_context_digest = committed.context_digest().clone();
+        let rendered_disclosure_digest = committed.disclosure_digest().clone();
         compare_manifest_binding(
             "context",
             &req_c.context_manifest_ref.clone().unwrap_or_default(),
             &opt_digest(&req_c.context_digest),
-            &committed_context_ref,
-            &committed_context_digest,
+            &rendered_context_ref,
+            &rendered_context_digest,
         )?;
-        let committed_disclosure_ref = rows::str_of(&intent, "disclosure_manifest_ref").to_owned();
-        let committed_disclosure_digest = rows::json_of(&intent, "disclosure_manifest_digest");
         compare_manifest_binding(
             "disclosure",
             &req_c.disclosure_manifest_ref.clone().unwrap_or_default(),
             &opt_digest(&req_c.disclosure_digest),
-            &committed_disclosure_ref,
-            &committed_disclosure_digest,
+            committed.disclosure_manifest_ref(),
+            &rendered_disclosure_digest,
         )?;
         // And the host's own `host_effect_digest` is now DERIVED here, from
         // the very members just compared plus this row's one-shot key, rather
         // than stored because a caller authenticated a tuple containing it
         // (R3-L01, D-R3-3). The registration credential above still proves WHO
         // sent it; this proves WHAT it is the digest of.
-        verify_host_effect_binding(
-            &req_c,
-            &req_c.intent_ref,
-            rows::str_of(&intent, "stable_execution_key"),
-            &committed_context_ref,
-            &committed_context_digest,
-            &committed_disclosure_ref,
-            &committed_disclosure_digest,
-        )?;
+        verify_host_effect_binding(&req_c, &committed)?;
         // The slots the decision locked are still the slots this
         // consumption would execute under: the snapshot is recomputed from
         // the CURRENT active Position revisions and compared with the
@@ -1778,7 +1798,7 @@ pub fn execution_permit_consume(
             // (R3-A01): every authority member the receipt publishes is
             // read out of byom's own row, never copied from the request.
             ("subject_digest", rows::json_of(&intent, "subject_digest")),
-            ("disclosure_digest", committed_disclosure_digest.clone()),
+            ("disclosure_digest", rendered_disclosure_digest.clone()),
             ("driver_audience", json!(req_c.driver_audience)),
             ("participant_ref", json!(participant_ref)),
             ("episode_ref", opt_json(&req_c.episode_ref)),
@@ -1792,6 +1812,18 @@ pub fn execution_permit_consume(
             ),
             ("host_effect_ref", json!(req_c.host_effect_ref)),
             ("host_effect_digest", digest_json(&req_c.host_effect_digest)),
+            // The two host-owned members of the L01 binding fragment
+            // (R3-A04, second wave). They are retained so a refusal can NAME
+            // which of them changed; the comparison itself is against the
+            // frozen digest below, which already covers them.
+            (
+                "host_effect_external_idempotency_key",
+                json!(req_c.host_effect_external_idempotency_key),
+            ),
+            (
+                "host_effect_request_byte_digest",
+                digest_json(&req_c.host_effect_request_byte_digest),
+            ),
             ("byom_fence_epoch", json!(req_c.byom_fence_epoch)),
             ("host_fence_epoch", json!(req_c.host_fence_epoch)),
             // The FROZEN semantic request this receipt was minted for
@@ -1844,8 +1876,8 @@ pub fn execution_permit_consume(
                        // receipt shape is frozen with the consuming host, so
                        // byom's ledger — not the receipt — is where the
                        // committed context binding is published.
-                       "context_manifest_ref": committed_context_ref,
-                       "context_digest": committed_context_digest.clone(),
+                       "context_manifest_ref": rendered_context_ref,
+                       "context_digest": rendered_context_digest,
                        "semantic_request_digest": digest_json(&request_digest),
                        "receipt_ref": receipt_id}),
             )],
@@ -1957,10 +1989,23 @@ fn verify_effect_registration(
 // consumes for byom's `bpp-parent-budget-fragment-v0` parent budget. This is
 // the converse instance of it.
 //
-// byom holds six of the nine members in its own committed ActIntent, takes the
+// byom holds SIX of the nine members in its own committed ActIntent, takes the
 // effect reference from the request, and is handed the two remaining
 // kovee-owned members explicitly. It then re-derives the digest. A digest that
 // does not re-derive is refused before any consumption state changes.
+//
+// The six were originally passed to the deriver as loose `&str`/`&Value`
+// arguments read at the call site, and the confirmation's mutation simply
+// replaced five of them with the caller's echoes — which every act test
+// survived, because the echoes are compared for equality a few lines earlier
+// and so can never differ at this point. The claim "rebuilt from its own
+// committed act" was therefore unfalsifiable from the wire.
+//
+// [`CommittedActBinding`] closes that: its fields are private, its ONLY
+// constructor takes the committed `act_intents` row, and the deriver takes
+// nothing else. There is no call-site argument left to swap for a request
+// echo, and `the_committed_act_binding_reads_only_byoms_own_row` pins which
+// column each member comes from.
 
 /// kovee's `$domain` for the host-effect binding fragment. It is the HOST's
 /// domain, exactly as `bpp-parent-budget-fragment-v0` is byom's: the verifier
@@ -1980,31 +2025,85 @@ pub const HOST_EFFECT_BINDING_FIELDS: [&str; 9] = [
     "stable_execution_key",
 ];
 
-/// Rebuilds the host's fragment from byom's OWN committed act plus the exact
-/// host-owned members presented, and re-derives its `portable_public` digest.
-fn host_effect_binding_digest(
-    req: &ops::ExecutionPermitConsumeRequest,
-    committed_intent_ref: &str,
-    committed_execution_key: &str,
-    committed_context_ref: &str,
-    committed_context_digest: &Value,
-    committed_disclosure_ref: &str,
-    committed_disclosure_digest: &Value,
-) -> Result<(DigestRef, Value), Problem> {
-    let fragment = json!({
-        "context_digest": committed_context_digest,
-        "context_manifest_ref": committed_context_ref,
-        "disclosure_digest": committed_disclosure_digest,
-        "disclosure_manifest_ref": committed_disclosure_ref,
-        "external_idempotency_key": req.host_effect_external_idempotency_key,
-        "final_provider_request_typed_byte_digest":
-            req.host_effect_request_byte_digest.value_hex,
-        "host_effect_ref": req.host_effect_ref,
-        "intent_ref": committed_intent_ref,
-        "stable_execution_key": committed_execution_key,
-    });
-    // The frozen member set, exactly: a member added on one side and not the
-    // other would silently change a preimage the other side already verified.
+/// The SIX fragment members byom holds itself, read out of one committed
+/// `act_intents` row and out of nothing else (R3-L01).
+///
+/// The fields are private and [`CommittedActBinding::from_committed_intent`] is
+/// the only way to make one, so there is no call site at which a caller's echo
+/// can be substituted for byom's own committed value. That substitution — five
+/// of these six replaced by request members — is the mutation every act test
+/// survived, because the echoes are compared for equality earlier and so are
+/// indistinguishable from the row by the time the deriver runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommittedActBinding {
+    intent_ref: String,
+    stable_execution_key: String,
+    context_manifest_ref: String,
+    context_digest: Value,
+    disclosure_manifest_ref: String,
+    disclosure_digest: Value,
+}
+
+impl CommittedActBinding {
+    /// The one constructor: byom's own committed ActIntent row. The column
+    /// each member comes from is pinned by
+    /// `the_committed_act_binding_reads_only_byoms_own_row`.
+    pub fn from_committed_intent(intent: &Map<String, Value>) -> CommittedActBinding {
+        CommittedActBinding {
+            // `intent_id`, not the request's `intent_ref`: the row is the
+            // authority on its own identity even though it was looked up by
+            // that key. The confirmation counted this as the ninth member that
+            // still came through the request.
+            intent_ref: rows::str_of(intent, "intent_id").to_owned(),
+            stable_execution_key: rows::str_of(intent, "stable_execution_key").to_owned(),
+            context_manifest_ref: rows::str_of(intent, "context_manifest_ref").to_owned(),
+            context_digest: rows::json_of(intent, "context_manifest_digest"),
+            disclosure_manifest_ref: rows::str_of(intent, "disclosure_manifest_ref").to_owned(),
+            disclosure_digest: rows::json_of(intent, "disclosure_manifest_digest"),
+        }
+    }
+
+    /// The committed one-shot key.
+    pub fn stable_execution_key(&self) -> &str {
+        &self.stable_execution_key
+    }
+
+    /// The committed act's own identity.
+    pub fn intent_ref(&self) -> &str {
+        &self.intent_ref
+    }
+
+    /// The CONTEXT pair the seats assented to — compared against the
+    /// caller's echo, and RENDERED on the consumption event (R3-A01).
+    pub fn context_manifest_ref(&self) -> &str {
+        &self.context_manifest_ref
+    }
+
+    pub fn context_digest(&self) -> &Value {
+        &self.context_digest
+    }
+
+    /// The DISCLOSURE pair the seats assented to — compared against the
+    /// caller's echo, and RENDERED on the receipt (R3-A01).
+    pub fn disclosure_manifest_ref(&self) -> &str {
+        &self.disclosure_manifest_ref
+    }
+
+    pub fn disclosure_digest(&self) -> &Value {
+        &self.disclosure_digest
+    }
+}
+
+/// The frozen member set, exactly: a member added on one side and not the
+/// other would silently change a preimage the other side already verified, so
+/// neither a widened nor a narrowed fragment may be digested at all.
+///
+/// Extracted so it is REACHABLE (R3-L01 mutation gap). As an inline `if` inside
+/// the deriver it guarded an input the deriver itself composes, so deleting it
+/// changed no observable behaviour and every act test survived. Called out
+/// here, `the_frozen_binding_member_set_is_the_only_digestible_shape` fails
+/// when its body goes.
+pub fn check_frozen_binding_members(fragment: &Value) -> Result<(), Problem> {
     let mut emitted: Vec<&str> = fragment
         .as_object()
         .map(|o| o.keys().map(String::as_str).collect())
@@ -2013,10 +2112,33 @@ fn host_effect_binding_digest(
     emitted.sort_unstable();
     frozen.sort_unstable();
     if emitted != frozen {
-        return Err(state::internal(
-            "the rebuilt host-effect binding fragment is not the frozen member set",
-        ));
+        return Err(state::internal(&format!(
+            "the rebuilt host-effect binding fragment is not the frozen member set: \
+             {HOST_EFFECT_BINDING_TAG} is exactly {frozen:?}, got {emitted:?}"
+        )));
     }
+    Ok(())
+}
+
+/// Rebuilds the host's fragment from byom's OWN committed act plus the exact
+/// host-owned members presented, and re-derives its `portable_public` digest.
+fn host_effect_binding_digest(
+    req: &ops::ExecutionPermitConsumeRequest,
+    committed: &CommittedActBinding,
+) -> Result<(DigestRef, Value), Problem> {
+    let fragment = json!({
+        "context_digest": committed.context_digest,
+        "context_manifest_ref": committed.context_manifest_ref,
+        "disclosure_digest": committed.disclosure_digest,
+        "disclosure_manifest_ref": committed.disclosure_manifest_ref,
+        "external_idempotency_key": req.host_effect_external_idempotency_key,
+        "final_provider_request_typed_byte_digest":
+            req.host_effect_request_byte_digest.value_hex,
+        "host_effect_ref": req.host_effect_ref,
+        "intent_ref": committed.intent_ref,
+        "stable_execution_key": committed.stable_execution_key,
+    });
+    check_frozen_binding_members(&fragment)?;
     let bytes = tagged_canonical(HOST_EFFECT_BINDING_TAG, &fragment)
         .map_err(|e| state::internal(&e.to_string()))?;
     Ok((DigestRef::portable_public(sha256_hex(&bytes)), fragment))
@@ -2025,21 +2147,17 @@ fn host_effect_binding_digest(
 /// Verifies the presented `host_effect_digest` DERIVES from members byom
 /// holds (R3-L01, D-R3-3), inside the consumption transaction where the
 /// committed ActIntent is in hand.
-fn verify_host_effect_binding(
+pub fn verify_host_effect_binding(
     req: &ops::ExecutionPermitConsumeRequest,
-    committed_intent_ref: &str,
-    committed_execution_key: &str,
-    committed_context_ref: &str,
-    committed_context_digest: &Value,
-    committed_disclosure_ref: &str,
-    committed_disclosure_digest: &Value,
+    committed: &CommittedActBinding,
 ) -> Result<(), Problem> {
     // The idempotency key is not a free member: the host derives it from the
     // one-shot key byom minted and the first 16 hex of the request-byte
     // digest, so byom re-derives it too. Without this the only member a
     // caller could still choose freely would be one byom never checks.
     let expected_key = format!(
-        "kovee-model-{committed_execution_key}-{}",
+        "kovee-model-{}-{}",
+        committed.stable_execution_key,
         req.host_effect_request_byte_digest
             .value_hex
             .chars()
@@ -2053,15 +2171,7 @@ fn verify_host_effect_binding(
             req.host_effect_external_idempotency_key
         )));
     }
-    let (expected, fragment) = host_effect_binding_digest(
-        req,
-        committed_intent_ref,
-        committed_execution_key,
-        committed_context_ref,
-        committed_context_digest,
-        committed_disclosure_ref,
-        committed_disclosure_digest,
-    )?;
+    let (expected, fragment) = host_effect_binding_digest(req, committed)?;
     if expected.same_ref(&req.host_effect_digest) {
         Ok(())
     } else {
@@ -2083,15 +2193,28 @@ pub const CONSUME_REQUEST_TAG: &str = "bpp-execution-permit-consume-request-v0";
 /// comparison used to be a hand-listed subset — it omitted the intent
 /// digest, the disclosure pair, the budget set, the episode ref and the
 /// episode fence — so a changed request could replay the old receipt.
-/// Anything outside this list is transport, not semantics:
-/// `meta.request_id`/`idempotency_key` name the attempt, and
-/// `host_effect_credential` is a deterministic function of four members
-/// that are already here (so a changed effect cannot hide behind it).
-pub const CONSUME_REQUEST_FIELDS: [&str; 13] = [
+///
+/// A hand-listed set is also how a LATER wave reopened the hole: R3-L01 added
+/// `host_effect_external_idempotency_key` and
+/// `host_effect_request_byte_digest` to the wire and nobody extended this
+/// list, so changing either on a consumed request replayed the old receipt
+/// again. The list is therefore closed the other way round too — every wire
+/// member of `ExecutionPermitConsumeRequest` is either named here or named in
+/// [`CONSUME_REQUEST_TRANSPORT`], and
+/// `the_frozen_semantic_set_covers_every_wire_member` fails the build's tests
+/// if a new member joins neither.
+///
+/// Anything in `CONSUME_REQUEST_TRANSPORT` is transport, not semantics:
+/// `version`/`op`/`meta` name the attempt, and `host_effect_credential` is a
+/// deterministic function of four members that are already here (so a changed
+/// effect cannot hide behind it).
+pub const CONSUME_REQUEST_FIELDS: [&str; 15] = [
     "stable_execution_key",
     "intent_ref",
     "host_effect_ref",
     "host_effect_digest",
+    "host_effect_external_idempotency_key",
+    "host_effect_request_byte_digest",
     "context_manifest_ref",
     "context_digest",
     "disclosure_manifest_ref",
@@ -2102,6 +2225,12 @@ pub const CONSUME_REQUEST_FIELDS: [&str; 13] = [
     "byom_fence_epoch",
     "host_fence_epoch",
 ];
+
+/// The wire members that are deliberately NOT semantic. Named, not implied:
+/// the pair of lists is what makes "every substantive member" checkable
+/// instead of asserted (R3-A04, second wave).
+pub const CONSUME_REQUEST_TRANSPORT: [&str; 4] =
+    ["version", "op", "meta", "host_effect_credential"];
 
 fn insert_present(fragment: &mut Map<String, Value>, name: &str, value: Value) {
     if !value.is_null() && value != json!("") {
@@ -2124,6 +2253,20 @@ fn presented_semantic_request(req: &ops::ExecutionPermitConsumeRequest) -> Map<S
         &mut fragment,
         "host_effect_digest",
         digest_json(&req.host_effect_digest),
+    );
+    // The two host-owned members of the L01 binding fragment. They are the
+    // only inputs to `host_effect_digest` a caller still chooses, so leaving
+    // them out let a consumed request change what it was the digest OF and
+    // still replay (R3-A04, second wave).
+    insert_present(
+        &mut fragment,
+        "host_effect_external_idempotency_key",
+        json!(req.host_effect_external_idempotency_key),
+    );
+    insert_present(
+        &mut fragment,
+        "host_effect_request_byte_digest",
+        digest_json(&req.host_effect_request_byte_digest),
     );
     insert_present(
         &mut fragment,
@@ -2182,7 +2325,19 @@ fn committed_semantic_request(
     ] {
         insert_present(&mut fragment, name, json!(rows::str_of(receipt, name)));
     }
-    for name in ["host_effect_digest", "disclosure_digest"] {
+    insert_present(
+        &mut fragment,
+        "host_effect_external_idempotency_key",
+        json!(rows::str_of(
+            receipt,
+            "host_effect_external_idempotency_key"
+        )),
+    );
+    for name in [
+        "host_effect_digest",
+        "host_effect_request_byte_digest",
+        "disclosure_digest",
+    ] {
         insert_present(&mut fragment, name, rows::json_of(receipt, name));
     }
     insert_present(

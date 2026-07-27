@@ -1191,6 +1191,8 @@ const TABLES: &[(&str, &[&str])] = &[
             "budget_reservation_set_ref",
             "host_effect_ref",
             "host_effect_digest",
+            "host_effect_external_idempotency_key",
+            "host_effect_request_byte_digest",
             "byom_fence_epoch",
             "host_fence_epoch",
             "semantic_request_digest",

@@ -1922,6 +1922,19 @@ fn settle_subordinate_row(
         return Ok(Value::Null);
     };
     let mut record = rows::json_of(&row, "record");
+    // A row that already carries a terminal keeps the settlement it names: the
+    // measured path settles at `usage_report` and then RELEASES the remainder
+    // at terminalization, and the release must not erase which settlement the
+    // charge came from.
+    let prior = record.get("byom_terminal").cloned().unwrap_or(Value::Null);
+    let keep = |name: &str, given: Option<&str>| -> Value {
+        match given {
+            Some(text) if !text.is_empty() => json!(text),
+            _ => prior.get(name).cloned().unwrap_or(Value::Null),
+        }
+    };
+    let settlement = keep("settlement_ref", settlement_ref);
+    let stable = keep("stable_settlement_key", Some(stable_settlement_key));
     if let Some(map) = record.as_object_mut() {
         map.insert("state".into(), json!(terminal_state));
         map.insert(
@@ -1929,8 +1942,8 @@ fn settle_subordinate_row(
             json!({
                 "state": terminal_state,
                 "charged": charged,
-                "settlement_ref": settlement_ref,
-                "stable_settlement_key": stable_settlement_key,
+                "settlement_ref": settlement,
+                "stable_settlement_key": stable,
                 "settled_at": at,
             }),
         );
@@ -4423,10 +4436,33 @@ pub fn usage_report(
                 table: "external_budget_bridges".into(),
                 row: bridge_row,
             });
+            // **The counterparty row settles HERE (R3-U02, second wave).**
+            //
+            // The charge above and this row used to be written in different
+            // transactions: `usage_report` committed the parent charge and
+            // moved the bridge to `settled`, while the subordinate row stayed
+            // `confirmed` until the LATER `episode_complete`. Between the two
+            // the only committed byom fact naming what the counterparty owed
+            // was the bridge — and a counterparty that queried the reservation
+            // it actually holds saw `confirmed, charged 0`. The charge and the
+            // row that describes it are one transaction now, and `run` commits
+            // this effect list atomically.
+            let counterparty = settle_subordinate_row(
+                conn,
+                &mut effects,
+                &bridge,
+                "settled",
+                charged,
+                Some(&settlement_id),
+                &stable,
+                &created_at,
+            )?;
             settlement_ref = json!(settlement_id);
             settlement_note = json!({"settled": true, "status": "measured",
                                      "settlement_ref": settlement_id,
                                      "charged": charged,
+                                     "subordinate_reservation_ref": counterparty,
+                                     "subordinate_reservation_state": "settled",
                                      "subordinate_reserved": subordinate_reserved,
                                      "reserved_remainder": held - charged});
             events.push(event(
@@ -4440,6 +4476,8 @@ pub fn usage_report(
                 &req_c.meta,
                 json!({"status": "measured", "charged": charged,
                        "meter_ref": req_c.meter_ref,
+                       "subordinate_reservation_ref": counterparty,
+                       "subordinate_reservation_state": "settled",
                        "applied_once_on_both_sides": true}),
             ));
         } else {

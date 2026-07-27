@@ -222,6 +222,49 @@ fn conservation_holds_across_reserve_commit_settle_and_release() {
         .as_deref(),
         Some("settled")
     );
+    // **R3-U02, second wave: the charge and the counterparty row are ONE
+    // transaction.** The charge above and this row used to be written in
+    // different transactions — `usage_report` moved 140 to `committed` and left
+    // the counterparty's row `confirmed`, and only the later
+    // `episode_complete` settled it. Between the two the only committed byom
+    // fact naming what the counterparty owed was the bridge, so a counterparty
+    // that queried the reservation it actually holds was told `confirmed,
+    // charged 0`. `run` commits one effect list, so asserting the row here
+    // asserts the atomicity.
+    assert_eq!(
+        f.row(
+            "SELECT state FROM subordinate_reservations
+             WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1"
+        )
+        .as_deref(),
+        Some("settled"),
+        "the counterparty row must be settled in the SAME transaction as the charge, not \
+         left `confirmed` until terminalization"
+    );
+    assert_eq!(
+        f.number(
+            "SELECT json_extract(record, '$.byom_terminal.charged')
+             FROM subordinate_reservations WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1",
+        ),
+        Some(140),
+        "carrying byom's own committed number"
+    );
+    assert_eq!(
+        f.row(
+            "SELECT json_extract(record, '$.byom_terminal.stable_settlement_key')
+             FROM subordinate_reservations WHERE subordinate_reservation_ref = ?1",
+            "kovee-sub-p1",
+        )
+        .as_deref(),
+        Some("setkey-1"),
+        "and the stable key the counterparty can requery it under"
+    );
+    assert_eq!(
+        settled["result"]["settlement"]["subordinate_reservation_ref"], "kovee-sub-p1",
+        "the reply names the row it settled: {settled}"
+    );
 
     // SettleOnce, two ways. The exact retry replays the stored transition
     // byte-identically (the §15.3 idempotency record)...
