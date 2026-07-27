@@ -10,13 +10,13 @@ the ground rules to `../spec/adr/0003-model-checking.md` (B-ADR-4) and plan
 
 All seven B0.1 sheet models were checked with TLC (exhaustive breadth-first
 over the configured constants, `-deadlock`, `tla2tools.jar` via
-`make -C proof` / `./check.sh <Spec>`) on 2026-07-26, zero errors. None is
-authored-only.
+`make -C proof` / `./check.sh <Spec>`), zero errors. None is authored-only.
+The table below was re-run on 2026-07-28.
 
 | Model | Distinct states | States generated | Graph depth |
 |---|---:|---:|---:|
 | `specs/MembershipOfferStanding.tla` | 93 | 189 | 8 |
-| `specs/Pledge.tla` | 40 | 101 | 14 |
+| `specs/Pledge.tla` | 40 | 102 | 15 |
 | `specs/EpisodeLease.tla` | 513,776 | 3,063,256 | 28 |
 | `specs/ActIntentPermit.tla` | 61 | 116 | 10 |
 | `specs/MandateChain.tla` | 7,988 | 18,011 | 11 |
@@ -24,7 +24,7 @@ authored-only.
 | `specs/AuthorityJournal.tla` | 2,902 | 6,933 | 17 |
 
 C2 adds two models beyond the B0.1 sheet, checked the same way
-(TLC exhaustive, `-deadlock`, zero errors, 2026-07-26):
+(TLC exhaustive, `-deadlock`, zero errors, re-run 2026-07-28):
 
 | Model | Distinct states | States generated | Graph depth |
 |---|---:|---:|---:|
@@ -35,21 +35,34 @@ C2 adds two models beyond the B0.1 sheet, checked the same way
 (state invariants plus `[][...]_vars` action invariants, which are safety);
 no fairness is assumed by any spec. Honest reason: every model treats daemon
 state as durable and a byomd crash as stuttering, and a specification whose
-crashes are stutter steps can promise no progress without fairness
-assumptions on a daemon that does not exist yet. Liveness claims (e.g.
-"every queued Episode eventually terminates or expires") land with byomd's
-sweeper/deadline behavior in B1, with their fairness assumptions stated then,
-akson's `TaskLiveness.tla` being the template for stating them honestly.
+crashes are stutter steps can promise no progress without explicit fairness
+assumptions. None has been written. Liveness claims (e.g. "every queued
+Episode eventually terminates or expires") wait on byomd's sweeper/deadline
+behavior being modeled with its fairness assumptions stated, akson's
+`TaskLiveness.tla` being the template for stating them honestly. The daemon
+now exists, so this is a gap in the models rather than a missing subject.
 
-**Code conformance lands with byomd (applies to every model below).** There
-is no implementation in this repo yet, so there is no code-side conformance
-oracle: the refinement boundary of every model currently stops at the
-committed transition descriptors, checked mechanically by
-`check-descriptors.py` (below). When byomd lands (B1), the ADR-0003
-requirement binds: its pure transition functions must be tied to these
-models in the default workspace test invocation (`cargo test -p bpp-spec`
-per the B0.1 sheet), generated from the descriptor registry where feasible,
-and any hand-transcribed remainder must be flagged here per machine.
+**No code-side conformance oracle exists yet (applies to every model below).**
+`byomd` has landed and implements 85 of the registry's 95 operations, but
+nothing ties its transition functions to these models: the refinement
+boundary of every model still stops at the committed transition descriptors,
+checked mechanically by `check-descriptors.py` (below), and every "the model
+refines the descriptor" claim in this document stops exactly there. What the
+daemon *is* covered by is its own behavioural suite — the `b1_*` and `b3_*`
+integration tests, the crash matrices, and `conformance/run.py --live`, which
+replays the slice-op request vectors against a spawned `byomd`. Those check
+the daemon against the wire and against hand-written expectations, not
+against the models.
+
+ADR-0003's requirement is therefore **open, not satisfied**: the pure
+transition functions must be tied to these models in the default workspace
+test invocation, generated from the descriptor registry where feasible, with
+any hand-transcribed remainder flagged here per machine. Note that the B0.1
+sheet and ADR-0003 both name `cargo test -p bpp-spec` as the invocation;
+**there is no `bpp-spec` crate in this workspace** — the crates are
+`bpp-core`, `byom-store`, `byomd`, `byom-cli` and `byom-mcp`, and descriptor
+parity is enforced by `python3 proof/check-descriptors.py` and
+`python3 conformance/run.py`, both in CI and in `../run-checks.sh`.
 
 ## Checked
 
@@ -77,7 +90,7 @@ are abstracted to the state enums; replays are free (every guard makes the
 exact retry a no-op — the descriptor-level "exact retry returns the same
 receipt" claim). **Refinement boundary**: `membership-offer-standing.json`
 and `onboarding-activation-offer.json` (exact, machine-checked); no code is
-claimed to refine this model yet (see the byomd note above). **Fairness**:
+claimed to refine this model (see the oracle note above). **Fairness**:
 none; safety only. **Coverage**: no constants (fixed small state space); 93
 distinct states, exhaustive.
 
@@ -110,7 +123,7 @@ stuttering, so crash honesty here is exactly the closed-transition property.
 cascade rows (`activity_open`, `delivery_submit`, `review_record`) are
 modeled as this machine's view of those transactions — the owning machines
 are EpisodeLease's ActivityStream and the unmodeled delivery-review
-descriptor; no code yet. **Fairness**: none; safety only. **Coverage**:
+descriptor; no code refines it. **Fairness**: none; safety only. **Coverage**:
 `Seats = {pledgor, terms}`, `MaxResumes = 2`; 40 distinct states,
 exhaustive.
 
@@ -157,7 +170,7 @@ descriptors above (exact, machine-checked); the clock/deadline variables
 are model-side refinements of the descriptor's `server_time` expiry row
 (the descriptor row set is unchanged); Kovee's placement/attention side
 is out of scope (only its committed outcomes — bridge, deny, unknown —
-appear); no code yet. **Fairness**: none; safety only (Tick and expiry
+appear); no code refines it. **Fairness**: none; safety only (Tick and expiry
 are modeled as always possible, never required). **Coverage**:
 `Workers = {w1, w2}`, `MaxFence = 3`, `LeaseTTL = 1`, `MaxTime = 6`;
 513,776 distinct states (3,063,256 generated, depth 28), exhaustive.
@@ -188,7 +201,7 @@ durable, crash = stuttering ("none or recoverable intent", §14.8).
 **Refinement boundary**: `act-intent.json` (exact, machine-checked); the
 EffectOutcomeAdmission/EffectGovernanceDisposition head machinery of §14.8
 is folded into the `succeeded/failed/ambiguous` outcome states — its
-separate-head CAS story is not modeled in B0.1; no code yet. **Fairness**:
+separate-head CAS story is not modeled in B0.1; no code refines it. **Fairness**:
 none; safety only. **Coverage**: `Seats = {participant, human}`,
 `Keys = {k1, k2}`; 61 distinct states, exhaustive.
 
@@ -215,7 +228,7 @@ budgets live in BudgetConservation; `MaxUses = 1` so the last-slot
 consumption IS the exhaustion row; replays disabled by guards; daemon state
 durable, crash = stuttering. **Refinement boundary**: `mandate.json`
 (exact, machine-checked); standing mandates are B0.2 (amendment A7) and are
-not modeled; no code yet. **Fairness**: none; safety only. **Coverage**:
+not modeled; no code refines it. **Fairness**: none; safety only. **Coverage**:
 `Caps = {read, act, human_power}`, `NonDelegable = {human_power}`, chain
 depth 3, `MaxUses = 1`; 7,988 distinct states, exhaustive. The subset
 lattice is complete at this size; the invariants quantify over all chains of
@@ -246,7 +259,7 @@ state durable, crash = stuttering. **Refinement boundary**: none at the
 descriptor layer — BudgetAccount is the §11.4 ledger, not a §14.8 transition
 machine, and B0.1 commits no budget descriptor (`@parity none`, declared to
 the parity checker; the BudgetReservationSet/ExternalBudgetBridge state
-enums land with the runtime slice); no code yet. **Fairness**: none; safety
+enums land with the runtime slice); no code refines it. **Fairness**: none; safety
 only. **Coverage**: `Cap = 3`, `MaxReleased = 4`, amounts 1..2; 600 distinct
 states, exhaustive. The identity is bound-sensitive by nature; lifting it
 beyond fixed `Cap` is the flagged Apalache induction candidate (ADR-0003).
@@ -281,7 +294,7 @@ suite (the named internal transitions `journal_sql_prepare`,
 `journal_witness_cas`, `journal_abandon`, `journal_sql_finalize`; exact,
 machine-checked); the endpoint-incarnation machine itself
 (active/sealed_diagnostic/retired, restore lineage) is folded to the sealed
-flag; no code yet. **Fairness**: none; safety only (in particular, no claim
+flag; no code refines it. **Fairness**: none; safety only (in particular, no claim
 that a witness_unknown transaction is eventually resolved). **Coverage**:
 `T = {t1, t2}`, `MaxGen = 2`; 2,902 distinct states, exhaustive.
 
@@ -363,10 +376,17 @@ terminator: the descriptor file(s) it models, its states, and its
 into `../run-checks.sh`) compares those blocks against
 `../spec/descriptors/*.json` with exact set equality in both directions — a
 descriptor row with no model transition, or vice versa, fails (ADR-0003).
-Current binding: 7 modules, 9 descriptors, 92 states, 177 transitions in
-exact agreement; BudgetConservation declares `@parity none` (no committed
-budget descriptor); 12 descriptors have no B0.1 model (their machines are
-listed in §14.8 but are not on the B0.1 sheet's model list).
+Current binding: 9 modules, 11 descriptors, 103 states, 199 transitions in
+exact agreement, with 995 v2 structured columns checked and 398 crash/fence
+column transcriptions in exact agreement both ways; BudgetConservation
+declares `@parity none` (no committed budget descriptor); 15 of the 26
+committed descriptors have no model (their machines are listed in §14.8, or
+are Kovee-owned C2 executors, but are not on the B0.1 sheet's model list):
+byom-akson-dispatch-outcome-head, byom-episode-binding, call,
+candidate-self-policy, charter, continuation-head, continuity-root,
+delivery-review, endeavor-formation, endeavor, manifestation,
+participant-activation-policy, participant-assent-policy, participant,
+society.
 
 > **What parity does and does not catch (be honest about it).** The
 > `@parity` block is a transcription of the model's transition relation,
@@ -383,11 +403,19 @@ listed in §14.8 but are not on the B0.1 sheet's model list).
 
 ### spec/vectors/machines/ — crash/replay state walks, as executable vectors
 
-Fourteen state-walk vectors (4 Pledge, 3 Episode/lease, 4 ActIntent, 3
-AuthorityJournal) under `../spec/vectors/machines/`, validated by
+Sixteen state-walk vectors (5 Pledge, 4 Episode/lease, 4 ActIntent, 3
+AuthorityJournal) under `../spec/vectors/machines/`, plus twelve saga walks
+over the C2 machines under `../spec/vectors/governed-work/` (greenfield
+enable/rollback, the endeavor-formation recovery paths including
+terminalization, subordinate reserve→commit→settle and
+uncertain→query→resolve, dispatch happy and ambiguous-then-disposition, the
+onboarding-compute one-shot) — 28 walks in all, validated by
 `python3 conformance/run.py` through a small interpreter over the committed
 descriptor JSON — the §14.8 closed-machine rule as an executable oracle,
-independent of both TLC and the parity checker. The conventions: walks start
+independent of both TLC and the parity checker. For the unmodeled machines
+they exercise — `endeavor-formation`, `byom-episode-binding`,
+`byom-akson-dispatch-outcome-head` — these walks are the only executable
+coverage those descriptors have. The conventions: walks start
 at `absent`; `accepted` steps must be exact descriptor rows; `rejected`
 steps must be absent rows (an unlisted transition is invalid); `replay`
 steps retry the immediately preceding accepted mutation and must be
@@ -416,13 +444,21 @@ terminal, and the witness-unknown query/abandon-after-proof recovery paths.
    reclaim of a live head — D-RT-6; EpisodeLease expiry without the
    clock having passed the deadline — RT-10). The RT-16 MCP widening
    mutations run inside `conformance/run.py` on every invocation.
-2. **Induction.** All seven models are TLC-bounded (exhaustive at their
+   `python3 proof/negative-checks.py` currently reports 14/14 mutations
+   caught.
+2. **Induction.** All nine models are TLC-bounded (exhaustive at their
    configured constants). BudgetConservation (arbitrary `Cap`) and
    MandateChain (arbitrary chain depth) are the flagged Apalache candidates.
-3. **The conformance oracle.** Lands with byomd (B1): pure transition
-   functions tied to these models in `cargo test`, generated from the
-   descriptor registry where feasible, hand-transcribed remainders flagged
-   here per machine (ADR-0003, plan §3).
+3. **The conformance oracle — STILL OPEN, and byomd landing did not close
+   it.** ADR-0003 required byomd's pure transition functions to be tied to
+   these models in the default workspace test invocation, generated from the
+   descriptor registry where feasible, with hand-transcribed remainders
+   flagged here per machine (plan §3). The daemon has landed; the binding has
+   not been built. Nothing in `cargo test` reads a descriptor or a model, so
+   a daemon transition can diverge from its committed descriptor row without
+   any gate in this repo noticing. This is the single largest open item on
+   this page and the reason every model's refinement boundary above stops at
+   the descriptor.
 4. **Unfolded machinery.** The EffectOutcomeAdmission/
    EffectGovernanceDisposition dual-head CAS, the endpoint-incarnation
    restore lineage, standing mandates (B0.2), and the Assembly machines are

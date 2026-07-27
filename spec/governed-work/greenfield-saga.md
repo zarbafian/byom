@@ -2,8 +2,10 @@
 
 Status: **normative** for `byom_governed_work_v1` (C2 slice 1). Sources, all
 pinned: byom DESIGN.md §16.6, kovee amendment A2
-(`kovee/design/2026-07-25-amendment-governance-owner.md`), and the **frozen
-`governance_enable` authority row** of the family contract §2.A
+(`kovee/design/2026-07-25-amendment-governance-owner.md`), byom amendment A9
+(`../../design/2026-07-27-amendment-governance-owner-enum.md`, which narrows
+the owner enum and withdraws §25), and the **frozen `governance_enable`
+authority row** of the family contract §2.A
 (`design/2026-07-25-family-contract.md`) — that row is reproduced by
 reference here, not restated, so it cannot fork. Kovee owns the host
 schemas; the record shapes in this directory are the byom-normative side.
@@ -111,26 +113,64 @@ fresh saga row under a new epoch, not a transition of this machine.
   or undone by a restore: an active binding stays active at its recorded
   epoch, a rolled-back epoch stays spent.
 
-`none → byom` is the **only** owner transition this stack has. Amendment A9
-narrowed the owner enum to `byom | none` and withdrew the re-owning machine
-that would have consumed a third arm, so there is no second path to
-governance ownership: a scope is owned by byom or by nothing, and it gets
-there through this saga or not at all. The narrowing is carried by
-`kovee-governance-owner-binding-v2.schema.json` and by the model's own type
-domain (`GreenfieldEnablement.tla` `TypeOK`).
+## 6. `none → byom` is the only owner transition there is
 
-## 6. Conformance and proof pointers
+Amendment A9 narrowed `KoveeGovernanceOwnerBinding.governance_owner` to
+`byom | none` and withdrew §25's `GovernanceCutover` — the fenced machine
+whose whole purpose was to move a scope off the third arm. With no source
+arm there is no cutover, so there is no second path to governance ownership:
+a scope is owned by byom or by nothing, and it gets there through this saga
+or not at all. Getting back to `none` is `governance_disable`, which freezes
+the row; re-enablement is a fresh saga under a new binding epoch, never a
+reverse cutover.
+
+How the narrowing is carried, and how it is kept:
+
+- **A successor schema, not an edit.** Narrowing an enum is breaking, and
+  published schemas are immutable (`../README.md`'s bundle-freeze rule), so
+  `kovee-governance-owner-binding-v2.schema.json` is a new file with the
+  two-arm enum and the owning `oneOf` arm pinned to `const: "byom"`. The v1
+  publication and its three-arm vector stay byte-unchanged: v1 is the
+  historical publication, and rewriting it would make it a lie. C2 and K2
+  freeze to v2.
+- **Proven, not asserted.** The
+  `…-v2-withdrawn-owner-arm-invalid` vector feeds v2 the exact value v1
+  accepted, so the narrowing is demonstrated by a rejection rather than
+  claimed in prose. `../../conformance/run.py` pins BOTH enum lists — v1's as the
+  §16.6 transcription and v2's as this amendment's — so neither can drift
+  and v2 cannot be widened back.
+- **In the model's type domain.** `GreenfieldEnablement.tla`'s `owner`
+  variable ranges over `{"byom", "none"}`, so "no scope has a third owner"
+  is a `TypeOK` fact. The separate invariant that used to assert it was
+  dropped: it quantified over a value no implementation could produce, and
+  an invariant that can only pass checks nothing.
+- **`cutover_ref` survives, unset.** It stays an optional member of the
+  closed v2 record. No machine in this stack writes it — the greenfield saga
+  never sets it, and the only cutover that would have is withdrawn. It is
+  kept so that a future *governed re-owning* transition, if one is ever
+  specified, records its authority in a member that already exists instead
+  of widening a closed shape under time pressure.
+
+There is no cutover row, descriptor, operation or state, and the discarded
+predecessor design is not a migration source, a compatibility target or a
+supported import path. Foreign evidence enters the way all foreign evidence
+does: as source-qualified inert `LegacyEvidence` under §7.5, which
+manufactures no authority, assent or Manifestation compatibility.
+
+## 7. Conformance and proof pointers
 
 | Artifact | Where |
 |---|---|
 | Record schemas (this slice, closed, §16 verbatim) | `*.schema.json` in this directory |
+| The owner-binding record | `kovee-governance-owner-binding-v2.schema.json` (the A9 enum, what C2/K2 freeze to); `kovee-governance-owner-binding.schema.json` (v1, published unchanged) |
 | Saga descriptor (Kovee-owned, `owner: "kovee (C2)"`) | `../descriptors/greenfield-enablement.json` |
 | Formation descriptor (paired intent/slot machine) | `../descriptors/endeavor-formation.json` |
 | State-walk vectors (retry-identical, rollback/new-epoch, formation walks) | `../vectors/governed-work/` |
+| The A9 narrowing vectors (`-v2-byom-valid`, `-v2-none-valid`, `-v2-withdrawn-owner-arm-invalid`) | `../vectors/governed-work/` |
 | TLA+ model + TLC invariants | `../../proof/specs/GreenfieldEnablement.tla` (parity-bound to the descriptor) |
-| Runner checks (schemas, verbatim enums, descriptor ownership, hop-count cross-check) | `../../conformance/run.py` (governed-work family) |
+| Runner checks (schemas, both enum lists verbatim, descriptor ownership, hop-count cross-check) | `../../conformance/run.py` (governed-work family) |
 
-## 7. Recorded gaps in DESIGN.md §16 (C2 slice 1)
+## 8. Recorded gaps in DESIGN.md §16 (C2 slice 1)
 
 Found while transcribing §16 field lists verbatim; each is a byom design
 obligation, tracked here until §16 is amended:

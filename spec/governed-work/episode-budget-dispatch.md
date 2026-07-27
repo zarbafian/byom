@@ -41,13 +41,24 @@ episode_claim/start (R30)   Kovee commits ByomEpisodeBinding{ep-88, attempt-2,
 model call                  through Kovee's ProviderContextManifest carrying
                             the exact byom source fields (Δ5)        §12.1
 outbound act                act_intent_* (Δ4 `outbound` subject, BPA-1 atoms)
-                            -> execution_permit_consume (R34)
+                            -> execution_permit_consume (R34): byom REBUILDS
+                            the host's binding digest and rechecks the assented
+                            context/disclosure pairs before any consumption
+                            state moves — the wire is gap notes G37/G48 of
+                            `../schemas/ops/README.md`, the one source
                             -> KOVEE's byom_akson_dispatch_v1 driver stages,
                                consumes akson consent, dispatches    L61-L63
 outcome                     one signed ByomAksonDispatchOutcomeReceipt
                             (closed union) + one Kovee head CAS; byom admits
                             the EOA only from that verified receipt  L64
-settle                      subordinate settle applied once on both sides;
+settle                      usage_report on the trusted-meter channel commits
+                            the measured charge AND settles the counterparty's
+                            subordinate row in ONE transaction, BEFORE any
+                            terminalization                    L33, §2.1 below
+terminalize                 episode_complete/fail releases the remainder and
+                            moves the counterparty row settled -> released; an
+                            episode nobody metered settles conservatively to
+                            the whole held worst case in that same transaction.
                             uncertain never releases without R38     L33
 ~~~
 
@@ -91,6 +102,65 @@ ResolutionIsReal — the recovery query surfaces Kovee's durable truth, never
 invents one — HeldIffOpen, UncertainReleaseNeedsGovernance): an unknown
 result remains `uncertain`, spend stays blocked, and the only release out of
 `uncertain` is the R38 `budget_reconcile` governance seat.
+
+### 2.1 Settlement order: the counterparty row settles with the charge
+
+The charge and the counterparty row that describes it are **one transaction**,
+and the counterparty reaches a terminal state **before** the episode does.
+Byom used to commit the parent charge at `usage_report` and leave the
+counterparty's `subordinate_reservations` row `confirmed` until the later
+`episode_complete`; in between, a counterparty that queried the reservation it
+actually holds was told it had been charged nothing, and a counterparty that
+crashed across the gap came back to no committed byom fact naming what it
+owed. The two arms now read:
+
+~~~text
+measured        usage_report (trusted-meter channel only, L33)
+                  budget_accounts   reserved -> committed, by the measured
+                                    amount
+                  bridge            confirmed -> settled, settled_charge set
+                  subordinate row   confirmed -> SETTLED, carrying byom's own
+                                    committed number, the settlement ref and
+                                    the stable settlement key
+                ... all four in ONE authority transaction ...
+                episode_complete / episode_fail
+                  the reserved remainder returns to `remaining`
+                  bridge            settled  -> released
+                  subordinate row   settled  -> RELEASED, keeping the
+                                    settlement it already named
+
+conservative    episode_complete / episode_fail over a bridge nothing metered
+                  budget_accounts   reserved -> committed, the WHOLE held
+                                    worst case (§11.4 conservative resolution)
+                  bridge            confirmed -> released, settled_charge held
+                  subordinate row   confirmed -> SETTLED, same transaction
+~~~
+
+`revision` and `digest` on the counterparty row are deliberately left
+untouched: they are the counterparty's confirmation of the exact confirmed
+items, not byom's terminal arithmetic, and rewriting them would make byom
+author a value the counterparty is obliged to accept. Both arms publish the
+settled reference in the reply and on the episode event.
+
+**A measured zero is reported, never skipped.** `charged_quantities` of `0`
+is wire-legal, and the settlement row, its head, the bridge's `settled_charge`
+and the counterparty's terminal record are all written unconditionally — only
+the ledger `reserved -> committed` move is guarded on `charged > 0`, because
+moving zero quantities is a no-op on the buckets and not a settlement fact.
+A counterparty therefore always converges on a byom-authored terminal number,
+including when that number is zero. *Limit, honestly:* no test in
+`crates/byomd/tests/` drives a zero charge — the branch is read from the code,
+not pinned by a case.
+
+**A bridge that never confirmed settles nothing.** `usage_report` refuses a
+bridge in any state but `confirmed`
+(`SubordinateReservation.tla` `NoChargeWithoutCommit`), and terminalization
+over an `uncertain` bridge writes no charge, no settlement and no counterparty
+row — the spend stays blocked and only the R38 `budget_reconcile` seat returns
+the held quantity to `remaining`. That release is the one terminal path that
+writes no byom-authored counterparty fact, which is currently unobservable
+because an `uncertain` bridge never created a subordinate row in the first
+place.
 
 ## 3. `byom_akson_dispatch_v1` — Kovee sole caller, one receipt union, one head
 

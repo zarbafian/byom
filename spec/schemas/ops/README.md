@@ -304,20 +304,25 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
   ExecutionConsumptionReceipt with `max_uses` pinned const 1. Amended
   (RT-05): `meta.expected_revision` (the exact authorized intent
   revision) is REQUIRED — the one-shot decision consumes against a
-  pinned head; the CONTEXT, disclosure and Episode bindings are each
-  both-or-neither pairs (closed oneOf arms), and both manifest pairs are
-  compared — ref AND digest — against the pair the gate seat assented to,
-  so an act authorized under one ContextManifest is not consumable under
-  another and a consumption that presents no context for an act that pins
-  one is refused (R3-A01). Same canonical request and key → same receipt;
-  a changed request → `idempotency_mismatch`; a different key cannot
-  consume the spent one-shot decision (→ `stale_revision`); a stale
-  fence → `stale_revision`; a dangling disclosure or context ref fails the
-  closed schema — vectors for all four negative classes. Amended again (the
-  receipt half of G48, below): EVERY member of the result is rendered —
-  a digest returned as `null` is a conformance failure — and the two
-  members the consumer cannot re-derive from its own state are
-  `portable_public` over frozen cross-boundary fragments.
+  pinned head; the CONTEXT and disclosure bindings are each
+  both-or-neither pairs (closed oneOf arms, four arms covering both /
+  context-only / disclosure-only / neither), and both are compared —
+  ref AND digest — against the pair committed in the act subject, i.e.
+  the pair the gate seat assented to, so an act authorized under one
+  ContextManifest is not consumable under another and a consumption that
+  presents no context for an act that pins one is refused with
+  `stale_binding` rather than executed blind (R3-A01). The `episode_ref`
+  no longer travels as a pair: its fence digest was byom's own record and
+  was removed under A8's converse half (G48). Same canonical request and
+  key → same receipt; a changed request → `idempotency_mismatch`; a
+  different key cannot consume the spent one-shot decision (→
+  `stale_revision`); a stale fence → `stale_revision`; a dangling
+  disclosure or context ref fails the closed schema — vectors for all four
+  negative classes. Amended again (the receipt half of G48, below): EVERY
+  member of the result is rendered — a digest returned as `null` is a
+  conformance failure — and the two members the consumer cannot re-derive
+  from its own state are `portable_public` over frozen cross-boundary
+  fragments.
 - **G38 — cursor and page encoding.** Continuation tokens are one opaque
   scope- and audience-bound string (§14.4: authenticated cursor, endpoint
   incarnation, recovery epoch, filter digest, retention semantics), bounded
@@ -557,7 +562,8 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
     answer `feature_unavailable` (`act_intent_cancel`) — recorded, not
     silently absent.
 - **G48 — the cross-boundary digest classes and the published allocation
-  pin (live-seam findings S-1/S-2/S-3, `reviews/2026-07-26-seam-findings.md`).**
+  pin (live-seam findings S-1/S-2/S-3, `reviews/2026-07-26-seam-findings.md`
+  **in the program repo**, not this one).**
   Wiring Kovee's episode pipeline to byomd's real runtime surface found that
   `placement_admit` required a digest byom published nowhere, and that four
   runtime fields carried a class the counterparty could not derive. The
@@ -723,13 +729,61 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
         the gate seat assented to, and the receipt renders the COMMITTED
         value (R3-A01); a spent key replays only against a frozen
         semantic-request digest over every substantive member (R3-A04).
+      - **`host_effect_digest` is now DERIVED, not asserted (R3-L01,
+        D-R3-3).** The registration credential authenticates a tuple
+        *containing* the value, which proves who sent it and never what it
+        is the digest OF, and byom held no host row to compare against. So
+        two members were added — `host_effect_external_idempotency_key`
+        and `host_effect_request_byte_digest` (the §11.8 typed byte digest
+        of the sealed provider-request bytes) — and byom now rebuilds the
+        host's whole frozen `kovee-host-effect-binding-v1` fragment and
+        refuses a `host_effect_digest` that does not re-derive from it,
+        before any consumption state moves. The fragment has exactly nine
+        members in the host's published order: `context_digest`,
+        `context_manifest_ref`, `disclosure_digest`,
+        `disclosure_manifest_ref`, `external_idempotency_key`,
+        `final_provider_request_typed_byte_digest`, `host_effect_ref`,
+        `intent_ref`, `stable_execution_key`. Six of the nine come from
+        byom's OWN committed `act_intents` row — never from the request's
+        echo, A8's converse — `host_effect_ref` from the request, and only
+        the two genuinely host-owned members from the two new fields. The
+        two are tied to each other and to byom's one-shot key:
+        `host_effect_external_idempotency_key` must be exactly
+        `kovee-model-{stable_execution_key}-{byte_digest.value_hex[0:16]}`.
+        A digest that does not agree, or an untied key, is `forbidden`.
+        Byom's expectation is pinned against kovee's OWN recorded vector
+        (`crates/byomd/tests/vectors/kovee-host-effect-binding.json`), not
+        re-derived from byom's code, so the cross-repo pin goes red on
+        whichever side moves its domain tag.
+      - **the frozen semantic-request digest is STORED, and its field set
+        is machine-checked against the wire (R3-A04).** The replay
+        comparison reads a stored column, never a recompute: a
+        byte-identical request presented against an edited commitment is
+        refused, which a recompute could not see. Every wire member is
+        classified exactly once as semantic (15 members, in the replay
+        preimage under tag `bpp-execution-permit-consume-request-v0`) or as
+        transport (`version`, `op`, `meta`, `host_effect_credential` — the
+        last because it is a deterministic function of four members already
+        in the semantic set). A test reads the published request schema's
+        own property list and fails the suite if any wire member is
+        neither, or both — the exact regression that let the two new
+        `host_effect_*` members change what the digest was OF while still
+        replaying `ok`.
       - Vectors: `-request-valid` on the new member set, plus
         `-request-owner-recomputed-digest-invalid` (an echoed
         `subject_digest` fails the closed shape) and
         `-request-keyed-host-effect-digest-invalid` (the class byom used to
         demand). The obsolete `-request-unpaired-episode-fence-invalid`
         vector is retired with the pair it policed. **kovee's client
-        mirrors this shape**; no store column changed.
+        mirrors this shape.** The published receipt keeps its frozen §13.1
+        member set — it carries neither the context pair nor the two
+        host-owned members, and the committed context ref/digest are
+        published on the `act-intent.consumed` event instead. What changed
+        is byom's own storage: migration V10 adds the
+        `semantic_request_digest` column, V11 retains
+        `host_effect_external_idempotency_key` and
+        `host_effect_request_byte_digest` on the stored row so a refusal
+        can name exactly which member moved.
     - Vectors: `execution-permit-consume-result-valid` (every member
       rendered, both pins the real re-derived values — `b3_act_chain`
       recomputes them from the vector), plus the three negatives
@@ -750,8 +804,38 @@ and freezes with the bundle registry; a conflicting registry freeze wins.
     `episode_start`. `placement_admit` binds the exact ResourceAllocation,
     including the digest above, so it can only run after the
     `episode_request` that creates it;
-    `../governed-work/episode-budget-dispatch.md` now states this order.
+    `../../governed-work/episode-budget-dispatch.md` now states this order.
     The family contract's L25 row (a LOCKED, digest-pinned artifact) still
     transcribes `PlacementBinding → placement_admit → episode_request`;
     correcting it is an owner-side amendment plus a new lock row, not a
     byom edit — recorded here so the discrepancy is not silent.
+- **G49 — the locked position snapshot (R3-A03).** §13.1 requires
+  finalization to authorize against "the finalized full seat snapshot" and
+  §14.8 closes the ActIntent machine, but neither names a record for WHICH
+  Position revision each seat held. Derived, and committed here:
+  - The `GovernanceDecision` carries `position_locks` beside
+    `position_refs` — one closed `{position_ref, position_revision,
+    position_digest}` per seat, where `position_digest` is byom's own keyed
+    record commitment (`local_erasure_safe`; PROFILE.md §6.2 requires the
+    per-object class for an authority subject, so the A8 cross-boundary
+    rule cannot reach it). The locks are inside the decision's own
+    `bpp-governance-decision-v0` record digest, so an edited lock stops the
+    decision re-deriving its own digest and the citing operation answers
+    `decision_incomplete` — the negative is a test that rewrites the stored
+    column, not a claim about the preimage.
+  - `act_intent_finalize`'s result projects the same snapshot as
+    `authorization_slot_snapshot` plus its
+    `authorization_slot_snapshot_digest` (tag `bpp-act-slot-snapshot-v0`),
+    on the authorizing branch only.
+  - **Supersession** is refused at consumption, not at finalization: a
+    PositionRevision is immutable, so a later revision for the same seat is
+    an append. `execution_permit_consume` recomputes the snapshot digest
+    from the currently active positions and refuses `stale_binding` when it
+    no longer equals the one the authorization locked.
+  - **A stale binding epoch** invalidates the position itself, at both
+    finalization and consumption: the required seats then hold no exact
+    current Position revision and the answer is `decision_incomplete`, with
+    the detail naming the epoch that moved. A rebound principal therefore
+    cannot carry an old seat forward.
+  - The same lock shape is written by the endeavor-formation path, so a
+    formation decision and an act decision cite seats the same way.

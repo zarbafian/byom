@@ -19,16 +19,24 @@ complete vector — `jcs/basic-ordering.json`:
 }
 ~~~
 
-Re-derive everything:
+Re-derive everything, from this repository's root:
 
 ~~~text
-python3 family-vectors/xcheck.py     # exit 0 = every `expected` re-derived
+python3 family-vectors/xcheck.py           # exit 0 = every `expected` re-derived
+node    family-vectors/tscheck/check.mjs   # the same, in a second language
 ~~~
 
-`xcheck.py` is the independent Python-stdlib rederiver (nonzero on any
-mismatch, and on an empty vector tree). Per the sheet, each project's CI also
-re-derives the same files: akson `python3 xcheck/run.py family-vectors`;
-kovee/byom `cargo test -p family-vectors` and `npm test --prefix tscheck`.
+Both are independent rederivers with no shared code and no dependencies —
+`xcheck.py` is Python stdlib only, `check.mjs` is Node builtins only — and
+both go nonzero on any mismatch and on an empty vector tree. Byom runs both
+in `run-checks.sh` and in CI; on this tree they agree on 83 vector files and
+111 cases (digest-class 58, idempotency 9, ijson 20, jcs 7, privacy 4,
+problem 13).
+
+Kovee and akson consume this directory through the family lock (plan D3) and
+each runs `python3 family-vectors/xcheck.py` against the byom tree their
+vendored pin names, after asserting in CI that the checked-out commit is the
+one the locked manifest pins — a local copy alone is never provenance.
 
 Families: `ijson/`, `jcs/`, `problem/`, `idempotency/`, `digest-class/`,
 `privacy/`. Sections below define what each family pins.
@@ -235,7 +243,10 @@ six classes:
 - Authority subjects take `local_erasure_safe` commitments (strictly
   per-object), never a public hash and never a scope-keyed digest.
 - **The cross-boundary class rule** (added by the 2026-07-26 live-seam
-  decision, S-2). A digest one protocol DEMANDS from the other across the
+  decision S-2; ratified as **byom amendment A8**,
+  `../design/2026-07-25-amendment-family-contract.md` §A8, which is where the
+  applied per-field outcomes are recorded). A digest one protocol DEMANDS
+  from the other across the
   protocol boundary MUST be `portable_public`: the counterparty has to derive
   the same value from the same bytes, and a keyed class is an HMAC under the
   owner's secret — the counterparty could only echo an opaque blob it can
@@ -250,6 +261,15 @@ six classes:
   request member at all** — an implementation that asks a counterparty for a
   value it computes itself has mis-drawn the boundary, and its class choice
   buys nothing while costing the counterparty per-object erasure storage.
+  Both halves bite in practice, and a `portable_public` field does **not**
+  mean "trust what the peer sent": the receiving side rebuilds the frozen
+  fragment from its own committed state and refuses a value that does not
+  re-derive. A digest that is merely *stored* because a caller sent it is
+  asserted, not verified, even when its class is right. Byom's own applied
+  instances are enumerated in `../spec/schemas/ops/README.md` gap note G48;
+  each names its `$domain` tag and its exact frozen member list, and a
+  fragment's member set is closed — widening or narrowing it changes the
+  digest and is a wire change on both sides.
 - The two erasure classes are **mutually non-substitutable** (D-R0-1): a
   per-scope key never stands in for a per-object secret (erasing one object
   must kill exactly that object's verifiability) and a per-object secret
@@ -459,7 +479,8 @@ change, not an implementation choice:
     and a verifier without the key treats a keyed ref as well-typed but
     unverified (added R0/FV-02).
 14. The cross-boundary class rule of section 6.2 (added by the 2026-07-26
-    live-seam decision S-2). Both designs name `portable_public` as the class
+    live-seam decision S-2; ratified as byom amendment A8). Both designs name
+    `portable_public` as the class
     for "truly portable content" without saying which fields are portable;
     two independent implementations meeting at the seam showed the omission
     is load-bearing — byom demanded four `local_erasure_safe` values from
@@ -468,6 +489,9 @@ change, not an implementation choice:
     obtainable only by reading byom's database. The rule fixes the missing
     normative half in BOTH directions (demanded across the boundary ⇒
     `portable_public` over a frozen cross-boundary fragment; recomputable by
-    the owner ⇒ `local_erasure_safe` and not a request member). **Both repos
-    mirror this section:** it is a family-contract rule, not a byom
-    implementation choice.
+    the owner ⇒ `local_erasure_safe` and not a request member). It is a
+    family-contract rule, not a byom implementation choice: byom hosts this
+    file, and kovee and akson bind to *this* text rather than to a copy —
+    their CI checks out the byom commit the lock manifest pins and runs
+    `python3 family-vectors/xcheck.py` from that tree, so there is exactly
+    one source and no second copy to drift.

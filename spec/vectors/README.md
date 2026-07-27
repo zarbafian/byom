@@ -6,7 +6,8 @@ and limit enforcement, and canonical-bytes/digest derivation. Layout mirrors
 a vector file is immutable once merged — fixes are new cases.
 
 Every file is `{"name", "description", "input", "expected"}` where `name`
-equals `<family>/<file-stem>`. Three input kinds, dispatched by key:
+equals `<family>/<file-stem>`. `python3 ../../conformance/run.py` replays all
+462 cases and prints the per-kind tally. Seven input kinds, dispatched by key:
 
 - **`input.schema`** (+ optional `input.ref`, a JSON pointer into that
   schema's `$defs`) — validate `input.value` against
@@ -42,6 +43,25 @@ equals `<family>/<file-stem>`. Three input kinds, dispatched by key:
   evaluators (`../../policy/eval.py`, `../../policy/eval.mjs`) must
   re-derive it byte-for-byte under JCS (the B0.1 two-evaluator gate); the
   runner replays every case through both.
+- **`input.machine`** + **`input.steps`** — an executable state walk over the
+  committed descriptor JSON, the §14.8 closed-machine rule as an oracle
+  independent of both TLC and the parity checker. Walks start at `absent`;
+  an `accepted` step must be an exact descriptor row, a `rejected` step must
+  be an absent row (an unlisted transition is invalid), a `replay` step
+  retries the preceding mutation and must be state-idempotent, and
+  `{"crash": true}` restarts the daemon between steps — every
+  descriptor-level variable is durable, so the walk resumes unchanged.
+  `expected.final_state` pins where it lands.
+- **`input.tool_call`** — a C3a MCP tool invocation (`../schemas/mcp-tools.
+  schema.json`, `../../mcp/byom-mcp.tools.json` v0.1.1): the runner checks
+  the tool exists in the right profile, that its arguments render the exact
+  BPP envelope for the bound operation, and that no channel-derived member
+  (actor, participant, surface) can be supplied by the caller.
+- **`input.permit_probe`** — a §13.1 step-6 consumption oracle: a stored
+  one-shot decision plus a schema-valid `execution_permit_consume`, with
+  `expected` naming the problem kind the oracle must answer. Each probe also
+  proves the positive half (the byte-identical canonical request replays to
+  the retained receipt), so a rejection is never vacuous.
 
 `envelope/` covers the §14.2 request/success/failure envelope, MutationMeta,
 and the `bpp-idempotency-domain-v1` digest domain. `ops/` covers the B0.1
@@ -65,3 +85,27 @@ cases, incomparable-reject cases, and malformed/overflow fail-closed
 rejections with exact first-error pointers; the seeded differential
 harness (`../../policy/differential.py`, pinned in `../../run-checks.sh`)
 extends the same two-evaluator agreement over structured random cases.
+
+Three families the layout above does not cover:
+
+- `governed-work/` — the C2 `byom_governed_work_v1` record schemas
+  (`../governed-work/*.schema.json`), including the amendment-A9
+  `kovee-governance-owner-binding-v2` narrowing, whose
+  `-withdrawn-owner-arm-invalid` case feeds the exact value v1 accepted so
+  the narrowing is proven rather than asserted — plus 12 executable saga
+  walks. Six are C2 slice 1 (greenfield retry-identical and
+  rollback-then-new-epoch; the four endeavor-formation paths: happy,
+  awaiting-principal resubmit, crash → remote-unknown → query-committed, and
+  terminalize-released) and six are slice 2 (subordinate
+  reserve→commit→settle and uncertain→query→resolve, the ByomEpisodeBinding
+  fence walk, dispatch happy and ambiguous-then-disposition, and the
+  onboarding-compute one-shot).
+- `machines/` — 16 §14.8 crash/replay state walks over the B0.1 machines
+  (5 Pledge, 4 Episode/lease, 4 ActIntent, 3 AuthorityJournal), covering
+  one-shot permit consumption under replay, the expired-lease re-claim as a
+  real fence-minting transition rather than a replay, ambiguous-never-
+  completed, terminal-is-final for every modeled terminal, and the
+  witness-unknown query/abandon-after-proof recovery paths.
+- `mcp/` — the C3a tool bindings: six `tool_call` renderings plus the
+  `attached_harness` Manifestation profile and its wrong-`host_kind`
+  negative, and a governance operation proved absent from the tool document.
