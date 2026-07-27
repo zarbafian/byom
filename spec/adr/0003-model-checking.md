@@ -4,6 +4,29 @@ Status: accepted (2026-07-26, RT-11; proposed 2026-07-25)
 Date: 2026-07-25
 Plan id: B-ADR-4
 
+> **Erratum (2026-07-28) — a correction of fact, not a supersession.** The
+> decision below stands unchanged; this note exists because two of its
+> sentences name a command that cannot run.
+>
+> This ADR cites `cargo test -p bpp-spec` twice (§Criteria, and again as the
+> B1 acceptance gate). **There has never been a `bpp-spec` crate.** The
+> workspace is `bpp-core`, `byom-store`, `byomd`, `byom-cli`, `byom-mcp`. Read
+> those two citations as:
+>
+> ```
+> python3 proof/check-descriptors.py    # descriptor/model parity
+> python3 conformance/run.py            # the conformance suite
+> ```
+>
+> The stronger point the same sweep found, and which this ADR should not be
+> read as claiming: **no test in `crates/` reads a descriptor or a TLA+ model
+> at all.** The Rust tests `include_str!` schemas, vectors, the registry and
+> the MCP document — never `spec/descriptors/` or `proof/specs/`. The
+> conformance oracle this ADR describes was expected to land with byomd; byomd
+> landed and the oracle did not. That gap is recorded as the largest open item
+> in `proof/PROPERTIES.md`. Superseding the decision itself would need a new
+> ADR linking both ways, per `spec/adr/README.md`; nothing here does that.
+
 ## Context
 
 DESIGN.md §14.8 closes every state machine (an unlisted transition is
