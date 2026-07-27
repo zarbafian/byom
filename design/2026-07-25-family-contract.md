@@ -253,7 +253,7 @@ field-complete so no implementer invents it:
 
 ## 4. Proposed deltas (Δ1–Δ6)
 
-Kovee's design encodes six Sage-shaped assumptions with no literal BPP
+Kovee's design encodes six coordinator-orchestration assumptions with no literal BPP
 counterpart. Each is **re-scoped by D1's architectural inversion** — proposed
 here, binding once C0 ratifies:
 

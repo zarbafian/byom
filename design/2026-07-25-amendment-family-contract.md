@@ -19,13 +19,14 @@ README/DESIGN references to the gateway via the historical `../axon` path read
 ## A2 — Kovee integration is greenfield-first (plan D1, D10)
 
 §16's Kovee prerequisites are being implemented against a kovee that has
-**byom as its governance owner from day one** (never Sage). Consequences:
+**byom as its governance owner from day one**. Consequences:
 
-- §25's Sage migration (`GovernanceCutover`, `sage → none → byom`) remains
-  specified but **unbuilt**; no milestone in the current program exercises the
-  `sage` arm of `KoveeGovernanceOwnerBinding`.
-- A **greenfield enablement saga** (`none → byom` without a Sage
-  predecessor) is added to the `byom_governed_work_v1` bundle (C2): create
+- There is no migration path into byom governance. `KoveeGovernanceOwnerBinding`
+  has two owner arms, `byom | none`, and §25's `GovernanceCutover` is withdrawn:
+  not built, not reserved, no row, descriptor, operation, or state (amendment
+  A9, which supersedes this bullet's original "specified but unbuilt" reading).
+- A **greenfield enablement saga** (`none → byom` from an unowned scope) is
+  added to the `byom_governed_work_v1` bundle (C2): create
   `KoveeRealmByomBinding` + `KoveeSocietyMapping`, then CAS the owner binding
   `none → byom`, with exact-CAS, retry, overlapping-scope rejection,
   rollback-before-activation, and restore behavior specified and

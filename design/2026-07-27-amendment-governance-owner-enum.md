@@ -92,8 +92,11 @@ general rule already exists and does not need a dedicated section.
 
 ## Follow-through
 
-`DESIGN.md` §16.6's field block and §25 are re-cut at the next design
-re-issue. Until then this record controls, and the machine-checked artifacts
-(the v2 schema, its vectors, the runner's enum pins, and
-`GreenfieldEnablement.tla`'s type domain) are the operative statement of the
-rule.
+**Landed.** `DESIGN.md` §16.6's field block and §25 were re-cut in
+**design-v0.2.1** (2026-07-27): the field block reads `byom | none` and §25
+records the withdrawal instead of specifying `GovernanceCutover`. The ratified
+byte-frozen v0.2 (sha256 `ccea384f…`, repo `cc4249c`) is unchanged and is what
+the implementation plan still pins, so this record continues to control for
+readers of that text. The machine-checked artifacts (the v2 schema, its
+vectors, the runner's enum pins, and `GreenfieldEnablement.tla`'s type domain)
+remain the operative statement of the rule.

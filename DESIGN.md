@@ -1,8 +1,12 @@
 # Byom: a living society of autonomous participants
 
-Status: **design specification v0.2 (pre-implementation)**
+Status: **design specification v0.2.1 (pre-implementation)** — v0.2's scope,
+with amendment A9 (the governance owner enum is `byom | none`; §25's cutover is
+withdrawn) folded into the text. The ratified byte-frozen **v0.2** remains
+sha256 `ccea384ff931bcf45d30df680b86835ac682006072a07ef2f34f565eba5fa501`
+(repo `cc4249c`), which is what the implementation plan pins.
 
-Date: 2026-07-25
+Date: 2026-07-25 (v0.2.1: 2026-07-27)
 
 Builds on:
 
@@ -10,9 +14,6 @@ Builds on:
   execution host.
 - [Akson](../axon/README.md), the sovereign peer gateway and remote authority
   boundary.
-- [Sage](../sage/README.md), the predecessor governed-work design whose
-  deterministic safety kernel Byom preserves while replacing its orchestration
-  ontology.
 
 Normative words such as MUST, MUST NOT, SHOULD, and MAY are used in the RFC 2119
 sense.
@@ -32,7 +33,7 @@ with participants. Byom records their attributable proposals and decisions,
 checks deterministic rules, reserves bounded resources, and issues exact
 one-shot permits to a lower execution layer.
 
-The architectural inversion from Sage is deliberate:
+The architectural inversion from classical orchestration is deliberate:
 
 ~~~text
 classical orchestration                 Byom
@@ -1870,7 +1871,7 @@ context may be appended outside Kovee's final manifest chain.
 
 ### 12.2 Engrams
 
-Byom retains the useful Sage Engram split:
+An Engram is split in two:
 
 - an immutable, portable, digest-addressed content revision;
 - society-local admission, lifecycle, visibility, attestations, disclosure,
@@ -3001,15 +3002,15 @@ cross-protocol receipt may avoid duplicate interaction only if it was created
 for the identical Byom audience, subject digest, terms, actor, assurance, and
 single use; current Kovee local assent has no such governed force.
 
-### 16.2 Sage-to-Byom conceptual mapping
+### 16.2 Orchestration-to-Byom conceptual mapping
 
-| Current Kovee/Sage term | Byom successor |
+| Classical orchestration term | Byom successor |
 |---|---|
-| Sage mission | Endeavor |
+| mission | Endeavor |
 | canonical plan revision | Plan lens over Calls, Pledges, dependencies, and decisions |
 | aspect | Usually a Pledge; an unowned aspect imports as a Call or legacy record |
 | coordinator session | Optional steward Participant with ordinary Pledge and Mandate |
-| Sage session | Participant ActivityStream history |
+| worker session | Participant ActivityStream history |
 | turn | Episode |
 | gate / validation | Server-prepared proposal, exact positions, decision, and ActIntent |
 | standing gate rule | StandingMandateRevision |
@@ -3017,10 +3018,10 @@ single use; current Kovee local assent has no such governed force.
 | directory entry | Participant ProfileClaim plus source-qualified evidence |
 | Engram | Engram, preserving the portable/local trust split |
 
-This mapping is not wire compatibility. Current Kovee documents name Sage until
-the Byom protocol and integration are reviewed and adopted. Kovee MUST NOT
-advertise Byom compatibility through a private adapter that preserves the old
-central coordinator semantics.
+This mapping is conceptual, not wire compatibility. The only compatibility
+surface between the two stacks is the `byom_governed_work_v1` bundle (§16.6).
+Kovee MUST NOT advertise Byom compatibility through a private adapter that
+preserves the old central coordinator semantics.
 
 ### 16.3 Forming an Endeavor from Kovee
 
@@ -3453,9 +3454,9 @@ source order and causal references; wall-clock ordering is only a view.
 
 ### 16.6 `byom_governed_work_v1` compatibility bundle
 
-Compatibility is one explicit, all-or-nothing feature bundle. Current Kovee is
-Sage-shaped and does not implement it. `byom_governed_work_v1` requires these
-normative Kovee schema and operation-matrix changes rather than a private adapter:
+Compatibility is one explicit, all-or-nothing feature bundle. Kovee does not
+implement it yet. `byom_governed_work_v1` requires these normative Kovee schema
+and operation-matrix changes rather than a private adapter:
 
 ~~~text
 KoveeRealmByomBinding {
@@ -3480,7 +3481,7 @@ KoveeSocietyMapping {
 KoveeGovernanceOwnerBinding {
   realm_ref, exact_scope_selector, exact_scope_digest,
   revision, binding_epoch,
-  governance_owner: sage | byom | none,
+  governance_owner: byom | none,
   owner_endpoint_ref?, owner_binding_ref?, cutover_ref?,
   status: active | frozen,
   UNIQUE(realm_ref, exact_scope_digest), digest
@@ -3537,7 +3538,7 @@ The Kovee revision implementing the bundle MUST:
     erasure, policy, endpoint, or fence change; and
 11. add a Kovee-owned `byom_akson_dispatch_v1` effect driver, operation rows,
     signed outcome-receipt union and one receipt head; commit every Kovee source
-    successor before Byom independently admits it; current Sage-only Akson
+    successor before Byom independently admits it; Kovee's existing Akson
     driver authority is not reusable by relabeling; and
 12. implement sender-constrained candidate channels and the one-shot
     OnboardingComputeIntent/Receipt path through Kovee's final
@@ -4708,8 +4709,8 @@ privilege.
 - ProviderContextManifest and exact model/tool disclosure.
 
 Exit: Kovee can host the complete B1/B2 flow without shared tables, duplicate
-approval, hidden context, owner ambiguity, authority fallback, or private Sage
-semantics.
+approval, hidden context, owner ambiguity, authority fallback, or private
+central-coordinator semantics.
 
 ### B4 — Institutional memory and evidence
 
@@ -4745,74 +4746,39 @@ the advertised managed topology.
 No phase advertises a later feature as partially safe. Unsupported behavior is
 absent and feature negotiation says so.
 
-## 25. Migration from Sage
+## 25. No migration path (withdrawn)
 
-Byom is a clean successor design, not a blind rename. Sage is still design-stage,
-so migration should preserve evidence without carrying central orchestration
-semantics as authority.
+This section specified `GovernanceCutover`, a fenced state machine for moving a
+governed scope off a third `governance_owner` arm that named a discarded
+predecessor design. Amendment A9 withdrew that arm, so there is no source to
+cut over from and the machine is withdrawn rather than left standing as a
+specification nobody can build. **No cutover row, descriptor, operation, or
+state exists or is reserved.**
 
-| Sage record | Migration rule |
-|---|---|
-| Mission | Import as Endeavor candidate with LegacyRef and original digest; human reviews Charter, sponsor, outcomes, budget and authority. |
-| MissionMember | Import as proposed Standing or seat evidence; never auto-admit or create human authority. |
-| PlanRevision | Import as attributed plan artifact and source for Calls/Pledge proposals; never canonical control state. |
-| Aspect | Import only as source-qualified LegacyEvidence and an optional inert Call/PledgeProposal seed; run native Byom formation for any new Pledge. |
-| Coordinator | Import as ordinary participant/activity history; no special authority. |
-| Session | Import as historical ActivityStream evidence binding. |
-| Turn and lease | Import as Episode/attempt history with original fences and source refs. |
-| Gate validation | Import only as source-qualified LegacyEvidence; it cannot become a GovernanceDecision or current authority without a native Byom proposal, complete eligibility/slot snapshot, positions, dependencies, and finalization. |
-| Standing rule | Re-propose as StandingMandate under current Charter; never silently activate. |
-| Directory | Import claims with original provenance; no evidence upgrade. |
-| Engram | Preserve canonical portable bytes and digest; import local trust state as local historical state, never portable truth. |
-| Delegation | Preserve Akson task, peer binding, intent, consent, evidence and outcome references; local admission is reviewed. |
+`KoveeGovernanceOwnerBinding.cutover_ref` (§16.6) remains an optional member of
+the closed shape, unset by every machine in this stack. It is kept so that a
+future *governed re-owning* transition — should one ever be specified — records
+its authority in a member that already exists, instead of widening a closed
+record under time pressure.
 
-Ids and digests are never rewritten to look native. Source-qualified LegacyRefs
-and migration events preserve causality. A migration cannot manufacture missing
-assent, collective decision, Manifestation compatibility, classification
-mapping, authority, or effect certainty.
+**Greenfield enablement (`none → byom`) is the only owner transition.** Getting
+a scope back to `none` is `governance_disable`, which freezes the row;
+re-enablement is a fresh saga under a new binding epoch, never a reverse
+cutover. A scope is owned by byom or by nothing, and the uniqueness and
+non-overlap constraint means no scope can have two owners.
 
-Direct native conversion is allowed only under a separately versioned migration
-compatibility profile that proves every required Byom field, actor binding,
-assent mode, eligibility and independence snapshot, Charter/Standing revision,
-dependency, budget, classification, fence, and authority invariant. Current Sage
-implements no such profile. Shape similarity, performer name, validation, or
-pending permit is never sufficient.
-
-Cutover is a fenced state machine owned by Kovee's Realm binding:
-
-~~~text
-GovernanceCutover {
-  cutover_id, realm_ref, branch_selector,
-  source_owner: sage, target_owner: byom,
-  state: planned | frozen | reconciling | importing | ready |
-         activated | completed | failed,
-  source_binding_epoch, target_binding_epoch,
-  reconciliation_digest?, inert_import_digest?,
-  activation_decision_ref?, created_at, digest
-}
-~~~
-
-1. `planned → frozen` locks the exact non-overlapping scope and compare-and-swaps
-   its one KoveeGovernanceOwnerBinding from `sage` to `none` at the expected
-   revision/binding epoch; it then rejects new Sage and Byom governed actions.
-2. Reconciliation closes or holds every Sage turn, lease, budget, effect,
-   external formation slot, and ambiguous outcome; unresolved facts remain held.
-3. The binding and recovery epochs advance. Sage history imports only as
-   source-qualified inert records and portable Engram bytes/digests.
-4. Native Byom Society, Standing, Pledges, decisions, Mandates, budgets, and
-   effects are freshly formed or reauthorized.
-5. One exact activation decision compare-and-swaps the same binding from `none`
-   to `byom`, installs the target endpoint/binding, and advances its epoch. The
-   uniqueness and non-overlap constraint means no scope can have both `sage`
-   and `byom` authority.
-
-Before activation a failed cutover may return to Sage only under another binding
-epoch after reconciliation. After activation, returning to Sage is a new cutover,
-not rollback of the database.
-
-The old Sage repository remains unchanged until an explicit implementation
-migration is authorized. Kovee references to Sage remain honest descriptions of
-the current design, not aliases that pretend Byom is already implemented.
+Byom is a clean successor design, not a rename of one, and it is nobody's
+migration target. Records that predate a Society enter the way any other
+foreign evidence does — as source-qualified inert `LegacyEvidence` under §7.5,
+with original ids and digests preserved and never rewritten to look native.
+Such an import manufactures no assent, collective decision, Mandate,
+Manifestation compatibility, classification mapping, authority, or effect
+certainty; shape similarity, performer name, validation, or a pending permit is
+never sufficient. Any bulk native conversion would need a separately versioned
+compatibility profile proving every required Byom field, actor binding, assent
+mode, eligibility and independence snapshot, Charter/Standing revision,
+dependency, budget, classification, fence, and authority invariant. None is
+specified, and none is planned.
 
 ## 26. Non-goals and open dependencies
 
