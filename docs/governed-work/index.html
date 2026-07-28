@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Governed work — byom</title>
+<meta name="description" content="How kovee delegates governance to byom: the byom_governed_work_v1 bundle, the greenfield enablement saga, the episode and budget bridge, the dispatch driver, onboarding compute, and the amendment record A1-A9.">
+<link rel="canonical" href="https://byom.cc/governed-work/">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">the kovee seam</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#bundle">The bundle</a>
+  <a href="#greenfield">Greenfield enablement</a>
+  <a href="#turn">One governed turn</a>
+  <a href="#budget">The budget bridge</a>
+  <a href="#dispatch">Dispatch and outcomes</a>
+  <a href="#onboarding">Onboarding compute</a>
+  <a href="#credentials">Sender-constrained channels</a>
+  <a href="#amendments">The amendment record</a>
+  <a href="#adrs">Decision records</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/">Concepts</a>
+  <a href="../protocol/">Protocol</a>
+  <a href="../encoding/">Encoding</a>
+  <a href="../governed-work/" class="here">Governed work</a>
+  <a href="../proofs/">Proofs</a>
+  <a href="../security/">Security &amp; limits</a>
+  <a href="../reference/">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">The governed-work bundle</p>
+  <h1>How another system delegates governance without merging into it.</h1>
+  <p class="lede">
+    Kovee runs the work: spaces, context, models, execution. Byom decides who may, under
+    what, and on whose record. Neither imports the other's tables. The seam between them is
+    a frozen contract — <code>byom_governed_work_v1</code> — of closed record schemas,
+    executable saga walks and two model-checked machines, and both sides bind to the same
+    text rather than to a copy of it.
+  </p>
+  <div class="pills">
+    <span class="pill"><!--gen:governed-work-schemas-->28<!--/gen:governed-work-schemas--> record schemas</span>
+    <span class="pill"><!--gen:descriptor-kovee-owned-->five<!--/gen:descriptor-kovee-owned--> kovee-owned machines</span>
+    <span class="pill">2 TLA+ models</span>
+    <span class="pill">12 saga walks</span>
+  </div>
+</header>
+
+<h2 id="bundle" class="chapter-start">The bundle</h2>
+
+<p>
+  <code>byom_governed_work_v1</code> is the compatibility unit for the kovee seam. It ships
+  as <!--gen:governed-work-schemas-->28<!--/gen:governed-work-schemas--> closed record
+  schemas in two slices: the binding, enablement and formation records, and the
+  episode, effect, budget-bridge and driver contracts. Kovee owns every host schema; the
+  shapes byom publishes are the byom-normative side, and the three host-integration
+  operations name the <em>frozen record</em> as their result schema, so the seam cannot
+  fork its own wire.
+</p>
+<p>
+  <!--gen:descriptor-kovee-owned-->five<!--/gen:descriptor-kovee-owned--> of byom's
+  committed transition machines are marked kovee-owned executors. They sit outside byom's
+  one-descriptor-per-mutating-operation rule on purpose: they describe transitions the
+  counterparty drives, and byom commits them so that both sides are reading the same closed
+  machine rather than two prose descriptions of it.
+</p>
+
+<div class="note">
+  <span class="tag">A record schema successor is not a new bundle</span>
+  <p>
+    Amendment A9 narrowed the governance-owner enum by publishing a
+    <code>-v2</code> record schema, leaving the v1 publication byte-for-byte intact — v1 is
+    the historical publication, and rewriting it would make it a lie. The bundle string did
+    not move. Both versions stay machine-checked, with v1's enum pinned as the design
+    transcription and v2's as the amendment's, so neither can drift and v2 cannot be widened
+    back.
+  </p>
+</div>
+
+<h2 id="greenfield">Greenfield enablement: the only owner transition there is</h2>
+
+<p>
+  Byom is kovee's governance owner from day one. There is no migration path into byom
+  governance, and after amendment A9 there is no path out and back either: a governed scope
+  is either owned by byom or owned by nothing.
+</p>
+<p>
+  Enablement is a saga with a strict order — create the bindings durably and
+  <em>inertly</em>, then compare-and-set the owner from <code>none</code> to
+  <code>byom</code> at the expected revision. The two steps are separate because the first
+  one must be recoverable without having granted anything.
+</p>
+
+<div class="file">
+  <div class="cmd-head"><span class="path">the greenfield enablement machine, as committed</span></div>
+<pre><code>absent ──governance_enable──▶ bindings_created ──owner_cas_none_to_byom──▶ active
+             ▲                     │        │                                │
+             │(new epoch)          │(retry: │(governance_enable_rollback)     │(retry: same
+             │                     │ same   ▼                                 │ binding)
+             └────────────── rolled_back  (pre-CAS only)       governance_disable
+                                   pending bindings)                          ▼
+                                                                          disabled</code></pre>
+</div>
+
+<p>Five properties are model-checked in <code>GreenfieldEnablement.tla</code>:</p>
+
+<ul>
+  <li><strong>No scope has two active owners</strong>, and no two enablement slots overlap
+  — rejection is the <em>absence</em> of a transition, not a guard that could be relaxed.</li>
+  <li><strong>Retry is identical.</strong> A repeated command returns the same binding,
+  byte-for-byte, under an exact compare-and-set at the expected revision.</li>
+  <li><strong>Rollback is strictly before activation.</strong> Once the owner has flipped,
+  there is no rollback path; re-enabling means a fresh saga under a new binding epoch.</li>
+  <li><strong>An active epoch is never rolled back</strong>, and no activation follows a
+  rollback.</li>
+  <li><strong>The owner arm flips exactly at the compare-and-set</strong> and survives the
+  freeze.</li>
+</ul>
+
+<p>
+  The allowed actor is a human realm-owner principal only — never a service identity, a
+  session, an assistant or a connector. Kovee may start, configure and bind the daemon, and
+  supply inert context; it is never the genesis governance actor, and the society it
+  enables was bootstrapped through a human's own governance channel.
+</p>
+
+<div class="note limit">
+  <span class="tag">What the model does not cover</span>
+  <p>
+    Durable state plus stuttering crashes are modeled. The <em>rewind</em> of durable state
+    by a store restore is out of model scope: the saga document requires query-first
+    resolution there, and that behaviour is not machine-checked. The model's non-vacuity
+    probes — allowing activation from <code>rolled_back</code>, dropping the overlap guard —
+    have been run ad hoc, not in a harness.
+  </p>
+</div>
+
+<h2 id="turn">One governed turn, end to end</h2>
+
+<p>
+  The call order below is the achievable one, and it is not negotiable: placement admission
+  binds the exact resource allocation — including its portable digest — so it can only run
+  <em>after</em> the request that creates that allocation. Placement never comes first.
+</p>
+
+<div class="chain" role="img" aria-label="The order of one governed hosted turn: episode request drives the three activation stages and answers with the allocation and its portable digest; kovee authors a placement binding; placement admission presents that digest byte for byte and queues the episode; claim and start commit the episode binding under both fences; the model call runs through kovee's context manifest; the outbound act consumes a one-shot permit; the dispatch outcome is admitted only from a verified receipt; usage settles the measured charge; terminalization releases the remainder.">
+  <div class="chain-row auth"><span class="k">episode_request</span><span class="v">one participant call drives wake intent → admission → allocation, reserves every dimension, and answers with the allocation and its portable digest</span></div>
+  <div class="chain-row"><span class="k">PlacementBinding</span><span class="v">kovee chooses among already-eligible manifestations, pinning the digest the reply carried — the one activation record kovee owns</span></div>
+  <div class="chain-row auth"><span class="k">placement_admit</span><span class="v">presents that digest byte-for-byte plus the subordinate reservation outcome, and queues the episode</span></div>
+  <div class="chain-row"><span class="k">claim / start</span><span class="v">kovee commits the episode binding — both fences, context refs, budget and bridge refs — idempotently</span></div>
+  <div class="chain-row"><span class="k">model call</span><span class="v">through kovee's provider context manifest, carrying byom's exact composed source fields</span></div>
+  <div class="chain-row auth"><span class="k">act → consume</span><span class="v">byom rebuilds the host's binding digest and rechecks the assented context and disclosure pairs <em>before</em> any consumption state moves</span></div>
+  <div class="chain-row"><span class="k">outcome</span><span class="v">one signed dispatch receipt and one head compare-and-set; byom admits the effect outcome only from that verified receipt</span></div>
+  <div class="chain-row"><span class="k">usage_report</span><span class="v">the measured charge and the counterparty's subordinate row settle in one transaction, before any terminalization</span></div>
+  <div class="chain-row"><span class="k">complete / fail</span><span class="v">releases the remainder; an episode nobody metered settles conservatively to the whole held worst case</span></div>
+</div>
+
+<h2 id="budget">The budget bridge</h2>
+
+<p>
+  A hosted turn spends on both sides of the seam, and the invariant is that it can never
+  spend twice. The bridge is an idempotent saga over a stable external reservation key with
+  these committed rules:
+</p>
+
+<ul>
+  <li>
+    <strong>Never above parent, never in parallel.</strong> A subordinate reservation may
+    narrow or deny, but never parallel-charge; the charge is bounded by the reservation,
+    which is bounded by the parent's worst case.
+  </li>
+  <li>
+    <strong>Created once, settled once.</strong> At most one counterparty row exists per
+    stable key across a direct commit, a lost reply, and any number of retries. Measured
+    settlement is monotonic and applied once on both sides.
+  </li>
+  <li>
+    <strong>Resolution is real.</strong> The recovery path <em>queries</em> the durable
+    truth. Guessing is not a transition — there is no row for it.
+  </li>
+  <li>
+    <strong>Uncertain does not expire.</strong> An unknown result stays uncertain, and the
+    only way out is a governance reconciliation seat presenting a fresh challenge.
+  </li>
+</ul>
+
+<p>
+  All of these are invariants of <code>SubordinateReservation.tla</code>, checked
+  exhaustively over two keys. Its non-vacuity probes — releasing from
+  <code>uncertain</code>, confirming a query whose hidden truth is "not created", a second
+  counterparty commit — have been run ad hoc rather than in a harness.
+</p>
+
+<h2 id="dispatch">Dispatch and outcome admission</h2>
+
+<p>
+  When an act reaches out through akson, kovee's driver stages it, consumes akson consent
+  and dispatches. Exactly one signed outcome receipt comes back as a closed union, against
+  one head compare-and-set. Byom admits the effect outcome <em>only</em> from that verified
+  receipt.
+</p>
+<p>
+  The ambiguous arm is the interesting one, and it is the point of separating an act intent
+  from an effect: an unknown non-idempotent outcome is recorded ambiguous and is never
+  retried blindly. It becomes settled only through a governance disposition — and until
+  then the budget hold stays in <code>uncertain</code>, where the conservation identity can
+  still account for it.
+</p>
+
+<div class="note">
+  <span class="tag">Byom rebuilds, rather than believing</span>
+  <p>
+    At consumption byom reconstructs the host's entire nine-member effect binding fragment
+    from its own committed act row, taking only two genuinely host-owned members from the
+    request, and refuses a host effect digest that does not re-derive — before any
+    consumption state moves. It also requires a registration credential that binds the
+    permit to one exact prepared host effect. Both exist because a live probe consumed
+    against a nonexistent effect: a value merely stored because a caller sent it is
+    asserted, not verified.
+  </p>
+</div>
+
+<h2 id="onboarding">Onboarding compute: one shot, never assent</h2>
+
+<p>
+  A candidate may need to compute once — to read the offer, to answer — before it is a
+  member of anything. That is a genuinely awkward case, because the authorization has to
+  exist before the host's final context bytes do.
+</p>
+<p>
+  Byom's answer is a one-shot permit with a pinned invariant set: at most one episode, a
+  three-operation allowed set, and general effect and child authority explicitly
+  <code>none</code>. The intent pins the society-authorized exact disclosed context and
+  proposed manifestation; the <em>receipt</em> carries the host's final manifest, disclosure
+  and model digests as presented by the broker. The permit is consumed at most once, and
+  its channel binds the offer <em>and</em> its fence — so a refusal, which advances that
+  fence and revokes unused compute authority in the same compare-and-set, invalidates the
+  workload's own credential.
+</p>
+<p>
+  Completing that compute is evidence, and evidence only. It is never acceptance.
+</p>
+
+<h2 id="credentials">Sender-constrained channels</h2>
+
+<p>
+  Each narrow channel binds the record whose authority it carries, so a stolen or copied
+  token has nothing generic to spend. The permit channel binds the exact act intent — an
+  unauthorized act answers <code>decision_incomplete</code> and a spent decision answers
+  <code>stale_revision</code>, never an opaque <code>forbidden</code>. The broker channel
+  binds the compute key. The candidate channel binds the offer and its fence. The workload
+  tokens are minted over the exact <code>(episode, generation)</code> subject, and the
+  narrow trusted-meter token is the <em>only</em> channel whose usage report settles: the
+  worker's own episode-scoped token may file evidence and nothing else.
+</p>
+
+<div class="note limit">
+  <span class="tag">What the channels are, honestly</span>
+  <p>
+    These are byomd-minted tokens under the store root, published <code>0600</code> in the
+    daemon's own <code>channels</code> directory. Mutual TLS and attested workload identity are
+    <strong>not</strong> claimed at this assurance profile, and neither is the freshness of
+    the challenge the two reconciliation seats carry.
+    <a href="../security/#profile">The profile, in full →</a>
+  </p>
+</div>
+
+<h2 id="amendments">The amendment record</h2>
+
+<p>
+  The v0.2 design text is byte-frozen and digest-pinned. Amendments ride alongside it and
+  <strong>override it wherever they conflict</strong>, rather than being folded in by
+  editing a pinned artifact. That is deliberate: an amendment record shows what changed,
+  when, and on whose authority, where a silent edit would not.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Id</th><th>Title</th><th>What it does</th><th>Status</th></tr></thead>
+  <tbody><!--gen:amendment-rows-->
+  <tr><td><code>A1</code></td><td>Naming normalization (plan D9)</td><td>The gateway is <strong>akson</strong>; the historical path name is retired.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A2</code></td><td>Kovee integration is greenfield-first (plan D1, D10)</td><td>Kovee integration is greenfield-first: byom is kovee's governance owner from day one, there is no migration path in, and the greenfield enablement saga is added to the governed-work bundle.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A3</code></td><td>Review-cadence completion</td><td>Adds the two review cadences that make B0.1/C3a and C4 implementation-ready.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A4</code></td><td>Candidate MCP binding (normative amendment to §14.10)</td><td>Adds the <strong>candidate</strong> MCP profile: one offer, three tools, closed server-side the moment the offer terminates. Elicitation through it is never assent.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A5</code></td><td>Directory evidence operations (tracked obligation, B0.4)</td><td>Typed profile-claim publish/read/search operations are a tracked obligation, not a shipped capability — until they exist no ranked-routing claim is advertised.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A6</code></td><td>Manual developer profile for sovereign exchange (normative amendment to §17/B5)</td><td>Adds an honestly weaker <strong>manual developer profile</strong> for sovereign exchange, with no execution evidence claimed.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A7</code></td><td>B1/B3 re-slice and B0.2 scope (normative amendment to §24)</td><td>Re-slices B1 into an attached (I0) and a hosted (I1) slice with separate exits.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A8</code></td><td>The cross-boundary digest-class rule, and the achievable activation order</td><td>The cross-boundary digest-class rule, and the corrected activation order. Found by two independent implementations meeting at a live seam, not by review.</td><td>proposed (C0 revision work; becomes normative on C0 ratification)</td></tr>
+  <tr><td><code>A9</code></td><td>the governance owner enum is <code>byom | none</code></td><td>Narrows the governance-owner enum to <code>byom | none</code> and withdraws the cutover machine, leaving greenfield enablement as the only owner transition in the stack.</td><td>proposed (becomes normative on acceptance)</td></tr>
+<!--/gen:amendment-rows--></tbody>
+</table>
+</div>
+
+<p>
+  Two of these are worth reading on their own. <strong>A8</strong> is the only rule in the
+  stack that was found by two independent implementations meeting at a live seam rather than
+  by review — a frozen contract could not surface it, because both sides conformed to the
+  contract and the contract was underspecified.
+  <a href="../encoding/#crossboundary">Its cross-boundary digest rule is on the encoding
+  page →</a>
+</p>
+<p>
+  <strong>A9</strong> is the opposite kind of correction: it removed something. The
+  governance-owner enum carried a third arm naming a discarded predecessor design. No
+  operation ever produced the value, every consumer branched on the other two, and a model
+  invariant asserted the arm was never taken — an invariant over a value no implementation
+  can produce checks nothing, and only makes the model look more thorough than it is. The
+  arm was withdrawn, the cutover machine it existed for was withdrawn with it, and a
+  negative vector now feeds the exact value the old schema accepted, so the narrowing is
+  proven rather than asserted.
+</p>
+
+<h2 id="adrs">Decision records</h2>
+
+<p>
+  An ADR records one decision with lasting consequences. It is <em>proposed</em> until
+  merged with maintainer approval, then <em>accepted</em>; superseding requires a new ADR
+  linking both ways.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>ADR</th><th>Plan id</th><th>Title</th><th>Status</th></tr></thead>
+  <tbody><!--gen:adr-rows-->
+  <tr><td><code>ADR-0001</code></td><td><code>B-ADR-1</code></td><td>BPA-1 policy algebra encoding</td><td>accepted</td></tr>
+  <tr><td><code>ADR-0002</code></td><td><code>B-ADR-2</code></td><td>BDPL serialization</td><td>proposed</td></tr>
+  <tr><td><code>ADR-0003</code></td><td><code>B-ADR-4</code></td><td>Model checking and conformance oracle</td><td>accepted</td></tr>
+<!--/gen:adr-rows--></tbody>
+</table>
+</div>
+
+<p>
+  ADR-0003 carries an erratum. It cites a <code>cargo test</code> invocation naming a crate
+  that has never existed in this workspace, and the same sweep that found that found the
+  larger fact behind it. <a href="../proofs/#gap">Both are on the proofs page, stated
+  plainly →</a>
+</p>
+
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../encoding/"><span class="k">Previous</span>Encoding profile</a>
+  <a class="next" href="../proofs/"><span class="k">Next</span>Conformance &amp; proofs</a>
+</nav>
+
+<footer>
+  <p>
+    Normative sources:
+    <a href="https://github.com/zarbafian/byom/blob/main/spec/governed-work/greenfield-saga.md">greenfield-saga.md</a>,
+    <a href="https://github.com/zarbafian/byom/blob/main/spec/governed-work/episode-budget-dispatch.md">episode-budget-dispatch.md</a>,
+    the record schemas beside them, and the amendment records under
+    <a href="https://github.com/zarbafian/byom/tree/main/design">design/</a>. The amendment
+    and ADR tables on this page are generated from those files.
+  </p>
+</footer>
+
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

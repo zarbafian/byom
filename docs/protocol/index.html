@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Protocol — byom</title>
+<meta name="description" content="The Byom Participation Protocol: one JSON envelope over per-surface Unix sockets, a deny-by-absence (operation, surface) registry, mutation meta and idempotency, typed problems, cursored events, and the MCP binding.">
+<link rel="canonical" href="https://byom.cc/protocol/">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">the wire</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#envelope">The envelope</a>
+  <a href="#surfaces">Surfaces and sockets</a>
+  <a href="#registry">The registry</a>
+  <a href="#mutations">Mutations and idempotency</a>
+  <a href="#problems">Problems</a>
+  <a href="#events">Events, cursors, recovery</a>
+  <a href="#advertisement">What this daemon serves</a>
+  <a href="#mcp">The MCP binding</a>
+  <a href="#limits">Limits</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/">Concepts</a>
+  <a href="../protocol/" class="here">Protocol</a>
+  <a href="../encoding/">Encoding</a>
+  <a href="../governed-work/">Governed work</a>
+  <a href="../proofs/">Proofs</a>
+  <a href="../security/">Security &amp; limits</a>
+  <a href="../reference/">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">Byom Participation Protocol</p>
+  <h1>One envelope, and a registry that decides what exists.</h1>
+  <p class="lede">
+    BPP is transport-independent and spec-first: the JSON Schemas, canonical byte rules,
+    problems, limits, vectors and transition descriptors are normative, and the
+    implementation conforms to them rather than the other way around. Everything on the
+    wire is one envelope with exactly two answers, plus a machine-readable registry that
+    says which <code>(operation, surface)</code> pairs are addressable at all.
+  </p>
+  <div class="pills">
+    <span class="pill">version <!--gen:protocol-version-->0.2<!--/gen:protocol-version--></span>
+    <span class="pill"><!--gen:registry-rows-->99<!--/gen:registry-rows--> rows</span>
+    <span class="pill"><!--gen:registry-ops-->95<!--/gen:registry-ops--> operations</span>
+    <span class="pill"><!--gen:registry-families-->16<!--/gen:registry-families--> families</span>
+    <span class="pill"><!--gen:schema-count-->234<!--/gen:schema-count--> schemas</span>
+    <span class="pill"><!--gen:vector-count-->462<!--/gen:vector-count--> vectors</span>
+  </div>
+</header>
+
+<h2 id="envelope" class="chapter-start">The envelope</h2>
+
+<p>
+  A request is a single UTF-8 I-JSON text carrying a negotiated protocol version, an
+  operation id, that operation's exact arguments, and — on mutations — a
+  <code>MutationMeta</code>. Every concrete operation has its own closed schema: unknown
+  fields fail closed, and operation arguments never validate against the generic envelope.
+</p>
+
+<div class="cmd">
+  <div class="cmd-head">
+    <span class="who">request</span>
+    <span class="path">→ participant.sock</span>
+    <button class="copy" type="button">Copy</button>
+  </div>
+<pre><code>{"version": "0.2", "op": "hello"}</code></pre>
+</div>
+
+<p>There are exactly two answers, and they are structurally distinguishable.</p>
+
+<div class="cmd">
+  <div class="cmd-head">
+    <span class="who">success</span>
+    <span class="path">outcome: ok</span>
+    <button class="copy" type="button">Copy</button>
+  </div>
+<pre><code>{"outcome": "ok", "result": {"versions": ["0.2"], "surface": "participant",
+                             "endpoint_incarnation": "inc-b597a0a54e5d9f10"}}</code></pre>
+</div>
+
+<div class="cmd">
+  <div class="cmd-head">
+    <span class="who">problem</span>
+    <span class="path">outcome: problem</span>
+    <button class="copy" type="button">Copy</button>
+  </div>
+<pre><code>{"outcome": "problem", "problem": {"kind": "unsupported_version",
+   "type": "https://byom.dev/problems/unsupported_version",
+   "title": "no common protocol version", "status": 400}}</code></pre>
+</div>
+
+<p>
+  The <code>hello</code> result schema admits a list of supported minors so a client can
+  negotiate the highest common one; this daemon advertises exactly one. Note what
+  <code>hello</code> does <em>not</em> return: it is an endpoint-and-version closure, so it
+  names the surface this channel is bound to and the endpoint incarnation, and nothing
+  about the society behind it.
+</p>
+
+<div class="note">
+  <span class="tag">The endpoint incarnation is not decoration</span>
+  <p>
+    It identifies this run of this endpoint. It is digest material in every idempotency
+    domain and a required member of every <code>MutationMeta</code>, so a request minted
+    against an old incarnation cannot resolve against a new one. Restoration creates a new
+    recovery epoch, which fences pre-restore leases, credentials, permits and live channels
+    for the same reason.
+  </p>
+</div>
+
+<h2 id="surfaces">Surfaces and sockets</h2>
+
+<p>
+  Authority is separated by <em>where you are talking</em>, not by a role claim inside the
+  body. The daemon binds <!--gen:socket-count-->five<!--/gen:socket-count--> Unix-domain
+  sockets — <!--gen:socket-surfaces--><code>governance.sock</code>, <code>candidate.sock</code>, <code>participant.sock</code>, <code>runtime.sock</code> and <code>projection.sock</code><!--/gen:socket-surfaces--> — each
+  <code>0600</code> inside a <code>0700</code> per-user runtime directory. The candidate and
+  runtime sockets additionally take a mandatory channel-token preamble line before the
+  request: the offer-scoped candidate credential, and the episode- or allocation-scoped
+  workload token.
+</p>
+<p>
+  The closed surface enum in the negotiation schema has
+  <!--gen:surface-enum-count-->six<!--/gen:surface-enum-count--> values:
+  <!--gen:surface-enum--><code>governance</code>, <code>candidate</code>, <code>participant</code>, <code>runtime</code>, <code>projection</code> and <code>admin</code><!--/gen:surface-enum-->.
+  The registry additionally uses two names that are not sockets of their own:
+  <code>pre_auth</code> for the negotiation reads, which answer on every socket, and
+  <code>originating</code> for the two recovery reads a caller aims at its own prior
+  request, which answer on the mutation-capable socket that request used.
+</p>
+
+<div class="note limit">
+  <span class="tag">The admin surface binds nothing</span>
+  <p>
+    <code>admin</code> is a value in the closed surface enum with
+    <!--gen:admin-rows-->zero<!--/gen:admin-rows--> registry rows and no
+    <code>admin.sock</code>. There is nothing to call there. That is deny-by-absence
+    working as intended rather than an omission — but it does mean the enum is wider than
+    the implemented surface set, and a reader should not infer an administrative capability
+    from the presence of the name.
+  </p>
+</div>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Surface</th><th>Channel</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>governance</code></td>
+      <td><code>governance.sock</code></td>
+      <td>Decisions made about a society: bootstrap, charter, membership offers, admission, mandate issue/hold/revoke, and the two reconciliation seats.</td>
+    </tr>
+    <tr>
+      <td><code>candidate</code></td>
+      <td><code>candidate.sock</code> + offer credential</td>
+      <td>The only surface an unadmitted candidate can reach. Three operations, scoped to exactly one membership offer, fenced when that offer terminates.</td>
+    </tr>
+    <tr>
+      <td><code>participant</code></td>
+      <td><code>participant.sock</code></td>
+      <td>What an admitted participant does on its own behalf: propose, position, pledge, derive mandates, open activities, deliver, review.</td>
+    </tr>
+    <tr>
+      <td><code>runtime</code></td>
+      <td><code>runtime.sock</code> + workload token</td>
+      <td>The execution seam: claim, start, checkpoint, complete, consume a permit, report usage, admit a placement.</td>
+    </tr>
+    <tr>
+      <td><code>projection</code></td>
+      <td><code>projection.sock</code></td>
+      <td>Reads only. No operation bound here mutates anything.</td>
+    </tr>
+    <tr>
+      <td><code>pre_auth</code></td>
+      <td>every socket</td>
+      <td>Version and capability negotiation, answerable before any authority exists.</td>
+    </tr>
+    <tr>
+      <td><code>originating</code></td>
+      <td>the socket the original request used</td>
+      <td>The two recovery reads: fetch a retained idempotent result, or recover a cursor.</td>
+    </tr>
+    <tr class="limit">
+      <td><code>admin</code></td>
+      <td>— none</td>
+      <td>Named in the enum, bound to no operation, served by no socket.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The server derives actor, participant, manifestation, society and surface
+  <em>from the channel</em>. Request fields that name those objects can never override the
+  binding — a "wrong-surface args" negative vector pins that for each family.
+</p>
+
+<h2 id="registry">The registry, and deny by absence</h2>
+
+<p>
+  <a href="https://github.com/zarbafian/byom/blob/main/spec/registry.json"><code>spec/registry.json</code></a>
+  is the machine-readable operation registry: one row per
+  <code>(operation, surface)</code> pair, carrying the binding number, the family, the class
+  and the frozen request and result schema names. Today it holds
+  <!--gen:registry-rows-->99<!--/gen:registry-rows--> rows over
+  <!--gen:registry-ops-->95<!--/gen:registry-ops--> distinct operations across
+  <!--gen:registry-families-->16<!--/gen:registry-families--> families. Four operations
+  exist on both the participant and the governance surface and therefore carry exactly two
+  rows each; every other operation carries exactly one.
+</p>
+<p>
+  The registry is the freeze source for a bundle and the dispatch truth for the daemon. A
+  call whose <code>(operation, surface)</code> pair has no row is refused, not interpreted
+  — and the conformance runner derives its bundle, meta-class, surface and MCP checks from
+  these rows, failing on any extra or missing surface binding. Counts and membership are
+  registry-derived, never prose.
+</p>
+<p>
+  Every row is classed, and the class is structural rather than documentary:
+  <!--gen:op-class-counts-->40 <code>create</code>, 43 <code>update</code>, and 16 <code>read</code><!--/gen:op-class-counts-->.
+</p>
+
+<div class="tw">
+<table class="narrow-first">
+  <thead><tr><th>Class</th><th>What the closed meta looks like</th></tr></thead>
+  <tbody>
+    <tr><td><code>read</code></td><td>Never mutates and carries no <code>meta</code> at all — supplying one fails the closed schema.</td></tr>
+    <tr><td><code>create</code></td><td>A mutation whose meta has <strong>no</strong> <code>expected_revision</code> member, so supplying one fails the schema.</td></tr>
+    <tr><td><code>update</code></td><td>A current-head compare-and-set whose meta <strong>requires</strong> <code>expected_revision</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <a href="../reference/#surfaces">The complete registry, row by row, is generated on the
+  reference page →</a>
+</p>
+
+<div class="note">
+  <span class="tag">Bundle freeze</span>
+  <p>
+    A specification bundle is the unit of compatibility. Its exact operation list is frozen
+    from the registry at freeze time; published schemas are immutable and any change is a
+    new version file; a merged vector is immutable and fixes are new cases; and a feature is
+    advertised on the wire only when all of its operations, states, limits, authorization
+    checks, crash semantics and fixtures exist. A <code>-v2</code> schema name on this site
+    is always an immutable successor publication, never an edit.
+  </p>
+</div>
+
+<h2 id="mutations">Mutations, idempotency and revisions</h2>
+
+<p>
+  Every mutation carries a closed <code>MutationMeta</code>: a request id, an idempotency
+  key, the expected endpoint incarnation, the expected recovery epoch, and — for
+  <code>update</code>-classed operations — the expected revision. Optional causation and
+  correlation references travel there too, and carry no authority.
+</p>
+<p>
+  Retry-safety is an invariant, not a convention: an authenticated actor, operation and
+  idempotency key identify one canonical request. A replay returns the retained result or a
+  durable non-re-executing expiry tombstone. Changed input under the same key is a conflict
+  — <code>idempotency_mismatch</code> — rather than a second execution.
+</p>
+<p>
+  The idempotency domain is a keyed digest over
+  <code>{actor_binding_digest, operation, endpoint_incarnation, society_id,
+  society_recovery_epoch, idempotency_key}</code>. Because the recovery epoch and the
+  incarnation are digest material, a request minted in an old domain can never resolve in a
+  new one. <a href="../encoding/#idempotency">Why that digest is keyed, and scope-keyed
+  rather than object-keyed →</a>
+</p>
+
+<h2 id="problems">Problems</h2>
+
+<p>
+  The failure envelope wraps an RFC 9457 problem object. <code>kind</code> is a closed
+  <!--gen:problem-kind-count-->29<!--/gen:problem-kind-count-->-value enum;
+  <code>type</code> is exactly <code>https://byom.dev/problems/</code> plus that kind;
+  <code>title</code> is free prose that carries no authority; <code>status</code>, when
+  present, is a JSON integer in 400–599. An unknown kind fails closed.
+</p>
+<p>
+  Problems never disclose hidden object, participant, peer, path, policy or membership
+  existence. An unknown label and a forbidden one produce the same answer, and the vectors
+  test the shape rather than the wording.
+</p>
+<p>
+  The complete enum, in schema order:
+  <!--gen:problem-kinds--><code>invalid</code>, <code>unsupported_version</code>, <code>feature_unavailable</code>, <code>forbidden_surface</code>, <code>forbidden</code>, <code>not_found</code>, <code>stale_revision</code>, <code>stale_binding</code>, <code>stale_assembly_epoch</code>, <code>stale_lease</code>, <code>idempotency_mismatch</code>, <code>position_ineligible</code>, <code>decision_incomplete</code>, <code>independence_conflict</code>, <code>authority_widening</code>, <code>mandate_held</code>, <code>admission_required</code>, <code>classification_unmapped</code>, <code>policy_conflict</code>, <code>policy_overflow</code>, <code>budget_exceeded</code>, <code>effect_ambiguous</code>, <code>authority_witness_unknown</code>, <code>endpoint_sealed</code>, <code>cursor_expired</code>, <code>unavailable</code>, <code>formation_requires_participation</code>, <code>external_command_not_terminalizable</code>, <code>internal</code><!--/gen:problem-kinds-->.
+</p>
+<p>
+  Byom's convention deliberately diverges from kovee's and is
+  <strong>non-substitutable</strong> with it: snake_case against kebab-case, a separate
+  required <code>kind</code> member against kind-inside-the-URN, an HTTPS namespace against
+  a URN. There is no translation table.
+  <a href="../encoding/#problems">The two conventions side by side →</a>
+</p>
+
+<h2 id="events">Events, cursors and recovery</h2>
+
+<p>
+  Society activity lands in an append-only ledger read through
+  <code>events_read</code> and <code>events_wait</code>, with payloads fetched separately by
+  reference. Continuation tokens are one opaque string bound to the authenticated cursor,
+  the endpoint incarnation, the recovery epoch, the filter digest and the retention
+  semantics. Internal sequence values are never projected — ordering travels only inside the
+  token — and a filter narrows visibility, never widens it.
+</p>
+<p>
+  Two recovery reads exist for a caller that lost its answer rather than its authority:
+  <code>idempotency_result</code>, which returns a retained outcome as
+  <code>completed</code>, <code>in_flight</code> or <code>tombstone</code> and never
+  re-executes; and <code>cursor_recover</code>, which resumes or offers an authorized
+  snapshot restart. Both are reads, so neither carries a mutation meta.
+</p>
+
+<h2 id="advertisement">What this daemon actually serves</h2>
+
+<p>
+  The registry is the frozen surface; <code>feature_info</code> narrows to what is
+  implemented. On this tree the daemon serves
+  <strong><!--gen:served-count-->85<!--/gen:served-count--></strong> of the registry's
+  <!--gen:registry-ops-->95<!--/gen:registry-ops--> operations.
+</p>
+
+<div class="note limit">
+  <span class="tag">Registry-bound, not implemented</span>
+  <p>
+    <!--gen:unserved-count-->ten<!--/gen:unserved-count--> operations are bound in the
+    registry and answer a typed <code>feature_unavailable</code> rather than being silently
+    absent: <!--gen:unserved-ops--><code>act_intent_cancel</code>, <code>delivery_withdraw</code>, <code>manifestation_disable</code>, <code>manifestation_propose</code>, <code>participant_propose</code>, <code>participant_retire</code>, <code>participant_suspend</code>, <code>society_dissolve</code>, <code>society_hold</code> and <code>society_release</code><!--/gen:unserved-ops-->.
+    <code>feature_info</code> advertises exactly the implemented set, because a feature is
+    advertised only when it is complete. Notably this means the deny, cancel and expiry
+    branches of the act-intent machine are specified and descriptor-covered but not
+    reachable on this daemon.
+  </p>
+</div>
+
+<h2 id="mcp">The MCP binding</h2>
+
+<p>
+  Byom publishes a versioned MCP tool document (v<!--gen:mcp-doc-version-->0.1.1<!--/gen:mcp-doc-version-->)
+  with exactly two closed profiles, so a third profile cannot exist:
+  <strong><!--gen:mcp-candidate-tools-->three<!--/gen:mcp-candidate-tools--></strong>
+  candidate tools and
+  <strong><!--gen:mcp-participant-tools-->34<!--/gen:mcp-participant-tools--></strong>
+  participant tools. Tool names are closed per-profile enums, so a governance, runtime or
+  admin operation offered as a tool name fails the meta-schema — deny-by-absence again,
+  this time at the harness binding.
+</p>
+<p>
+  Per-tool input schemas are verbatim copies of the committed operation request schemas
+  minus the channel envelope, and the conformance runner re-derives them and runs widening
+  mutations against the document on every invocation. There are no placeholder tools: an
+  operation whose owning bundle has not frozen is absent from the profile rather than
+  present and null-bound.
+</p>
+
+<div class="note">
+  <span class="tag">Elicitation is never assent</span>
+  <p>
+    The candidate profile is a sender-constrained binding scoped to one membership offer,
+    its proposed manifestation, its control-domain binding and its onboarding fence. It is
+    minted with the offer and closed server-side on admission, refusal, revocation or
+    expiry, and it never converts in place — the participant channel is a new credential
+    minted at admission. No human-authority, governance or admin tool exists on it, and a
+    prompt through it does not become a position.
+  </p>
+</div>
+
+<h2 id="limits">Limits on the wire</h2>
+
+<p>
+  These are enforced <em>before</em> schema validation, as part of strict I-JSON acceptance,
+  and advertised by <code>protocol_info</code>.
+</p>
+
+<div class="tw">
+<table class="narrow-first">
+  <thead><tr><th>Limit</th><th class="num">Value</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Request body</td><td class="num"><!--gen:limit-request-bytes-->262,144<!--/gen:limit-request-bytes--></td><td>bytes, inclusive — 256 KiB</td></tr>
+    <tr><td>Response body</td><td class="num"><!--gen:limit-response-bytes-->1,048,576<!--/gen:limit-response-bytes--></td><td>bytes, inclusive — 1 MiB</td></tr>
+    <tr><td>Container nesting depth</td><td class="num"><!--gen:limit-depth-->64<!--/gen:limit-depth--></td><td>levels; deeper input is rejected, never parsed recursively into a crash</td></tr>
+    <tr><td>JSON values per document</td><td class="num"><!--gen:limit-nodes-->65,536<!--/gen:limit-nodes--></td><td>nodes, inclusive</td></tr>
+    <tr><td>Identifier</td><td class="num"><!--gen:limit-identifier-bytes-->128<!--/gen:limit-identifier-bytes--></td><td>bytes of visible ASCII; opaque, never an alias</td></tr>
+    <tr><td>Events per page</td><td class="num"><!--gen:limit-events-page-->512<!--/gen:limit-events-page--></td><td>every list requires one explicit page size</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <a href="../encoding/#ijson">The full acceptance order, and what each failure is
+  called →</a>
+</p>
+
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../concepts/"><span class="k">Previous</span>Concepts</a>
+  <a class="next" href="../encoding/"><span class="k">Next</span>Encoding profile</a>
+</nav>
+
+<footer>
+  <p>
+    Normative sources:
+    <a href="https://github.com/zarbafian/byom/blob/main/spec/README.md">spec/README.md</a>,
+    <a href="https://github.com/zarbafian/byom/blob/main/spec/registry.json">spec/registry.json</a>,
+    <a href="https://github.com/zarbafian/byom/blob/main/spec/schemas/ops/README.md">spec/schemas/ops/README.md</a>
+    and DESIGN.md §14. Counts on this page are generated from those files.
+  </p>
+</footer>
+
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

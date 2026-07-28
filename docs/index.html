@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byom — governance for a society of autonomous participants</title>
+<meta name="description" content="Byom is the governance layer of the akson + kovee + byom family: societies, charters, pledges, mandates and episodes-as-authority, spoken over the Byom Participation Protocol with deny-by-absence operation registries.">
+<link rel="canonical" href="https://byom.cc/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Byom — governance for a society of autonomous participants">
+<meta property="og:description" content="Societies, pledges, mandates and bounded episodes — a deterministic governance kernel where every act traces to the exact authority that permitted it.">
+<meta property="og:url" content="https://byom.cc/">
+<meta property="og:site_name" content="Byom">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://byom.cc/#website",
+      "url": "https://byom.cc/",
+      "name": "Byom"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Byom",
+      "url": "https://byom.cc/",
+      "sameAs": "https://github.com/zarbafian/byom",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux",
+      "description": "A protocol and deterministic governance kernel through which humans, agents and bounded collectives form shared endeavors, make voluntary pledges, receive limited mandates, and act with accountable authority.",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+  ]
+}
+</script>
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body class="landing">
+<a class="skip" href="#top">Skip to content</a>
+<div class="wrap">
+
+<header class="top">
+  <a class="rail-mark" href="./">by<span class="g">o</span>m</a>
+  <nav class="links" aria-label="Site">
+    <a href="concepts/">Concepts</a>
+    <a href="protocol/">Protocol</a>
+    <a href="encoding/">Encoding</a>
+    <a href="governed-work/">Governed work</a>
+    <a href="proofs/">Proofs</a>
+    <a href="security/">Security</a>
+    <a href="reference/">Reference</a>
+    <a href="https://github.com/zarbafian/byom">GitHub</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </nav>
+</header>
+
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">The governance layer of akson + kovee + byom</p>
+  <h1>Authority you can point at.</h1>
+  <p class="lede">
+    Byom is a protocol and a deterministic governance kernel. Humans, agents and bounded
+    collectives form shared endeavors, make voluntary pledges, receive limited mandates,
+    and act inside them. Every act traces back to the exact charter, decision, mandate and
+    attempt that permitted it — and a mandate can only ever narrow.
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="concepts/">Start with the concepts</a>
+    <a class="btn" href="protocol/">Read the protocol</a>
+  </div>
+  <div class="pills">
+    <span class="pill">Linux · Rust</span>
+    <span class="pill">BPP <!--gen:protocol-version-->0.2<!--/gen:protocol-version--></span>
+    <span class="pill"><!--gen:socket-count-->five<!--/gen:socket-count--> Unix sockets</span>
+    <span class="pill"><!--gen:registry-rows-->99<!--/gen:registry-rows--> registry rows</span>
+    <span class="pill">Deny by absence</span>
+    <span class="pill">Pre-release v<!--gen:version-->0.0.1<!--/gen:version--></span>
+  </div>
+
+  <div class="vignette">
+    <div class="vignette-bar">
+      <span class="vignette-title">the whole wire, condensed</span>
+    </div>
+<pre><code><span class="c"># one JSON envelope, per-surface Unix sockets. To participant.sock:</span>
+<span class="g">→</span> {"version": "0.2", "op": "hello"}
+
+<span class="c"># the first of exactly two answers</span>
+<span class="hi">←</span> {"outcome": "ok", "result": {"versions": ["0.2"], "surface": "participant",
+                             "endpoint_incarnation": "inc-b597a0a54e5d9f10"}}
+
+<span class="c"># the other answer is always a typed RFC 9457 problem</span>
+<span class="hi">←</span> {"outcome": "problem", "problem": {"kind": "unsupported_version",
+     "type": "https://byom.dev/problems/unsupported_version",
+     "title": "no common protocol version", "status": 400}}</code></pre>
+  </div>
+</header>
+
+<section id="distinctions">
+  <h2>Six words that are not synonyms</h2>
+  <p class="deck">
+    Most of byom is the refusal to conflate these. A system that treats them as one thing
+    has no way to say who is responsible for what, or under whose authority a thing
+    happened.
+  </p>
+
+  <div class="chain" role="img" aria-label="Six records and what each one actually claims: skill or evidence says a participant may be able to do something; a mandate says it may take a bounded class of action; a pledge says it accepted responsibility for an outcome; an episode says one bounded attempt is in progress; a delivery claims an outcome was produced; a review decides whether that outcome satisfies the pledge.">
+    <div class="chain-row"><span class="k">skill · evidence</span><span class="v">says a participant <em>may be able</em> to do something</span></div>
+    <div class="chain-row auth"><span class="k">mandate</span><span class="v">says it <em>may take</em> a bounded class of action</span></div>
+    <div class="chain-row auth"><span class="k">pledge</span><span class="v">says it has <em>accepted responsibility</em> for an outcome</span></div>
+    <div class="chain-row auth"><span class="k">episode</span><span class="v">says <em>one bounded attempt</em> is in progress</span></div>
+    <div class="chain-row"><span class="k">delivery</span><span class="v"><em>claims</em> an outcome was produced</span></div>
+    <div class="chain-row"><span class="k">review</span><span class="v"><em>decides</em> whether that outcome satisfies the pledge</span></div>
+  </div>
+
+  <p>
+    Byom is not a central orchestrator. It does not call models, choose a universal plan,
+    assign workers, or treat a collective as a single omniscient mind. Participants
+    propose, assent, refuse, organize, delegate, deliver, review and adapt. An assembly can
+    itself become a participant — but it receives no authority merely by aggregating
+    members, and every collective act traces to its exact constitution, epoch, policy,
+    current mandate and actual executor.
+  </p>
+  <p><a href="concepts/">The concepts and their lifecycle, in full →</a></p>
+</section>
+
+<section id="principle" class="principle" aria-label="The core principle">
+  <blockquote>
+    A derived mandate is a <span class="u">mechanical subset</span> of every parent.
+    Authority narrows. It never widens.
+  </blockquote>
+  <p class="src">
+    the one core principle · model-checked as <code>NeverWiden</code> and
+    <code>RootClosure</code> in <code>MandateChain.tla</code>, against live widening
+    attempts rather than their absence · <a href="proofs/#models">what that does and does
+    not prove</a>
+  </p>
+
+  <figure class="fig" style="margin-top: 2rem;" tabindex="0">
+    <svg viewBox="0 0 760 300" role="img" aria-label="A mandate chain: the root grants read, act and a human-only power; the first child may take read and act but never the human power; the grandchild narrows again to read alone. A widening attempt from the grandchild back up to act is refused with the typed problem authority_widening.">
+      <text class="mut" x="20" y="24">root authority, held by a human</text>
+      <rect class="bx2 ga" x="20" y="34" width="300" height="58" rx="3"/>
+      <text class="lbl b700 gf" x="38" y="60">root mandate</text>
+      <text class="mut" x="38" y="78">read · act · human_power (non-delegable)</text>
+
+      <path class="ln" d="M170 92 v26"/>
+      <polygon class="ar" points="170,126 165.5,116 174.5,116"/>
+      <text class="mut" x="182" y="112">derive</text>
+
+      <rect class="bx2 ga" x="60" y="126" width="260" height="58" rx="3"/>
+      <text class="lbl b700 gf" x="78" y="152">child c1</text>
+      <text class="mut" x="78" y="170">read · act — the human power can never appear</text>
+
+      <path class="ln" d="M190 184 v26"/>
+      <polygon class="ar" points="190,218 185.5,208 194.5,208"/>
+      <text class="mut" x="202" y="204">derive</text>
+
+      <rect class="bx2 ga" x="100" y="218" width="220" height="58" rx="3"/>
+      <text class="lbl b700 gf" x="118" y="244">grandchild c2</text>
+      <text class="mut" x="118" y="262">read — and never more than c1, or than the root</text>
+
+      <path class="ln la dash" d="M330 247 h180"/>
+      <polygon class="ar lf" points="518,247 508,242.5 508,251.5"/>
+      <text class="lbl lf b700" x="400" y="238">a widening attempt</text>
+      <text class="mut" x="400" y="272">refused: <tspan class="lf">authority_widening</tspan></text>
+
+      <line class="ln dash" x1="600" y1="34" x2="600" y2="276"/>
+      <text class="mut" x="620" y="60">every use of c2</text>
+      <text class="mut" x="620" y="78">traces to the root,</text>
+      <text class="mut" x="620" y="96">through c1, at exact</text>
+      <text class="mut" x="620" y="114">revisions and digests</text>
+      <text class="mut" x="620" y="146">holding, revoking or</text>
+      <text class="mut" x="620" y="164">expiring any ancestor</text>
+      <text class="mut" x="620" y="182">fences every new use</text>
+      <text class="mut" x="620" y="200">below it — but never</text>
+      <text class="mut" x="620" y="218">un-sends a prior one</text>
+    </svg>
+    <figcaption class="fig-cap">Derivation is a subset check over canonical values, performed by the
+    kernel. An absent selector on a child carries the parent's set unchanged — never wider.</figcaption>
+  </figure>
+</section>
+
+<section id="enforced">
+  <h2>What the kernel actually enforces</h2>
+  <p class="deck">
+    Behaviour of the running daemon, each grounded in a closed state machine, a frozen
+    schema and a vector — not aspirations.
+  </p>
+
+  <div class="cards">
+    <div class="card auth">
+      <span class="k">registries</span>
+      <h3>Deny by absence</h3>
+      <p>The wire surface is one machine-readable registry of
+      <code>(operation, surface)</code> rows. A call whose pair has no row is not
+      unauthorized — it is unaddressable. Four operations exist on two surfaces; every
+      other one exists on exactly one.</p>
+    </div>
+    <div class="card auth">
+      <span class="k">closed machines</span>
+      <h3>An unlisted transition is invalid</h3>
+      <p>Every record kind has a committed transition descriptor with structured guards,
+      locks, fences, events and a crash result per row. Not listed means not merely
+      disallowed — it means the walk is rejected, and a negative vector pins the absence.</p>
+    </div>
+    <div class="card auth">
+      <span class="k">seats</span>
+      <h3>Nothing finalizes without its full seat set</h3>
+      <p>Proposals carry concrete seat records. Finalization authors no seat itself: it is
+      a guard over an explicit set of position receipts, at pinned revisions and digests.
+      A rebound principal cannot carry an old seat forward.</p>
+    </div>
+    <div class="card">
+      <span class="k">fences</span>
+      <h3>One attempt, one fence</h3>
+      <p>Every episode claim mints a fresh fence and one immutable attempt. A superseded
+      worker's completion never lands. Crash alone never enables a re-claim: a lease
+      becomes re-claimable only past an authoritative-clock deadline, or on a voluntary
+      yield.</p>
+    </div>
+    <div class="card">
+      <span class="k">budgets</span>
+      <h3>Conservation, per account</h3>
+      <p><code>ceiling = remaining + reserved + committed + uncertain +
+      delegated_to_children</code> holds in every reachable state — under reservation,
+      settlement, delegation, release, and the ambiguous outcomes that go to
+      <code>uncertain</code> rather than silently back to <code>remaining</code>.</p>
+    </div>
+    <div class="card">
+      <span class="k">crash honesty</span>
+      <h3>Ambiguous is never complete</h3>
+      <p>An external use whose outcome is unknown is recorded ambiguous, and stays
+      ambiguous until a governance seat with a fresh challenge resolves it. Authority
+      mutations run a three-step protocol against an external witness, so a restored
+      database reopens sealed rather than quietly re-granting.</p>
+    </div>
+    <div class="card">
+      <span class="k">privacy</span>
+      <h3>Unlogged bytes are never served</h3>
+      <p>Allowed and denied sensitive reads both append to a hash-chained access record
+      carrying actor, purpose, query digest, result cardinality and outcome — never result
+      plaintext. If the journal commit fails, there is no release.</p>
+    </div>
+    <div class="card">
+      <span class="k">candidates</span>
+      <h3>Silence never accepts</h3>
+      <p>A candidate reaches exactly one offer-scoped surface with three operations, and
+      the offer's own fence closes it on admission, refusal, revocation or expiry.
+      Elicitation through the binding is never assent, and a refusal is real.</p>
+    </div>
+  </div>
+
+  <div class="note limit">
+    <span class="tag">Pre-release, and specifically so</span>
+    <p>
+      Byom is v<!--gen:version-->0.0.1<!--/gen:version-->, not audited, and not
+      production-ready. The assurance profile is <strong>developer</strong>: channel
+      authentication is same-UID <code>SO_PEERCRED</code> possession plus process-bound
+      channel proofs, with no UID separation between principals, no attested process
+      identity and no asymmetric endpoint identity. Byom also
+      <strong>does not sign</strong> its consumption receipt, so a peer cannot
+      cryptographically verify consumption provenance. <a href="security/">Every limit is
+      stated beside the capability it bounds →</a>
+    </p>
+  </div>
+</section>
+
+<section id="checked">
+  <h2>Checked by machines — and honest about the seam that is not</h2>
+  <p class="deck">
+    Nine TLA+ modules are explored exhaustively by TLC at their configured constants. Two
+    independent rederivers in two languages re-derive every byte the family profile pins.
+    A mutation suite proves the harness is not vacuous. And one link in that chain does not
+    exist yet, which is said here rather than in a footnote.
+  </p>
+
+  <div class="cards">
+    <div class="card">
+      <span class="k">model-checked</span>
+      <h3><!--gen:model-count-->nine<!--/gen:model-count--> TLA+ modules</h3>
+      <p>Membership and standing, the pledge lifecycle, the episode lease, the one-shot
+      execution permit, the mandate chain, budget conservation, the authority journal, and
+      the two governed-work sagas — each TLC-exhaustive at its constants, with zero
+      errors, crashes modeled as stuttering at every commit boundary.</p>
+      <p>Safety only. <strong>No liveness is claimed anywhere</strong>, because no spec
+      assumes fairness.</p>
+    </div>
+    <div class="card">
+      <span class="k">parity</span>
+      <h3>Descriptors ↔ models, both ways</h3>
+      <p><!--gen:parity-summary-->9 modules, 11 descriptors, 103 states and 199 transitions in exact agreement in both directions<!--/gen:parity-summary-->.
+      A descriptor row with no model transition, or a model transition with no descriptor
+      row, is a failing check — not a review catch.</p>
+    </div>
+    <div class="card">
+      <span class="k">re-derived</span>
+      <h3>Two independent rederivers</h3>
+      <p><!--gen:family-vector-cases-->111<!--/gen:family-vector-cases--> cases across
+      <!--gen:family-vector-files-->83<!--/gen:family-vector-files--> vector files —
+      canonical bytes, digests, the I-JSON acceptance order, the problem shape — re-derived
+      by a Python stdlib-only checker and, separately, by a dependency-free Node one. No
+      shared code, and both must go nonzero on an empty tree.</p>
+    </div>
+    <div class="card">
+      <span class="k">not vacuous</span>
+      <h3><!--gen:negative-mutation-count-->14<!--/gen:negative-mutation-count--> deliberate mutations</h3>
+      <p>Dropped rows, invented rows, renamed states, lost structured columns, a
+      de-versioned format tag, semantic erasure of a crash result, a widened update meta,
+      and three weakened TLC guards that must produce counterexamples. Every one of them
+      must be caught.</p>
+    </div>
+  </div>
+
+  <div class="note limit">
+    <span class="tag">The gap, stated plainly</span>
+    <p>
+      <strong>No test in <code>crates/</code> reads a descriptor or a TLA+ model at
+      all.</strong> The Rust tests <code>include_str!</code> the schemas, the vectors, the
+      registry and the MCP document — never <code>spec/descriptors/</code> or
+      <code>proof/specs/</code>. The conformance oracle that would tie the daemon's
+      transition functions to these models was expected to land with the daemon; the daemon
+      landed and the oracle did not. So the models are checked, and they are
+      <strong>not connected to the implementation by any automated test</strong>. Every
+      model's refinement boundary therefore stops at the committed descriptor.
+      <a href="proofs/#gap">What that leaves uncaught →</a>
+    </p>
+  </div>
+</section>
+
+<section id="family">
+  <h2>One family, three responsibilities</h2>
+  <p class="deck">
+    Byom is one of three sovereign systems that do not share an operator, credentials,
+    context or authority. Each holds exactly one responsibility, and the seams between them
+    are frozen contracts rather than shared code.
+  </p>
+
+  <div class="cards">
+    <a class="card" href="https://kovee.cc/">
+      <span class="k">kovee</span>
+      <h3>Where work happens</h3>
+      <p>Shared spaces, deliberation, attention, context, local commitments, assistant
+      hosting, tools, models, artifacts and execution. Kovee delegates governance to byom
+      through the governed-work bundle.</p>
+      <span class="go">kovee.cc →</span>
+    </a>
+    <div class="card auth">
+      <span class="k">byom</span>
+      <h3>Who may, and on whose record</h3>
+      <p>Societies, participants, assemblies, endeavors, pledges, mandates, decisions,
+      self-directed activities, governed work and institutional memory — spoken over the
+      Byom Participation Protocol.</p>
+    </div>
+    <a class="card" href="https://akson.cc/">
+      <span class="k">akson</span>
+      <h3>Across installations</h3>
+      <p>Sovereign endpoint identity, paired trust, signed remote contracts, bounded peer
+      execution, evidence and cross-installation carriage.</p>
+      <span class="go">akson.cc →</span>
+    </a>
+  </div>
+
+  <p>
+    Byom v<!--gen:protocol-version-->0.2<!--/gen:protocol-version--> is explicitly
+    human-sovereign. Agent and collective autonomy is real inside the protocol —
+    initiative, refusal, exit, private continuity, voluntary association, bounded action —
+    but it is not a claim of legal or moral personhood, and it does not replace human root
+    authority.
+  </p>
+</section>
+
+<section id="docs">
+  <h2>Documentation</h2>
+  <div class="cards">
+    <a class="card" href="concepts/">
+      <span class="k">start here</span>
+      <h3>Concepts</h3>
+      <p>Societies and charters, participants and candidates, endeavors, calls and pledges,
+      mandates, episodes-as-authority, budgets and decisions — and the lifecycle each of
+      them moves through.</p>
+      <span class="go">concepts →</span>
+    </a>
+    <a class="card" href="protocol/">
+      <span class="k">the wire</span>
+      <h3>Protocol</h3>
+      <p>The envelope, negotiation, the
+      <!--gen:socket-count-->five<!--/gen:socket-count--> sockets and the surfaces they
+      serve, the registry as a deny-by-absence gate, mutation meta and idempotency,
+      problems, events and the MCP binding.</p>
+      <span class="go">protocol →</span>
+    </a>
+    <a class="card" href="encoding/">
+      <span class="k">bytes</span>
+      <h3>Encoding profile</h3>
+      <p>Strict I-JSON acceptance, RFC 8785 canonical bytes, RFC 9457 problems, the
+      <!--gen:digest-class-count-->six<!--/gen:digest-class-count--> digest classes and the
+      A8 cross-boundary rule — the shared substrate all three projects bind to.</p>
+      <span class="go">encoding →</span>
+    </a>
+    <a class="card" href="governed-work/">
+      <span class="k">the seam</span>
+      <h3>Governed work</h3>
+      <p>How kovee delegates governance to byom: the greenfield enablement saga, the
+      episode and budget bridge, the dispatch driver, onboarding compute — and the
+      amendment record A1–A9 that overrides the pinned design.</p>
+      <span class="go">governed work →</span>
+    </a>
+    <a class="card" href="proofs/">
+      <span class="k">assurance</span>
+      <h3>Conformance &amp; proofs</h3>
+      <p>What each model proves, at which constants, with which projection and refinement
+      boundary — the parity gate, the mutation suite, the executable walks, and what none
+      of it covers.</p>
+      <span class="go">proofs →</span>
+    </a>
+    <a class="card" href="security/">
+      <span class="k">limits</span>
+      <h3>Security &amp; limits</h3>
+      <p>The developer assurance profile, the unsigned receipt and the authority residual
+      it leaves, the partial I1 gate, the two open namespace gates, and why
+      <code>./run-checks.sh</code> ends at exit 2 on purpose.</p>
+      <span class="go">security →</span>
+    </a>
+    <a class="card" href="reference/">
+      <span class="k">generated</span>
+      <h3>Reference</h3>
+      <p>Every <!--gen:registry-rows-->99<!--/gen:registry-rows--> registry rows by
+      surface, the transition machines, the digest classes, the problem kinds and the wire
+      limits — written from the sources, never typed.</p>
+      <span class="go">reference →</span>
+    </a>
+  </div>
+  <p>
+    Deeper still, in the repository: the
+    <a href="https://github.com/zarbafian/byom/blob/main/DESIGN.md">normative design</a>,
+    the <a href="https://github.com/zarbafian/byom/tree/main/spec">specification tree</a>,
+    the <a href="https://github.com/zarbafian/byom/blob/main/proof/PROPERTIES.md">proof
+    properties</a>, the
+    <a href="https://github.com/zarbafian/byom/tree/main/spec/adr">ADRs</a>, and the
+    <a href="https://github.com/zarbafian/byom/tree/main/reviews">adversarial review
+    record</a>.
+  </p>
+</section>
+
+<footer>
+  <p>
+    This site documents byom <strong>v<!--gen:version-->0.0.1<!--/gen:version--></strong>,
+    a pre-release. Every count, name and table on it is generated from the specs, the
+    models and the daemon sources by <code>docs-tools/check_docs.py</code>, and
+    <code>./run-checks.sh</code> goes red when a claim here stops matching them. That run
+    ends at <strong>exit 2</strong> by design: the last stage refuses to score a skipped
+    real-harness cell as a pass.
+  </p>
+  <p>
+    <a href="https://github.com/zarbafian/byom">github.com/zarbafian/byom</a> ·
+    <a href="https://kovee.cc/">kovee.cc</a> ·
+    <a href="https://akson.cc/">akson.cc</a>
+  </p>
+</footer>
+
+</main>
+</div>
+
+<script src="assets/site.js"></script>
+</body>
+</html>

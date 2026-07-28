@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference — byom</title>
+<meta name="description" content="The complete Byom Participation Protocol operation registry, per surface, generated from spec/registry.json — plus the transition machines, digest classes, problem kinds and wire limits.">
+<link rel="canonical" href="https://byom.cc/reference/">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">generated · do not edit</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#registry">The registry</a>
+  <a href="#surfaces">Operations by surface</a>
+  <a href="#machines">Transition machines</a>
+  <a href="#digests">Digest classes</a>
+  <a href="#problems">Problem kinds</a>
+  <a href="#limits">Wire limits</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/">Concepts</a>
+  <a href="../protocol/">Protocol</a>
+  <a href="../encoding/">Encoding</a>
+  <a href="../governed-work/">Governed work</a>
+  <a href="../proofs/">Proofs</a>
+  <a href="../security/">Security &amp; limits</a>
+  <a href="../reference/" class="here">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+<header class="hero">
+  <p class="eyebrow">Generated reference</p>
+  <h1>Every operation, and the surface it answers on.</h1>
+  <p class="lede">This page is written by <code>docs-tools/gen_reference.py</code> out of the frozen registry, the schemas, the descriptors and the daemon's own op list. Nothing on it is typed by hand, and <code>./run-checks.sh</code> fails if it drifts from those sources.</p>
+  <div class="pills">
+    <span class="pill">99 registry rows</span>
+    <span class="pill">95 operations</span>
+    <span class="pill">7 bound surfaces</span>
+    <span class="pill">4 bundles</span>
+    <span class="pill">26 machines</span>
+  </div>
+</header>
+<h2 id="registry" class="chapter-start">The registry</h2>
+<p>The registry keys one row per <code>(operation, surface)</code> pair. It is the freeze source for a bundle and the dispatch truth for the daemon: a call whose <code>(operation, surface)</code> pair has no row is refused, not interpreted. Four operations carry two rows because they exist on both the participant and the governance surface.</p>
+<div class="tw">
+<table><thead><tr><th>Surface</th><th class="num">Rows</th><th>What it is</th></tr></thead><tbody>
+  <tr><td><code>governance</code></td><td class="num">24</td><td>Decisions made <em>about</em> a Society: bootstrap, charter, membership offers, admission, mandates, and the two reconciliation seats. The seat where authority is granted.</td></tr>
+  <tr><td><code>candidate</code></td><td class="num">3</td><td>The only surface an unadmitted candidate can reach — offer-scoped, minted with one <code>MembershipOffer</code> and fenced the moment that offer terminates. It can accept, refuse, or propose its own self-policy, and nothing else.</td></tr>
+  <tr><td><code>participant</code></td><td class="num">42</td><td>What an admitted participant does on its own behalf: propose endeavors, fill seats, pledge, derive mandates, open activities, submit deliveries, record reviews.</td></tr>
+  <tr><td><code>runtime</code></td><td class="num">14</td><td>The execution seam. Episode claim/start/complete, checkpoints, permit consumption, usage reports, placement admission — reached with a byomd-minted workload token bound to one <code>(episode, generation)</code>.</td></tr>
+  <tr><td><code>projection</code></td><td class="num">11</td><td>Reads only. Society and participant projections, the charter history, the event ledger and its payloads, snapshots, and the recovery checkpoint. No operation on this surface mutates anything.</td></tr>
+  <tr><td><code>pre_auth</code></td><td class="num">3</td><td>Version and capability negotiation, answerable before any authority is established. Not a socket of its own: these operations answer on every socket.</td></tr>
+  <tr><td><code>originating</code></td><td class="num">2</td><td>The two recovery reads a caller aims at its own prior request — <code>idempotency_result</code> and <code>cursor_recover</code>. Not a socket of its own: they answer on the mutation-capable socket the original request used.</td></tr>
+  <tr class="limit"><td><code>admin</code></td><td class="num">0</td><td>Named in the closed surface enum and bound to <strong>no operation at all</strong>. There is no <code>admin.sock</code>, and deny-by-absence means an admin call is not unauthorized — it is unaddressable.</td></tr>
+</tbody></table>
+</div>
+<div class="tw">
+<table class="narrow-first"><thead><tr><th>Class</th><th class="num">Rows</th><th>What the meta looks like</th></tr></thead><tbody>
+  <tr><td><code>read</code></td><td class="num">16</td><td>Never mutates; carries no <code>MutationMeta</code>.</td></tr>
+  <tr><td><code>create</code></td><td class="num">40</td><td>A mutation whose closed meta has <strong>no</strong> <code>expected_revision</code> member at all, so supplying one fails the schema.</td></tr>
+  <tr><td><code>update</code></td><td class="num">43</td><td>A current-head CAS whose closed meta <strong>requires</strong> <code>meta.expected_revision</code> (RT-01).</td></tr>
+</tbody></table>
+</div>
+<div class="tw">
+<table class="narrow-first"><thead><tr><th>Bundle</th><th class="num">Rows</th><th>Families</th></tr></thead><tbody>
+  <tr><td><code>B0.1</code></td><td class="num">80</td><td><code>activities</code>, <code>acts</code>, <code>calls_and_pledges</code>, <code>candidates</code>, <code>charter</code>, <code>endeavors</code>, <code>events_and_recovery_core</code>, <code>mandates</code>, <code>negotiation</code>, <code>participants</code>, <code>society</code></td></tr>
+  <tr><td><code>B0.3</code></td><td class="num">3</td><td><code>host_integration</code>, <code>recovery</code></td></tr>
+  <tr><td><code>B0.4</code></td><td class="num">11</td><td><code>budgets</code>, <code>recovery</code>, <code>runtime</code></td></tr>
+  <tr><td><code>B0.5</code></td><td class="num">5</td><td><code>knowledge</code>, <code>runtime</code></td></tr>
+</tbody></table>
+</div>
+<p>Across 16 families. The <em>served</em> column below is read out of the daemon's own <code>implemented()</code> predicate: <strong>85 of 95</strong> operations are implemented, and the rest answer a typed <code>feature_unavailable</code> rather than being silently absent.</p>
+<h2 id="surfaces" class="chapter-start">Operations by surface</h2>
+<p>Request and result schema names are the frozen files under <a href="https://github.com/zarbafian/byom/blob/main/spec/schemas/ops">spec/schemas/ops/</a>; a <code>-v2</code> name is an immutable successor publication, never an edit of the original.</p>
+<h3 id="surface-governance"><code>governance</code> — 24 rows</h3>
+<p>Decisions made <em>about</em> a Society: bootstrap, charter, membership offers, admission, mandates, and the two reconciliation seats. The seat where authority is granted.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>act_intent_cancel</code></td><td><code>R25</code></td><td>acts</td><td>update</td><td>B0.1</td><td><code>act-intent-cancel-request</code><br><code>act-intent-cancel-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>act_intent_finalize</code></td><td><code>R23</code></td><td>acts</td><td>update</td><td>B0.1</td><td><code>act-intent-finalize-request</code><br><code>act-intent-finalize-result</code></td><td>yes</td></tr>
+  <tr><td><code>act_intent_position</code></td><td><code>R21</code></td><td>acts</td><td>create</td><td>B0.1</td><td><code>act-intent-position-request</code><br><code>act-intent-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>budget_reconcile</code></td><td><code>R38</code></td><td>budgets</td><td>create</td><td>B0.4</td><td><code>budget-reconcile-request</code><br><code>budget-reconcile-result</code></td><td>yes</td></tr>
+  <tr><td><code>charter_finalize</code></td><td><code>R8</code></td><td>charter</td><td>update</td><td>B0.1</td><td><code>charter-finalize-request</code><br><code>charter-finalize-result</code></td><td>yes</td></tr>
+  <tr><td><code>charter_position</code></td><td><code>R6</code></td><td>charter</td><td>create</td><td>B0.1</td><td><code>charter-position-request</code><br><code>charter-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>effect_reconcile</code></td><td><code>R38</code></td><td>recovery</td><td>create</td><td>B0.4</td><td><code>effect-reconcile-request</code><br><code>effect-reconcile-result</code></td><td>yes</td></tr>
+  <tr><td><code>external_command_terminalize</code></td><td><code>R40</code></td><td>recovery</td><td>create</td><td>B0.3</td><td><code>external-command-terminalize-request</code><br><code>external-command-terminalize-result</code></td><td>yes</td></tr>
+  <tr><td><code>kovee_endeavor_form</code></td><td><code>R39</code></td><td>host_integration</td><td>create</td><td>B0.3</td><td><code>kovee-endeavor-form-request</code><br><code>kovee-endeavor-form-result</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_hold</code></td><td><code>R18</code></td><td>mandates</td><td>update</td><td>B0.1</td><td><code>mandate-hold-request</code><br><code>mandate-hold-result</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_issue</code></td><td><code>R18</code></td><td>mandates</td><td>update</td><td>B0.1</td><td><code>mandate-issue-request</code><br><code>mandate-issue-result-v2</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_position</code></td><td><code>R17</code></td><td>mandates</td><td>create</td><td>B0.1</td><td><code>mandate-position-request</code><br><code>mandate-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_revoke</code></td><td><code>R18</code></td><td>mandates</td><td>update</td><td>B0.1</td><td><code>mandate-revoke-request</code><br><code>mandate-revoke-result</code></td><td>yes</td></tr>
+  <tr><td><code>manifestation_admit</code></td><td><code>R8</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>manifestation-admit-request</code><br><code>manifestation-admit-result</code></td><td>yes</td></tr>
+  <tr><td><code>membership_offer</code></td><td><code>R10</code></td><td>participants</td><td>create</td><td>B0.1</td><td><code>membership-offer-request</code><br><code>membership-offer-result</code></td><td>yes</td></tr>
+  <tr><td><code>membership_offer_revoke</code></td><td><code>R10</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>membership-offer-revoke-request</code><br><code>membership-offer-revoke-result</code></td><td>yes</td></tr>
+  <tr><td><code>onboarding_offer</code></td><td><code>R10</code></td><td>participants</td><td>create</td><td>B0.1</td><td><code>onboarding-offer-request</code><br><code>onboarding-offer-result</code></td><td>yes</td></tr>
+  <tr><td><code>participant_admit</code></td><td><code>R8</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>participant-admit-request</code><br><code>participant-admit-result</code></td><td>yes</td></tr>
+  <tr><td><code>participant_suspend</code></td><td><code>R10</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>participant-suspend-request</code><br><code>participant-suspend-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>society_bootstrap</code></td><td><code>R2</code></td><td>society</td><td>update</td><td>B0.1</td><td><code>society-bootstrap-request</code><br><code>society-bootstrap-result</code></td><td>yes</td></tr>
+  <tr><td><code>society_dissolve</code></td><td><code>R3</code></td><td>society</td><td>update</td><td>B0.1</td><td><code>society-dissolve-request</code><br><code>society-dissolve-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>society_hold</code></td><td><code>R3</code></td><td>society</td><td>update</td><td>B0.1</td><td><code>society-hold-request</code><br><code>society-hold-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>society_prepare</code></td><td><code>R2</code></td><td>society</td><td>create</td><td>B0.1</td><td><code>society-prepare-request</code><br><code>society-prepare-result</code></td><td>yes</td></tr>
+  <tr><td><code>society_release</code></td><td><code>R3</code></td><td>society</td><td>update</td><td>B0.1</td><td><code>society-release-request</code><br><code>society-release-result</code></td><td><strong>no</strong></td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-candidate"><code>candidate</code> — 3 rows</h3>
+<p>The only surface an unadmitted candidate can reach — offer-scoped, minted with one <code>MembershipOffer</code> and fenced the moment that offer terminates. It can accept, refuse, or propose its own self-policy, and nothing else.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>candidate_self_policy_propose</code></td><td><code>R11</code></td><td>candidates</td><td>create</td><td>B0.1</td><td><code>candidate-self-policy-propose-request-v2</code><br><code>candidate-self-policy-propose-result</code></td><td>yes</td></tr>
+  <tr><td><code>membership_accept</code></td><td><code>R11</code></td><td>candidates</td><td>update</td><td>B0.1</td><td><code>membership-accept-request</code><br><code>membership-accept-result</code></td><td>yes</td></tr>
+  <tr><td><code>membership_refuse</code></td><td><code>R11</code></td><td>candidates</td><td>update</td><td>B0.1</td><td><code>membership-refuse-request</code><br><code>membership-refuse-result</code></td><td>yes</td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-participant"><code>participant</code> — 42 rows</h3>
+<p>What an admitted participant does on its own behalf: propose endeavors, fill seats, pledge, derive mandates, open activities, submit deliveries, record reviews.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>act_intent_cancel</code></td><td><code>R24</code></td><td>acts</td><td>update</td><td>B0.1</td><td><code>act-intent-cancel-request</code><br><code>act-intent-cancel-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>act_intent_finalize</code></td><td><code>R22</code></td><td>acts</td><td>update</td><td>B0.1</td><td><code>act-intent-finalize-request</code><br><code>act-intent-finalize-result</code></td><td>yes</td></tr>
+  <tr><td><code>act_intent_position</code></td><td><code>R20</code></td><td>acts</td><td>create</td><td>B0.1</td><td><code>act-intent-position-request</code><br><code>act-intent-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>act_intent_prepare</code></td><td><code>R19</code></td><td>acts</td><td>create</td><td>B0.1</td><td><code>act-intent-prepare-request</code><br><code>act-intent-prepare-result</code></td><td>yes</td></tr>
+  <tr><td><code>activation_policy_adopt</code></td><td><code>R13</code></td><td>participants</td><td>create</td><td>B0.1</td><td><code>activation-policy-adopt-request-v2</code><br><code>activation-policy-adopt-result</code></td><td>yes</td></tr>
+  <tr><td><code>activation_policy_revoke</code></td><td><code>R13</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>activation-policy-revoke-request</code><br><code>activation-policy-revoke-result</code></td><td>yes</td></tr>
+  <tr><td><code>activity_close</code></td><td><code>R29</code></td><td>activities</td><td>update</td><td>B0.1</td><td><code>activity-close-request</code><br><code>activity-close-result</code></td><td>yes</td></tr>
+  <tr><td><code>activity_hold</code></td><td><code>R29</code></td><td>activities</td><td>update</td><td>B0.1</td><td><code>activity-hold-request</code><br><code>activity-hold-result</code></td><td>yes</td></tr>
+  <tr><td><code>activity_open</code></td><td><code>R29</code></td><td>activities</td><td>create</td><td>B0.1</td><td><code>activity-open-request</code><br><code>activity-open-result</code></td><td>yes</td></tr>
+  <tr><td><code>assent_policy_adopt</code></td><td><code>R13</code></td><td>participants</td><td>create</td><td>B0.1</td><td><code>assent-policy-adopt-request-v2</code><br><code>assent-policy-adopt-result</code></td><td>yes</td></tr>
+  <tr><td><code>assent_policy_revoke</code></td><td><code>R13</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>assent-policy-revoke-request</code><br><code>assent-policy-revoke-result</code></td><td>yes</td></tr>
+  <tr><td><code>call_open</code></td><td><code>R5</code></td><td>calls_and_pledges</td><td>create</td><td>B0.1</td><td><code>call-open-request-v2</code><br><code>call-open-result</code></td><td>yes</td></tr>
+  <tr><td><code>call_withdraw</code></td><td><code>R14</code></td><td>calls_and_pledges</td><td>update</td><td>B0.1</td><td><code>call-withdraw-request</code><br><code>call-withdraw-result</code></td><td>yes</td></tr>
+  <tr><td><code>charter_propose</code></td><td><code>R5</code></td><td>charter</td><td>create</td><td>B0.1</td><td><code>charter-propose-request-v2</code><br><code>charter-propose-result</code></td><td>yes</td></tr>
+  <tr><td><code>continuation_write</code></td><td><code>R29</code></td><td>activities</td><td>create</td><td>B0.1</td><td><code>continuation-write-request</code><br><code>continuation-write-result</code></td><td>yes</td></tr>
+  <tr><td><code>continuity_root_update</code></td><td><code>R13</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>continuity-root-update-request-v2</code><br><code>continuity-root-update-result</code></td><td>yes</td></tr>
+  <tr><td><code>delivery_submit</code></td><td><code>R29</code></td><td>calls_and_pledges</td><td>create</td><td>B0.1</td><td><code>delivery-submit-request</code><br><code>delivery-submit-result</code></td><td>yes</td></tr>
+  <tr><td><code>delivery_withdraw</code></td><td><code>R14</code></td><td>calls_and_pledges</td><td>update</td><td>B0.1</td><td><code>delivery-withdraw-request</code><br><code>delivery-withdraw-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>endeavor_close</code></td><td><code>R14</code></td><td>endeavors</td><td>update</td><td>B0.1</td><td><code>endeavor-close-request</code><br><code>endeavor-close-result</code></td><td>yes</td></tr>
+  <tr><td><code>endeavor_finalize</code></td><td><code>R9</code></td><td>endeavors</td><td>update</td><td>B0.1</td><td><code>endeavor-finalize-request</code><br><code>endeavor-finalize-result</code></td><td>yes</td></tr>
+  <tr><td><code>endeavor_hold</code></td><td><code>R14</code></td><td>endeavors</td><td>update</td><td>B0.1</td><td><code>endeavor-hold-request</code><br><code>endeavor-hold-result</code></td><td>yes</td></tr>
+  <tr><td><code>endeavor_position</code></td><td><code>R7</code></td><td>endeavors</td><td>create</td><td>B0.1</td><td><code>endeavor-position-request</code><br><code>endeavor-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>endeavor_propose</code></td><td><code>R5</code></td><td>endeavors</td><td>create</td><td>B0.1</td><td><code>endeavor-propose-request</code><br><code>endeavor-propose-result</code></td><td>yes</td></tr>
+  <tr><td><code>endeavor_release</code></td><td><code>R14</code></td><td>endeavors</td><td>update</td><td>B0.1</td><td><code>endeavor-release-request</code><br><code>endeavor-release-result</code></td><td>yes</td></tr>
+  <tr><td><code>episode_request</code></td><td><code>R29</code></td><td>activities</td><td>create</td><td>B0.1</td><td><code>episode-request-request</code><br><code>episode-request-result</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_derive</code></td><td><code>R15</code></td><td>mandates</td><td>create</td><td>B0.1</td><td><code>mandate-derive-request-v2</code><br><code>mandate-derive-result</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_position</code></td><td><code>R16</code></td><td>mandates</td><td>create</td><td>B0.1</td><td><code>mandate-position-request</code><br><code>mandate-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>mandate_prepare</code></td><td><code>R15</code></td><td>mandates</td><td>create</td><td>B0.1</td><td><code>mandate-prepare-request-v2</code><br><code>mandate-prepare-result</code></td><td>yes</td></tr>
+  <tr><td><code>manifestation_disable</code></td><td><code>R13</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>manifestation-disable-request</code><br><code>manifestation-disable-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>manifestation_propose</code></td><td><code>R13</code></td><td>participants</td><td>create</td><td>B0.1</td><td><code>manifestation-propose-request</code><br><code>manifestation-propose-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>participant_propose</code></td><td><code>R5</code></td><td>participants</td><td>create</td><td>B0.1</td><td><code>participant-propose-request</code><br><code>participant-propose-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>participant_retire</code></td><td><code>R12</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>participant-retire-request</code><br><code>participant-retire-result</code></td><td><strong>no</strong></td></tr>
+  <tr><td><code>participation_cease</code></td><td><code>R12</code></td><td>participants</td><td>update</td><td>B0.1</td><td><code>participation-cease-request</code><br><code>participation-cease-result</code></td><td>yes</td></tr>
+  <tr><td><code>pledge_amend</code></td><td><code>R5</code></td><td>calls_and_pledges</td><td>create</td><td>B0.1</td><td><code>pledge-amend-request-v2</code><br><code>pledge-amend-result</code></td><td>yes</td></tr>
+  <tr><td><code>pledge_finalize</code></td><td><code>R9</code></td><td>calls_and_pledges</td><td>update</td><td>B0.1</td><td><code>pledge-finalize-request</code><br><code>pledge-finalize-result</code></td><td>yes</td></tr>
+  <tr><td><code>pledge_position</code></td><td><code>R7</code></td><td>calls_and_pledges</td><td>create</td><td>B0.1</td><td><code>pledge-position-request</code><br><code>pledge-position-result</code></td><td>yes</td></tr>
+  <tr><td><code>pledge_propose</code></td><td><code>R5</code></td><td>calls_and_pledges</td><td>create</td><td>B0.1</td><td><code>pledge-propose-request-v2</code><br><code>pledge-propose-result</code></td><td>yes</td></tr>
+  <tr><td><code>pledge_relinquish</code></td><td><code>R14</code></td><td>calls_and_pledges</td><td>update</td><td>B0.1</td><td><code>pledge-relinquish-request</code><br><code>pledge-relinquish-result</code></td><td>yes</td></tr>
+  <tr><td><code>pledge_resume</code></td><td><code>R14</code></td><td>calls_and_pledges</td><td>update</td><td>B0.1</td><td><code>pledge-resume-request</code><br><code>pledge-resume-result</code></td><td>yes</td></tr>
+  <tr><td><code>review_record</code></td><td><code>R14</code></td><td>calls_and_pledges</td><td>create</td><td>B0.1</td><td><code>review-record-request</code><br><code>review-record-result</code></td><td>yes</td></tr>
+  <tr><td><code>wake_intent_submit</code></td><td><code>R29</code></td><td>activities</td><td>create</td><td>B0.1</td><td><code>wake-intent-submit-request</code><br><code>wake-intent-submit-result</code></td><td>yes</td></tr>
+  <tr><td><code>wake_intent_withdraw</code></td><td><code>R29</code></td><td>activities</td><td>update</td><td>B0.1</td><td><code>wake-intent-withdraw-request</code><br><code>wake-intent-withdraw-result</code></td><td>yes</td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-runtime"><code>runtime</code> — 14 rows</h3>
+<p>The execution seam. Episode claim/start/complete, checkpoints, permit consumption, usage reports, placement admission — reached with a byomd-minted workload token bound to one <code>(episode, generation)</code>.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>attention_notice_record</code></td><td><code>R30-derived</code></td><td>runtime</td><td>create</td><td>B0.5</td><td><code>attention-notice-record-request</code><br><code>attention-notice-record-result</code></td><td>yes</td></tr>
+  <tr><td><code>checkpoint_commit</code></td><td><code>R30</code></td><td>runtime</td><td>create</td><td>B0.4</td><td><code>checkpoint-commit-request</code><br><code>checkpoint-commit-result</code></td><td>yes</td></tr>
+  <tr><td><code>effect_outcome_admit</code></td><td><code>R35</code></td><td>runtime</td><td>create</td><td>B0.4</td><td><code>effect-outcome-admit-request</code><br><code>effect-outcome-admit-result</code></td><td>yes</td></tr>
+  <tr><td><code>episode_claim</code></td><td><code>R30</code></td><td>runtime</td><td>create</td><td>B0.4</td><td><code>episode-claim-request</code><br><code>episode-claim-result</code></td><td>yes</td></tr>
+  <tr><td><code>episode_complete</code></td><td><code>R30</code></td><td>runtime</td><td>update</td><td>B0.4</td><td><code>episode-complete-request</code><br><code>episode-complete-result</code></td><td>yes</td></tr>
+  <tr><td><code>episode_fail</code></td><td><code>R30</code></td><td>runtime</td><td>update</td><td>B0.4</td><td><code>episode-fail-request</code><br><code>episode-fail-result</code></td><td>yes</td></tr>
+  <tr><td><code>episode_start</code></td><td><code>R30</code></td><td>runtime</td><td>update</td><td>B0.4</td><td><code>episode-start-request</code><br><code>episode-start-result</code></td><td>yes</td></tr>
+  <tr><td><code>episode_yield</code></td><td><code>R30</code></td><td>runtime</td><td>update</td><td>B0.4</td><td><code>episode-yield-request</code><br><code>episode-yield-result</code></td><td>yes</td></tr>
+  <tr><td><code>execution_permit_consume</code></td><td><code>R34</code></td><td>acts</td><td>update</td><td>B0.1</td><td><code>execution-permit-consume-request</code><br><code>execution-permit-consume-result</code></td><td>yes</td></tr>
+  <tr><td><code>onboarding_compute_permit_consume</code></td><td><code>R32</code></td><td>runtime</td><td>update</td><td>B0.5</td><td><code>onboarding-compute-permit-consume-request</code><br><code>onboarding-compute-permit-consume-result</code></td><td>yes</td></tr>
+  <tr><td><code>onboarding_episode_claim</code></td><td><code>R31</code></td><td>runtime</td><td>create</td><td>B0.5</td><td><code>onboarding-episode-claim-request</code><br><code>onboarding-episode-claim-result</code></td><td>yes</td></tr>
+  <tr><td><code>onboarding_episode_complete</code></td><td><code>R31</code></td><td>runtime</td><td>update</td><td>B0.5</td><td><code>onboarding-episode-complete-request</code><br><code>onboarding-episode-complete-result</code></td><td>yes</td></tr>
+  <tr><td><code>placement_admit</code></td><td><code>R33</code></td><td>runtime</td><td>create</td><td>B0.4</td><td><code>placement-admit-request</code><br><code>placement-admit-result</code></td><td>yes</td></tr>
+  <tr><td><code>usage_report</code></td><td><code>R30</code></td><td>runtime</td><td>create</td><td>B0.4</td><td><code>usage-report-request</code><br><code>usage-report-result</code></td><td>yes</td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-projection"><code>projection</code> — 11 rows</h3>
+<p>Reads only. Society and participant projections, the charter history, the event ledger and its payloads, snapshots, and the recovery checkpoint. No operation on this surface mutates anything.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>activity_show</code></td><td><code>R4</code></td><td>activities</td><td>read</td><td>B0.1</td><td><code>activity-show-request</code><br><code>activity-show-result</code></td><td>yes</td></tr>
+  <tr><td><code>charter_history</code></td><td><code>R4</code></td><td>charter</td><td>read</td><td>B0.1</td><td><code>charter-history-request</code><br><code>charter-history-result</code></td><td>yes</td></tr>
+  <tr><td><code>context_manifest_show</code></td><td><code>R4</code></td><td>knowledge</td><td>read</td><td>B0.5</td><td><code>context-manifest-show-request</code><br><code>context-manifest-show-result</code></td><td>yes</td></tr>
+  <tr><td><code>event_payload</code></td><td><code>R4</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>event-payload-request</code><br><code>event-payload-result</code></td><td>yes</td></tr>
+  <tr><td><code>events_read</code></td><td><code>R4</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>events-read-request</code><br><code>events-read-result</code></td><td>yes</td></tr>
+  <tr><td><code>events_wait</code></td><td><code>R4</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>events-wait-request</code><br><code>events-wait-result</code></td><td>yes</td></tr>
+  <tr><td><code>external_command_result_query</code></td><td><code>R42</code></td><td>recovery</td><td>read</td><td>B0.3</td><td><code>external-command-result-query-request</code><br><code>external-command-result-query-result</code></td><td>yes</td></tr>
+  <tr><td><code>participant_show</code></td><td><code>R4</code></td><td>participants</td><td>read</td><td>B0.1</td><td><code>participant-show-request</code><br><code>participant-show-result</code></td><td>yes</td></tr>
+  <tr><td><code>recovery_checkpoint_show</code></td><td><code>R4</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>recovery-checkpoint-show-request</code><br><code>recovery-checkpoint-show-result</code></td><td>yes</td></tr>
+  <tr><td><code>snapshot_get</code></td><td><code>R4</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>snapshot-get-request</code><br><code>snapshot-get-result</code></td><td>yes</td></tr>
+  <tr><td><code>society_show</code></td><td><code>R4</code></td><td>society</td><td>read</td><td>B0.1</td><td><code>society-show-request</code><br><code>society-show-result</code></td><td>yes</td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-pre_auth"><code>pre_auth</code> — 3 rows</h3>
+<p>Version and capability negotiation, answerable before any authority is established. Not a socket of its own: these operations answer on every socket.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>feature_info</code></td><td><code>R1</code></td><td>negotiation</td><td>read</td><td>B0.1</td><td><code>feature-info-request</code><br><code>feature-info-result</code></td><td>yes</td></tr>
+  <tr><td><code>hello</code></td><td><code>R1</code></td><td>negotiation</td><td>read</td><td>B0.1</td><td><code>hello-request</code><br><code>hello-result</code></td><td>yes</td></tr>
+  <tr><td><code>protocol_info</code></td><td><code>R1</code></td><td>negotiation</td><td>read</td><td>B0.1</td><td><code>protocol-info-request</code><br><code>protocol-info-result</code></td><td>yes</td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-originating"><code>originating</code> — 2 rows</h3>
+<p>The two recovery reads a caller aims at its own prior request — <code>idempotency_result</code> and <code>cursor_recover</code>. Not a socket of its own: they answer on the mutation-capable socket the original request used.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Operation</th><th>Binding</th><th>Family</th><th>Class</th><th>Bundle</th><th>Request / result schema</th><th>Served</th></tr></thead><tbody>
+  <tr><td><code>cursor_recover</code></td><td><code>R41</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>cursor-recover-request</code><br><code>cursor-recover-result</code></td><td>yes</td></tr>
+  <tr><td><code>idempotency_result</code></td><td><code>R41</code></td><td>events_and_recovery_core</td><td>read</td><td>B0.1</td><td><code>idempotency-result-request</code><br><code>idempotency-result-result</code></td><td>yes</td></tr>
+</tbody></table>
+</div>
+<h3 id="surface-admin"><code>admin</code> — 0 rows</h3>
+<p>Named in the closed surface enum and bound to <strong>no operation at all</strong>. There is no <code>admin.sock</code>, and deny-by-absence means an admin call is not unauthorized — it is unaddressable.</p>
+<div class="note limit"><span class="tag">Deny by absence</span><p>No operation is bound to <code>admin</code>. It is a value in the closed surface enum with no registry row and no socket, so there is nothing to call and nothing to authorize.</p></div>
+<div class="note limit"><span class="tag">Registry-bound, not implemented</span>
+<p>10 of the 95 registered operations are not implemented by this daemon: <code>act_intent_cancel</code>, <code>delivery_withdraw</code>, <code>manifestation_disable</code>, <code>manifestation_propose</code>, <code>participant_propose</code>, <code>participant_retire</code>, <code>participant_suspend</code>, <code>society_dissolve</code>, <code>society_hold</code>, <code>society_release</code>. Each is bound in the registry and answers <code>feature_unavailable</code>; <code>feature_info</code> advertises exactly the implemented set, because a feature is advertised only when it is complete.</p></div>
+<h2 id="machines" class="chapter-start">Transition machines</h2>
+<p>26 committed transition descriptors, 167 states and 312 transitions in total. A descriptor is the closed state machine for one record kind: a transition that is not listed is not merely disallowed, it is invalid. 5 of them are Kovee-owned executors, outside byom's one-descriptor-per-mutating-operation rule.</p>
+<p>The <em>model</em> column names the TLA+ module that declares parity with the descriptor. 9 modules exist; a descriptor with no model is covered by the executable state walks and by the schema and registry gates, but not by TLC.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Machine</th><th class="num">States</th><th class="num">Transitions</th><th>Owner</th><th>Model</th></tr></thead><tbody>
+  <tr><td><code>ActIntent</code></td><td class="num">11</td><td class="num">20</td><td>byom</td><td><code>ActIntentPermit.tla</code></td></tr>
+  <tr><td><code>ActivityStream</code></td><td class="num">8</td><td class="num">26</td><td>byom</td><td><code>EpisodeLease.tla</code></td></tr>
+  <tr><td><code>AuthorityMutationJournal</code></td><td class="num">5</td><td class="num">9</td><td>byom</td><td><code>AuthorityJournal.tla</code></td></tr>
+  <tr class="limit"><td><code>ByomAksonDispatchOutcomeReceiptHead</code></td><td class="num">2</td><td class="num">3</td><td>kovee (C2)</td><td>— none</td></tr>
+  <tr class="limit"><td><code>ByomEpisodeBinding</code></td><td class="num">3</td><td class="num">4</td><td>kovee (C2)</td><td>— none</td></tr>
+  <tr class="limit"><td><code>Call</code></td><td class="num">5</td><td class="num">9</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>Candidate self-policy</code></td><td class="num">4</td><td class="num">5</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>CharterRevision</code></td><td class="num">3</td><td class="num">5</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>ContinuationHead</code></td><td class="num">1</td><td class="num">2</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>ContinuityRoot</code></td><td class="num">3</td><td class="num">5</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>Delivery/Review</code></td><td class="num">4</td><td class="num">4</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>EndeavorFormationIntent/Slot</code></td><td class="num">9</td><td class="num">37</td><td>kovee (C2)</td><td>— none</td></tr>
+  <tr class="limit"><td><code>Endeavor</code></td><td class="num">8</td><td class="num">14</td><td>byom</td><td>— none</td></tr>
+  <tr><td><code>Episode/EpisodeLease</code></td><td class="num">17</td><td class="num">20</td><td>byom</td><td><code>EpisodeLease.tla</code></td></tr>
+  <tr><td><code>GreenfieldEnablement</code></td><td class="num">4</td><td class="num">7</td><td>kovee (C2)</td><td><code>GreenfieldEnablement.tla</code></td></tr>
+  <tr><td><code>Mandate</code></td><td class="num">7</td><td class="num">9</td><td>byom</td><td><code>MandateChain.tla</code></td></tr>
+  <tr class="limit"><td><code>Manifestation</code></td><td class="num">4</td><td class="num">4</td><td>byom</td><td>— none</td></tr>
+  <tr><td><code>MembershipOffer/Standing</code></td><td class="num">12</td><td class="num">19</td><td>byom</td><td><code>MembershipOfferStanding.tla</code></td></tr>
+  <tr><td><code>OnboardingActivationOffer</code></td><td class="num">6</td><td class="num">14</td><td>byom</td><td><code>MembershipOfferStanding.tla</code></td></tr>
+  <tr class="limit"><td><code>Participant activation policy</code></td><td class="num">4</td><td class="num">4</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>Participant assent policy</code></td><td class="num">4</td><td class="num">4</td><td>byom</td><td>— none</td></tr>
+  <tr class="limit"><td><code>Participant</code></td><td class="num">5</td><td class="num">6</td><td>byom</td><td>— none</td></tr>
+  <tr><td><code>Pledge</code></td><td class="num">14</td><td class="num">43</td><td>byom</td><td><code>Pledge.tla</code></td></tr>
+  <tr class="limit"><td><code>Society</code></td><td class="num">5</td><td class="num">7</td><td>byom</td><td>— none</td></tr>
+  <tr><td><code>ByomSubordinateReservation</code></td><td class="num">6</td><td class="num">13</td><td>kovee (C2)</td><td><code>SubordinateReservation.tla</code></td></tr>
+  <tr><td><code>WakeIntent/ActivationAdmission/ResourceAllocation</code></td><td class="num">13</td><td class="num">19</td><td>byom</td><td><code>EpisodeLease.tla</code></td></tr>
+</tbody></table>
+</div>
+<h2 id="digests" class="chapter-start">Digest classes</h2>
+<p>Every digest field on the wire is a typed <code>DigestRef</code> — <code>{class, algorithm, key_ref?, value_hex}</code>, a closed member set — never an unlabelled hash. A well-constructed digest of the wrong class is <code>digest_class_mismatch</code> even when the 32-byte value spaces coincide.</p>
+<div class="tw">
+<table class="wide"><thead><tr><th>Class</th><th>Algorithm</th><th><code>key_ref</code></th><th>What it is for</th></tr></thead><tbody>
+  <tr><td><code>structural_public</code></td><td><code>sha-256</code></td><td>forbidden</td><td>Knowingly non-sensitive, non-erasable protocol or schema bytes only. SHA-256 over type-tagged canonical bytes.</td></tr>
+  <tr><td><code>portable_public</code></td><td><code>sha-256</code></td><td>forbidden</td><td>Content whose owner explicitly accepted a durable, publicly dictionary-testable identifier. SHA-256 over exact bytes. This is the class the A8 cross-boundary rule demands of any digest one protocol asks the other for.</td></tr>
+  <tr><td><code>disclosed_party</code></td><td><code>sha-256</code></td><td>forbidden</td><td>SHA-256 over bytes already disclosed to named recipients, always carrying the external-copy obligation.</td></tr>
+  <tr><td><code>ciphertext_public</code></td><td><code>sha-256</code></td><td>forbidden</td><td>SHA-256 over encrypted blob bytes. Sealed blobs only — never a commitment to low-entropy plaintext.</td></tr>
+  <tr><td><code>local_erasure_safe</code></td><td><code>hmac-sha-256</code></td><td>required</td><td>Ordinary erasable local content and every authority subject. HMAC under a random <strong>per-object</strong> secret: destroying that secret destroys exactly that object's offline verification.</td></tr>
+  <tr><td><code>scope_erasure_safe</code></td><td><code>hmac-sha-256</code></td><td>required</td><td>Shared-key index and chain constructions — the idempotency index, the privacy-access chain. HMAC under a <strong>per-scope</strong> key: destroying it erases verifiability for the whole scope, never one object.</td></tr>
+</tbody></table>
+</div>
+<h2 id="problems" class="chapter-start">Problem kinds</h2>
+<p>The failure envelope wraps an RFC 9457 problem object whose <code>kind</code> is this closed 29-value enum. <code>type</code> is exactly <code>https://byom.dev/problems/</code> + <code>kind</code>; an unknown kind fails closed. <code>title</code> is free prose and carries no authority.</p>
+<p><code>invalid</code>, <code>unsupported_version</code>, <code>feature_unavailable</code>, <code>forbidden_surface</code>, <code>forbidden</code>, <code>not_found</code>, <code>stale_revision</code>, <code>stale_binding</code>, <code>stale_assembly_epoch</code>, <code>stale_lease</code>, <code>idempotency_mismatch</code>, <code>position_ineligible</code>, <code>decision_incomplete</code>, <code>independence_conflict</code>, <code>authority_widening</code>, <code>mandate_held</code>, <code>admission_required</code>, <code>classification_unmapped</code>, <code>policy_conflict</code>, <code>policy_overflow</code>, <code>budget_exceeded</code>, <code>effect_ambiguous</code>, <code>authority_witness_unknown</code>, <code>endpoint_sealed</code>, <code>cursor_expired</code>, <code>unavailable</code>, <code>formation_requires_participation</code>, <code>external_command_not_terminalizable</code>, <code>internal</code>.</p>
+<h2 id="limits" class="chapter-start">Wire limits</h2>
+<p>The conformance-tested initial limits, advertised by <code>protocol_info</code> and enforced before schema validation.</p>
+<div class="tw">
+<table class="narrow-first"><thead><tr><th>Limit</th><th class="num">Value</th><th>Unit</th></tr></thead><tbody>
+  <tr><td>Request body</td><td class="num">262,144</td><td>bytes, inclusive — 256 KiB</td></tr>
+  <tr><td>Response body</td><td class="num">1,048,576</td><td>bytes, inclusive — 1 MiB</td></tr>
+  <tr><td>Container nesting depth</td><td class="num">64</td><td>levels, inclusive</td></tr>
+  <tr><td>JSON values per document</td><td class="num">65,536</td><td>nodes, inclusive</td></tr>
+  <tr><td>Identifier</td><td class="num">128</td><td>bytes of visible ASCII</td></tr>
+  <tr><td>List items per mutation</td><td class="num">256</td><td>items</td></tr>
+  <tr><td>Events per page</td><td class="num">512</td><td>events</td></tr>
+</tbody></table>
+</div>
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../security/"><span class="k">Previous</span>Security &amp; limits</a>
+  <a class="next" href="../"><span class="k">Next</span>Home</a>
+</nav>
+<footer>
+  <p>Generated by <code>docs-tools/gen_reference.py</code> from <a href="https://github.com/zarbafian/byom/blob/main/spec/registry.json">spec/registry.json</a>, <a href="https://github.com/zarbafian/byom/blob/main/spec/schemas">spec/schemas/</a>, <a href="https://github.com/zarbafian/byom/blob/main/spec/descriptors">spec/descriptors/</a>, <a href="https://github.com/zarbafian/byom/blob/main/proof/specs">proof/specs/</a> and the daemon sources. Editing this file by hand fails <code>./run-checks.sh</code>.</p>
+</footer>
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

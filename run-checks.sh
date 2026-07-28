@@ -29,6 +29,14 @@ python3 family-vectors/xcheck.py
 echo "== family vectors (TypeScript independent rederiver)"
 node family-vectors/tscheck/check.mjs
 
+echo "== docs site (generated reference + every claim, link and count on byom.cc)"
+# The site hand-copies nothing: operation names, counts, surfaces, schema and
+# machine tables are generated from spec/, proof/ and the daemon sources, and
+# this gate fails when a page's claim stops matching them. It also resolves
+# every internal link, checks each page is balanced HTML, and refuses a page
+# that reaches out to a third-party host.
+python3 docs-tools/check_docs.py
+
 echo "== cargo fmt (workspace formatting)"
 cargo fmt --check
 

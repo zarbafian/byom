@@ -6,6 +6,10 @@ Byom is a protocol and deterministic governance kernel through which humans,
 agents, and bounded collectives form shared endeavors, make voluntary pledges,
 receive limited mandates, and act with accountable authority.
 
+Documentation: **[byom.cc](https://byom.cc/)** — built from `docs/`, with every
+count, name and table generated from `spec/`, `proof/` and the daemon sources
+(`python3 docs-tools/check_docs.py`, wired into `./run-checks.sh`).
+
 Byom is not a central orchestrator. It does not call models, choose a universal
 plan, assign workers, or treat a collective as a single omniscient mind.
 Participants propose, assent, refuse, organize, delegate, deliver, review, and

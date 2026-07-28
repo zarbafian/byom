@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security &amp; limits — byom</title>
+<meta name="description" content="Byom's developer assurance profile, the unsigned consumption receipt and the authority residual it leaves, the partial governed-loop gate, the two open namespace gates, and what is closed rather than claimed.">
+<link rel="canonical" href="https://byom.cc/security/">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">stated where it binds</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#profile">The assurance profile</a>
+  <a href="#closed">What is closed</a>
+  <a href="#receipt">The unsigned receipt</a>
+  <a href="#oracle">The conformance oracle</a>
+  <a href="#i1">The governed-loop gate</a>
+  <a href="#exit2">Why exit 2</a>
+  <a href="#namespaces">Two open namespace gates</a>
+  <a href="#scope">Coverage boundaries</a>
+  <a href="#summary">The limits, in one table</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/">Concepts</a>
+  <a href="../protocol/">Protocol</a>
+  <a href="../encoding/">Encoding</a>
+  <a href="../governed-work/">Governed work</a>
+  <a href="../proofs/">Proofs</a>
+  <a href="../security/" class="here">Security &amp; limits</a>
+  <a href="../reference/">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">Security &amp; limits</p>
+  <h1>Every limit, beside the capability it bounds.</h1>
+  <p class="lede">
+    One of byom's own safety invariants is about documentation: <em>security claims name
+    their actual profile</em>, and same-UID developer mode is never described as
+    confinement, credential separation or complete egress control. This page is that
+    invariant applied to this site. Byom is v<!--gen:version-->0.0.1<!--/gen:version-->,
+    pre-release, not audited and not production-ready.
+  </p>
+</header>
+
+<h2 id="profile" class="chapter-start">The assurance profile is <em>developer</em></h2>
+
+<div class="note limit">
+  <span class="tag">What that means concretely</span>
+  <p>
+    Channel authentication is same-UID <code>SO_PEERCRED</code> possession plus
+    process-bound channel proofs. There is
+    <strong>no UID separation between principals</strong>,
+    <strong>no attested process identity</strong>,
+    <strong>no mutual-TLS workload identity</strong> and
+    <strong>no asymmetric endpoint identity</strong>. A same-UID process can read the store
+    root key out of the SQLite file. <strong>No confinement is claimed.</strong>
+  </p>
+</div>
+
+<p>
+  This is not a gap that better hygiene closes; it is the profile the code implements, and
+  every capability on this site should be read through it. In particular: the surfaces are
+  separated by socket, and that separation is meaningful against confusion and against a
+  misdirected client. It is <em>not</em> meaningful against a hostile process running as the
+  same user, which can open any of the sockets and read the store directly.
+</p>
+<p>
+  The workload and candidate channel tokens are byomd-minted under the store root and
+  published <code>0600</code> in the daemon's own <code>channels</code> directory beside its
+  store. They are sender-constrained — each
+  binds the exact record whose authority it carries — which is what makes a stolen token
+  useless for anything other than the one thing it was for. It is not what makes it
+  unstealable.
+</p>
+
+<h2 id="closed">What <em>is</em> closed</h2>
+
+<p>
+  The developer profile still closes a real class of failure, and it is worth naming
+  precisely so that the honest limits above are not read as "nothing works".
+</p>
+
+<div class="cards">
+  <div class="card auth">
+    <span class="k">exported secrets</span>
+    <h3>A copied credential file mints nothing</h3>
+    <p>Channel proofs are process-bound. A credential file that is copied, backed up or
+    transmitted does not become authority somewhere else — the exported-secret class is
+    closed even though the same-UID class is not.</p>
+  </div>
+  <div class="card auth">
+    <span class="k">deny by absence</span>
+    <h3>Unaddressable, not unauthorized</h3>
+    <p>The registry is the whole surface. An operation with no row for the surface it
+    arrived on is refused before any handler sees it, and the MCP profiles are closed enums
+    that cannot name a governance, runtime or admin operation at all.</p>
+  </div>
+  <div class="card auth">
+    <span class="k">rollback</span>
+    <h3>A restored database reopens sealed</h3>
+    <p>Authority mutations run a three-step protocol against a non-rollbackable external
+    witness. A snapshot-restore adversary cannot resurrect withdrawn authority: the startup
+    comparison finds the mismatch and the endpoint opens sealed and diagnostic, minting
+    nothing.</p>
+  </div>
+  <div class="card auth">
+    <span class="k">no ambient authority</span>
+    <h3>Possession grants nothing</h3>
+    <p>A reference, receipt, mandate, event or projection row is never a bearer capability.
+    Every use rechecks its current dependencies, so a held reference to a revoked mandate
+    buys exactly nothing.</p>
+  </div>
+</div>
+
+<h2 id="receipt">Byom does not sign its consumption receipt</h2>
+
+<div class="note limit">
+  <span class="tag">The residual this leaves</span>
+  <p>
+    The execution consumption receipt carries a <code>portable_public</code> binding
+    digest — an unkeyed SHA-256 anyone can recompute — and <strong>no signature</strong>. A
+    peer therefore <strong>cannot cryptographically verify consumption provenance</strong>.
+    It can check that the receipt's bytes are self-consistent and that they re-derive to the
+    published binding; it cannot check that <em>byom</em> issued them.
+  </p>
+</div>
+
+<p>
+  Byom's only signing primitive is a keyed MAC under the store root. That is enough for
+  host-integration result envelopes, which this endpoint or a same-UID holder of its store
+  verifies. It is not enough for a third party, and third-party-verifiable signing needs
+  asymmetric endpoint identity, which the developer profile does not have.
+</p>
+<p>
+  The consequence is concrete and is carried on the counterparty's books, not hidden: the
+  broker relying on that receipt holds an <strong>authority residual</strong>. This is
+  <em>deferred, not solved</em>. Nothing on this site should be read as saying otherwise.
+</p>
+
+<h2 id="oracle">The models are not connected to the code</h2>
+
+<div class="note limit">
+  <span class="tag">No automated test bridges the two</span>
+  <p>
+    <strong>No test in <code>crates/</code> reads a descriptor or a TLA+ model at
+    all.</strong> The Rust tests read the schemas, the vectors, the registry and the MCP
+    document; they never read <code>spec/descriptors/</code> or <code>proof/specs/</code>.
+    The conformance oracle that would tie the daemon's transition functions to the committed
+    relations was expected to land with the daemon; the daemon landed and the oracle did
+    not. A daemon transition can therefore diverge from its committed descriptor row without
+    any gate in this repository noticing.
+  </p>
+</div>
+
+<p>
+  The decision record that requires the oracle carries an erratum saying so, and the proof
+  properties document records it as its largest open item. It also names a
+  <code>cargo test</code> invocation against a crate that has never existed in this
+  workspace — a second, smaller correction of fact from the same sweep.
+  <a href="../proofs/#gap">The full statement, and which layers do and do not substitute for
+  it →</a>
+</p>
+
+<h2 id="i1">The governed-loop gate is partial</h2>
+
+<p>
+  The end-to-end governed-loop gate runs two real daemons and drives a complete hosted turn.
+  Of its <!--gen:i1-total-->13<!--/gen:i1-total--> plan items,
+  <strong><!--gen:i1-exercised-->5<!--/gen:i1-exercised--></strong> are exercised with
+  nothing standing in and <strong><!--gen:i1-simulated-->8<!--/gen:i1-simulated--></strong>
+  are explicitly simulated.
+</p>
+<p>
+  The verdict is not an annotation someone maintains. The gate derives it from probes over
+  the daemons' own records and over the counterparty's source tree, so a stand-in cannot be
+  quietly re-labelled as real — and an item stops being simulated on its own the day the
+  missing subsystem ships.
+</p>
+
+<div class="note limit">
+  <span class="tag">The hosted manifestation, specifically</span>
+  <p>
+    Byom mints only <code>attached_harness</code> manifestation revisions. The "hosted
+    manifestation" in that gate is the reference <em>kovee</em> selects at placement and byom
+    commits on the episode and the placement admission — <strong>not a byom
+    <code>host_kind</code> row</strong>. The activation pipeline, the dual fences and the
+    cross-manifestation continuation resume are genuinely exercised; the distinct hosted
+    manifestation is not.
+  </p>
+</div>
+
+<p>
+  The other simulated items are of the same shape: an attention trigger whose deciding
+  subsystem is a stub in the counterparty's pinned tree, the two attached execution paths,
+  the completing model dispatch inside the counterparty's own worker socket, the ambiguous
+  effect disposition, and the one-shot onboarding compute path. In each case the byom-side
+  record is real and asserted from byom's own rows; what is standing in is the trigger or
+  the far end.
+</p>
+
+<h2 id="exit2">Why <code>./run-checks.sh</code> ends at exit 2</h2>
+
+<p>
+  Running every check on this tree ends at <strong>exit 2</strong>, and that is the designed
+  outcome rather than a failure to fix. Every suite before the last one is green. The last
+  stage reports a skip for its two real-harness cells — they need external CLIs on the path
+  — and it <strong>refuses to score a skip as a pass</strong>, so the script stops before
+  printing its success line.
+</p>
+
+<div class="tw">
+<table class="narrow-first">
+  <thead><tr><th>Exit</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="num"><code>0</code></td><td>Everything ran, including the real harnesses. Needs the harness environment variable set and the external CLIs available.</td></tr>
+    <tr><td class="num"><code>1</code></td><td>A real failure. Something that ran did not pass.</td></tr>
+    <tr><td class="num"><code>2</code></td><td>Everything that ran passed, and something was skipped. On a default checkout this is what you get.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  A skip that scores as a pass is how a suite quietly stops testing anything. Byom's own
+  gate has been narrowed once already for exactly that reason: an earlier default ran fewer
+  cells than its own claim described, and the fix was to widen the default rather than to
+  soften the claim.
+</p>
+
+<h2 id="namespaces">Two open namespace gates</h2>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Gate</th><th>State</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Schema <code>$id</code> namespace</td>
+      <td>Every published schema uses the provisional reserved name
+      <code>byom.example</code>. Convention requires a project-controlled HTTPS namespace
+      before a stable release, and rewriting happens in one place when that gate is met.
+      <strong>No stable release may ship on <code>byom.example</code>.</strong></td>
+    </tr>
+    <tr>
+      <td>Problem <code>type</code> namespace</td>
+      <td>The ratified profile pins problem types at
+      <code>https://byom.dev/problems/&lt;kind&gt;</code>, and the schemas, vectors and
+      runner enforce that prefix. Control of that namespace is
+      <strong>not yet established</strong>. It is recorded as an open fact, tracked to
+      closure — domain control demonstrated, or the profile amended — before any public
+      advertisement of the protocol.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  These are distinct: schema identifiers stay on the reserved example name, while problem
+  types already carry the profile-pinned prefix on the wire.
+</p>
+
+<h2 id="scope">Coverage boundaries worth knowing</h2>
+
+<ul>
+  <li>
+    <strong>The descriptor-ownership rule ranges over the frozen sheet only.</strong> The
+    mutating operations added by the later host-integration, runtime and acts bundles are
+    registry-checked and schema-checked, and are <em>not</em> yet inside the
+    one-descriptor-per-operation gate.
+  </li>
+  <li>
+    <strong>Ten registered operations are not implemented.</strong> They answer a typed
+    <code>feature_unavailable</code>, which includes the deny, cancel and expiry branches of
+    the act-intent machine. <a href="../protocol/#advertisement">The list →</a>
+  </li>
+  <li>
+    <strong>No liveness is proved anywhere.</strong> Every checked property is safety, and
+    no specification assumes fairness. "Eventually" is not a word this system's proofs
+    support. <a href="../proofs/#models">Why →</a>
+  </li>
+  <li>
+    <strong>Model checking is bounded.</strong> Exhaustive at fixed constants is not proved
+    for arbitrary run length; two invariants are flagged as inductive-proof candidates
+    precisely because their bounds bite.
+  </li>
+  <li>
+    <strong>Cryptographic soundness is assumed, not checked.</strong> Signatures, digests
+    and witnesses are modeled as perfect; timing and side channels are not modeled at all.
+  </li>
+  <li>
+    <strong>Two cross-boundary digest fields are recorded rather than fixed.</strong> Two
+    optional counterparty-owned pairs would move under the cross-boundary class rule, fell
+    outside the ratified decision, and are recorded for the contract owner rather than
+    re-classed unilaterally. <a href="../encoding/#crossboundary">Detail →</a>
+  </li>
+</ul>
+
+<h2 id="summary">The limits, in one table</h2>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Limit</th><th>What it bounds</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr class="limit"><td>Developer assurance profile</td><td>No UID separation, no attested process identity, no asymmetric endpoint identity, no confinement.</td><td>By design at this stage</td></tr>
+    <tr class="limit"><td>Unsigned consumption receipt</td><td>A peer cannot cryptographically verify consumption provenance; the counterparty carries an authority residual.</td><td>Deferred, not solved</td></tr>
+    <tr class="limit"><td>No model-to-code oracle</td><td>Nothing detects a daemon transition diverging from its committed descriptor row.</td><td>Largest open item</td></tr>
+    <tr class="limit"><td>Governed-loop gate is partial</td><td><!--gen:i1-exercised-->5<!--/gen:i1-exercised--> of <!--gen:i1-total-->13<!--/gen:i1-total--> items exercised, <!--gen:i1-simulated-->8<!--/gen:i1-simulated--> simulated; only attached manifestations are minted.</td><td>Machine-derived each run</td></tr>
+    <tr class="limit"><td>Bounded model checking</td><td>Exhaustive at fixed constants; no inductive proof, no liveness, no fairness.</td><td>Two induction candidates flagged</td></tr>
+    <tr class="limit"><td>Descriptor gate scope</td><td>The one-to-one ownership rule covers the frozen sheet, not the later bundles' mutating rows.</td><td>Recorded in the spec</td></tr>
+    <tr class="limit"><td>Namespace gates</td><td>Schema identifiers on a reserved example name; the problem-type namespace not yet controlled.</td><td>Blocks a stable release</td></tr>
+    <tr class="limit"><td>Pre-release</td><td>v<!--gen:version-->0.0.1<!--/gen:version-->, not audited, not production-ready, no compatibility claim.</td><td>Current</td></tr>
+  </tbody>
+</table>
+</div>
+
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../proofs/"><span class="k">Previous</span>Conformance &amp; proofs</a>
+  <a class="next" href="../reference/"><span class="k">Next</span>Reference</a>
+</nav>
+
+<footer>
+  <p>
+    Sources: DESIGN.md §§18–21 for the threat model and controls, the
+    <a href="https://github.com/zarbafian/byom/tree/main/reviews">adversarial review
+    record</a> for the independent passes and their dispositions,
+    <a href="https://github.com/zarbafian/byom/blob/main/proof/PROPERTIES.md">proof/PROPERTIES.md</a>
+    for the proof limits, and the governed-loop gate's own machine-derived coverage file for
+    the exercised-versus-simulated split on this page.
+  </p>
+</footer>
+
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

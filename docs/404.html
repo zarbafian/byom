@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Not found — byom</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body class="landing">
+<div class="wrap">
+
+<header class="top">
+  <a class="rail-mark" href="/">by<span class="g">o</span>m</a>
+  <nav class="links" aria-label="Site">
+    <a href="/concepts/">Concepts</a>
+    <a href="/protocol/">Protocol</a>
+    <a href="/encoding/">Encoding</a>
+    <a href="/governed-work/">Governed work</a>
+    <a href="/proofs/">Proofs</a>
+    <a href="/security/">Security</a>
+    <a href="/reference/">Reference</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </nav>
+</header>
+
+<main>
+  <header class="hero">
+    <p class="eyebrow">404</p>
+    <h1>No row for that one.</h1>
+    <p class="lede">
+      This page does not exist. In the spirit of the thing being documented: that is not a
+      permission failure, it is an absence — there is nothing here to be allowed or refused.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="/">Home</a>
+      <a class="btn" href="/reference/">Reference</a>
+    </div>
+  </header>
+</main>
+
+</div>
+<script src="/assets/site.js"></script>
+</body>
+</html>

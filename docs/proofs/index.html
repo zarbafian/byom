@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conformance &amp; proofs — byom</title>
+<meta name="description" content="What byom's nine TLA+ models prove, at which constants, with which projection and refinement boundary — the descriptor parity gate, the mutation suite, the executable walks, and the conformance oracle that does not exist.">
+<link rel="canonical" href="https://byom.cc/proofs/">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">what is checked, and what is not</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#gap">The gap, first</a>
+  <a href="#layers">Five layers of checking</a>
+  <a href="#models">The nine models</a>
+  <a href="#properties">What each model proves</a>
+  <a href="#parity">Descriptor parity</a>
+  <a href="#walks">Executable state walks</a>
+  <a href="#mutations">The mutation suite</a>
+  <a href="#vectors">Vectors and rederivers</a>
+  <a href="#uncovered">What none of it covers</a>
+  <a href="#run">Running it yourself</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/">Concepts</a>
+  <a href="../protocol/">Protocol</a>
+  <a href="../encoding/">Encoding</a>
+  <a href="../governed-work/">Governed work</a>
+  <a href="../proofs/" class="here">Proofs</a>
+  <a href="../security/">Security &amp; limits</a>
+  <a href="../reference/">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">Conformance &amp; proofs</p>
+  <h1>Nine checked models, and one link that is missing.</h1>
+  <p class="lede">
+    Byom's most impressive-looking asset is its model suite:
+    <!--gen:model-count-->nine<!--/gen:model-count--> TLA+ modules, each explored
+    exhaustively by TLC at its configured constants, with zero errors and crashes
+    interleaved at every commit boundary. The honest statement about them belongs at the
+    top of this page rather than the bottom.
+  </p>
+</header>
+
+<h2 id="gap" class="chapter-start">The gap, stated first</h2>
+
+<div class="note limit">
+  <span class="tag">No automated test connects the models to the code</span>
+  <p>
+    <strong>No test in <code>crates/</code> reads a descriptor or a TLA+ model at
+    all.</strong> The Rust tests <code>include_str!</code> the schemas, the vectors, the
+    registry and the MCP tool document — never <code>spec/descriptors/</code> and never
+    <code>proof/specs/</code>. The conformance oracle that would assert, for every
+    <em>(state, event)</em> pair, that the daemon's pure transition functions equal the
+    committed relations was expected to land with the daemon. The daemon landed; the oracle
+    did not.
+  </p>
+  <p>
+    So: the models are checked, and they are <strong>not connected to the implementation by
+    any automated test</strong>. A daemon transition can diverge from its committed
+    descriptor row without anything in this repository noticing. Every model's refinement
+    boundary below therefore stops at the descriptor, and no model on this page claims that
+    any code refines it.
+  </p>
+  <p>
+    This is recorded as the single largest open item in the proof properties document, and
+    the acceptance decision that requires it carries an erratum saying the same thing. It is
+    written here, in the same size type as the models, because a site claiming
+    "machine-checked protocol models" without it would be exactly the overclaim this program
+    has spent thirty-odd corrections removing.
+  </p>
+</div>
+
+<h2 id="layers">Five layers of checking</h2>
+
+<p>
+  Each layer catches a different failure, and each is independent of the others. It is worth
+  being precise about which one catches what, because "it is verified" is not a claim any
+  single one of them supports.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <span class="k">layer 1</span>
+    <h3>TLC over the models</h3>
+    <p>Exhaustive breadth-first exploration at fixed constants, with <code>-deadlock</code>,
+    zero errors. Catches: an invariant that a legal interleaving can break. Does not catch:
+    a model that does not match the design, or code that does not match the model.</p>
+  </div>
+  <div class="card">
+    <span class="k">layer 2</span>
+    <h3>Descriptor ↔ model parity</h3>
+    <p>Exact set equality in both directions over states and transitions, plus the
+    structured crash and fence columns. Catches: a descriptor row with no model transition,
+    or a model transition with no row. Does not catch: an edited TLA+ action whose
+    annotation and descriptor were left alone.</p>
+  </div>
+  <div class="card">
+    <span class="k">layer 3</span>
+    <h3>Executable state walks</h3>
+    <p>Vectors driven through an interpreter over the committed descriptor JSON, independent
+    of both TLC and the parity checker. Catches: a machine whose committed rows do not
+    actually admit the sequence they are supposed to — including crash and replay steps.</p>
+  </div>
+  <div class="card">
+    <span class="k">layer 4</span>
+    <h3>The mutation suite</h3>
+    <p>Deliberate damage that must be caught. Catches: a vacuous harness — a gate that
+    passes because it is checking nothing. This is the layer that makes the other layers'
+    green mean something.</p>
+  </div>
+  <div class="card">
+    <span class="k">layer 5</span>
+    <h3>Independent rederivation</h3>
+    <p>Every canonical byte and digest the family profile pins, re-derived by two programs
+    sharing no code with the workspace or with each other. Catches: a canonicalization or
+    digest bug that the implementation and its own tests agree on.</p>
+  </div>
+  <div class="card gap">
+    <span class="k">the missing layer</span>
+    <h3>Model ↔ code conformance</h3>
+    <p>A test asserting that the daemon's transition functions equal the committed
+    relations, generated from the descriptor registry rather than re-typed. It does not
+    exist. Nothing above substitutes for it.</p>
+  </div>
+</div>
+
+<h2 id="models">The <!--gen:model-count-->nine<!--/gen:model-count--> models</h2>
+
+<p>
+  Every module is TLC-exhaustive at its configured constants, run with
+  <code>-deadlock</code>, zero errors. The numbers below are the ones the proof properties
+  document records from its last run — this table is generated from that file, so the site
+  cannot quote a state count the proof README does not.
+</p>
+<p>
+  The suite is <!--gen:tla-modules--><code>ActIntentPermit.tla</code>, <code>AuthorityJournal.tla</code>, <code>BudgetConservation.tla</code>, <code>EpisodeLease.tla</code>, <code>GreenfieldEnablement.tla</code>, <code>MandateChain.tla</code>, <code>MembershipOfferStanding.tla</code>, <code>Pledge.tla</code> and <code>SubordinateReservation.tla</code><!--/gen:tla-modules-->.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Module</th><th class="num">Distinct states</th><th class="num">States generated</th><th class="num">Graph depth</th></tr></thead>
+  <tbody><!--gen:model-rows-->
+  <tr><td><code>MembershipOfferStanding.tla</code></td><td class="num">93</td><td class="num">189</td><td class="num">8</td></tr>
+  <tr><td><code>Pledge.tla</code></td><td class="num">40</td><td class="num">102</td><td class="num">15</td></tr>
+  <tr><td><code>EpisodeLease.tla</code></td><td class="num">513,776</td><td class="num">3,063,256</td><td class="num">28</td></tr>
+  <tr><td><code>ActIntentPermit.tla</code></td><td class="num">61</td><td class="num">116</td><td class="num">10</td></tr>
+  <tr><td><code>MandateChain.tla</code></td><td class="num">7,988</td><td class="num">18,011</td><td class="num">11</td></tr>
+  <tr><td><code>BudgetConservation.tla</code></td><td class="num">600</td><td class="num">2,937</td><td class="num">12</td></tr>
+  <tr><td><code>AuthorityJournal.tla</code></td><td class="num">2,902</td><td class="num">6,933</td><td class="num">17</td></tr>
+  <tr><td><code>GreenfieldEnablement.tla</code></td><td class="num">65</td><td class="num">121</td><td class="num">11</td></tr>
+  <tr><td><code>SubordinateReservation.tla</code></td><td class="num">900</td><td class="num">2,281</td><td class="num">9</td></tr>
+<!--/gen:model-rows--></tbody>
+</table>
+</div>
+
+<div class="note limit">
+  <span class="tag">Safety only — no liveness is claimed, anywhere</span>
+  <p>
+    Every checked property is safety: state invariants plus action invariants, which are
+    also safety. <strong>No specification assumes fairness</strong>, so none can promise
+    progress. The reason is honest rather than incidental: every model treats daemon state
+    as durable and a crash as stuttering, and a specification whose crashes are stutter steps
+    cannot promise that anything ever happens. "Every queued episode eventually terminates
+    or expires" is <em>not</em> proved, and cannot be until the sweeper and deadline
+    behaviour is modeled with its fairness assumptions written down.
+  </p>
+</div>
+
+<div class="note limit">
+  <span class="tag">Bounded, not inductive</span>
+  <p>
+    All nine are TLC-bounded — exhaustive at their constants, which is not the same as
+    proved for arbitrary run length. Two are flagged as candidates for inductive proof
+    because their bounds genuinely bite: budget conservation at an arbitrary ceiling, and
+    the mandate chain at an arbitrary depth. Today the mandate invariants quantify over
+    chains of depth ≤ 3 at three capabilities; deeper chains are future work.
+  </p>
+</div>
+
+<h2 id="properties">What each model proves</h2>
+
+<p>
+  Every model states four things: its <strong>projection</strong> (what implementation state
+  is abstracted away, and why that is sound), its <strong>refinement boundary</strong> (what
+  is claimed to refine it, and where the claim stops), its <strong>fairness</strong>
+  assumptions, and its <strong>bounded-state coverage</strong>. That is a requirement of the
+  accepted decision record, not a convention.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Module</th><th>The properties it holds, and the interesting one</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>MembershipOfferStanding.tla</code></td>
+      <td>Standing exists only through admission; admission requires acceptance;
+      <strong>silence never accepts</strong>; at most one standing survives the
+      admit/refuse/revoke/expiry race; refusal and revocation fence the coupled onboarding
+      offer in the same transaction; one compute use; completion is evidence, not
+      acceptance.</td>
+    </tr>
+    <tr>
+      <td><code>Pledge.tla</code></td>
+      <td>A finalized pledge has all its seats; at most one successor; superseded exactly
+      when a successor is accepted — never on amendment alone; terminal states are final;
+      resumes are bounded. <strong>Finalization determinism is a guard over an explicit seat
+      receipt set</strong>, not a promise.</td>
+    </tr>
+    <tr>
+      <td><code>EpisodeLease.tla</code></td>
+      <td>No stage of the activation pipeline is skippable; every claim mints one fresh
+      fence and one immutable attempt; a superseded worker's completion never lands;
+      ambiguous is never reported complete. <strong>Crash alone never enables a
+      re-claim</strong> — an explicit authoritative clock proves that the immediate
+      claim → expire → reclaim trace with no time advancing is impossible.</td>
+    </tr>
+    <tr>
+      <td><code>ActIntentPermit.tla</code></td>
+      <td>Consume at most once, with exactly one immutable receipt; no consumption without
+      the finalized full seat snapshot; denied, expired and canceled are never consumed and
+      never will be; the consumption key binds the one spent decision.
+      <strong>Replay and conflicting-key consumption are explicit actions</strong>, so the
+      one-shot invariants are checked against live replay traffic.</td>
+    </tr>
+    <tr>
+      <td><code>MandateChain.tla</code></td>
+      <td>A child never widens its parent; transitively a grandchild never exceeds the root;
+      non-delegable powers never appear in a child; use ordinals cap; revocation never
+      un-sends prior effects; hold, revocation, exhaustion or expiry of any ancestor fences
+      every descendant's new uses. <strong>A widening derivation is attempted explicitly and
+      must fail.</strong></td>
+    </tr>
+    <tr>
+      <td><code>BudgetConservation.tla</code></td>
+      <td>The conservation identity holds per account in every reachable state; a delegated
+      quantity exists exactly once; settlement cannot spend in two places and a host bridge
+      cannot double-charge; released is a monotonic audit counter rather than a bucket.
+      <strong>It refines no descriptor</strong> — the budget account is a ledger, not a
+      state machine, and it declares that to the parity checker rather than inventing one.</td>
+    </tr>
+    <tr>
+      <td><code>AuthorityJournal.tla</code></td>
+      <td>No visible mutation without its witnessed entry; visibility is exactly
+      finalization; the local mirror never outruns the external journal; abandonment only
+      after proving no entry; the witness dedups by transaction id.
+      <strong>Against a snapshot/restore adversary</strong>: a rolled-back database reopens
+      sealed, and a sealed endpoint mints no entry and widens no visibility.</td>
+    </tr>
+    <tr>
+      <td><code>GreenfieldEnablement.tla</code></td>
+      <td>No overlapping active owners and no overlapping enablement slots; retry returns
+      the identical binding; no activation after rollback and no rollback of an active
+      epoch; the owner arm flips exactly at the compare-and-set. After amendment A9,
+      "no scope has a third owner" is a <strong>type fact</strong> rather than an invariant
+      over a value nothing can produce.</td>
+    </tr>
+    <tr>
+      <td><code>SubordinateReservation.tla</code></td>
+      <td>A subordinate reservation may narrow or deny but never parallel-charge; created
+      once and settled once across lost replies and retries; the recovery query surfaces
+      durable truth, because <strong>guessing is not a transition</strong>; the only release
+      out of <code>uncertain</code> is a governance seat with a fresh challenge.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note limit">
+  <span class="tag">Modeled, but not everything is</span>
+  <p>
+    The dual-head effect admission and disposition compare-and-set, the endpoint-incarnation
+    restore lineage, standing mandates, and the assembly machines are all listed in the
+    design's closed-machine section and are <strong>not modeled</strong>. Neither is kovee's
+    attention and placement internals — only their committed outcomes appear. Two of the C2
+    machines have descriptor and walk coverage but no model at all.
+  </p>
+</div>
+
+<h2 id="parity">Descriptor parity, as a gate</h2>
+
+<p>
+  Byom commits <!--gen:descriptor-count-->26<!--/gen:descriptor-count--> transition
+  descriptors — <!--gen:descriptor-states-->167<!--/gen:descriptor-states--> states and
+  <!--gen:descriptor-transitions-->312<!--/gen:descriptor-transitions--> transitions — in a
+  structured format where every row carries its guards, locks, fences, events and crash
+  result, drawn from a frozen column vocabulary.
+</p>
+<p>
+  Two independent gates hold them in place. One proves that each of the
+  <!--gen:b01-mutating-->62<!--/gen:b01-mutating--> mutating operations on the frozen sheet
+  is owned by exactly one descriptor. The other compares every module's machine-readable
+  parity block against the committed descriptors with exact set equality in both directions:
+  <!--gen:parity-summary-->9 modules, 11 descriptors, 103 states and 199 transitions in exact agreement in both directions<!--/gen:parity-summary-->, with the structured crash
+  and fence columns compared as well, so a modeled row's crash semantics cannot be swapped
+  even for another legal value.
+</p>
+<p>
+  <!--gen:descriptor-unmodeled-->15<!--/gen:descriptor-unmodeled--> of the committed
+  descriptors have no model. Their machines are listed in the design or are kovee-owned
+  executors; they are registry-checked, schema-checked and walk-checked, and they are not
+  TLC-checked. <a href="../reference/#machines">The per-machine table names which is
+  which →</a>
+</p>
+
+<div class="note limit">
+  <span class="tag">What parity does not catch</span>
+  <p>
+    The parity block is a <em>transcription</em> of the model's transition relation — a
+    third copy. The checker catches descriptor drift and annotation drift, and its
+    quoted-literal check catches a state renamed only in the model. It cannot see an edited
+    TLA+ <em>action</em> whose annotation and descriptor were left untouched. TLC still
+    checks the edited model's invariants and the walks still exercise the transitions, which
+    shrinks that window without closing it. Closing it means generating the annotation from
+    the descriptor registry — which lands with the conformance oracle that does not exist
+    yet.
+  </p>
+</div>
+
+<h2 id="walks">Executable state walks</h2>
+
+<p>
+  <!--gen:machine-walk-count-->28<!--/gen:machine-walk-count--> walks — the core machine
+  walks plus the governed-work saga walks — are validated through a small interpreter over
+  the committed descriptor JSON. This is the closed-machine rule as an executable oracle,
+  independent of both TLC and the parity checker, and for the unmodeled C2 machines it is
+  the only executable coverage they have.
+</p>
+<p>The conventions are what make them meaningful:</p>
+<ul>
+  <li>Every walk starts at <code>absent</code>.</li>
+  <li>An <em>accepted</em> step must be an exact descriptor row.</li>
+  <li>A <em>rejected</em> step must be an <strong>absent</strong> row — an unlisted
+  transition is invalid, and the walk pins that absence.</li>
+  <li>A <em>replay</em> step retries the immediately preceding mutation and must be
+  state-idempotent.</li>
+  <li>A <code>{"crash": true}</code> marker restarts the daemon between steps; every
+  descriptor-level variable is durable, so the walk resumes unchanged — which is each
+  machine's committed crash outcome.</li>
+</ul>
+<p>
+  They cover, among others: one-shot permit consumption under replay, the expired-lease
+  re-claim as a real transition minting a fresh fence rather than a replay,
+  ambiguous-never-completed, terminal-is-final for every modeled terminal, and the
+  witness-unknown query and abandon-after-proof recovery paths.
+</p>
+
+<h2 id="mutations">The mutation suite</h2>
+
+<p>
+  A gate that passes because it checks nothing is worse than no gate. So
+  <!--gen:negative-mutation-count-->14<!--/gen:negative-mutation-count--> deliberate
+  mutations are applied to descriptors, models, annotations and schemas, and every one of
+  them must be caught:
+</p>
+<ul>
+  <li>a dropped descriptor row, an invented unmodeled row, a renamed state;</li>
+  <li>a lost structured column, a de-versioned format tag, a dropped parity annotation;</li>
+  <li>a state literal renamed only in the model;</li>
+  <li>semantic erasure of a structured column — a crash result swapped for another
+  <em>in-vocabulary</em> value must fail the column transcription, and arbitrary prose must
+  fail the frozen vocabulary;</li>
+  <li>a widened update meta, and emptied guards;</li>
+  <li>three weakened TLC guards that must produce counterexamples: a pledge finalizing
+  without its seat set, a re-claim of a live lease head, and an expiry without the clock
+  having passed the deadline.</li>
+</ul>
+<p>
+  Separate widening mutations against the MCP tool document run inside the conformance
+  runner on every single invocation.
+</p>
+
+<h2 id="vectors">Vectors and rederivers</h2>
+
+<p>
+  <!--gen:vector-count-->462<!--/gen:vector-count--> vectors cover the envelope, the
+  operations, the policy algebra, the governed-work records and sagas, the machine walks and
+  the MCP tool-call bindings, against
+  <!--gen:schema-count-->234<!--/gen:schema-count--> compiled schemas. Both policy
+  evaluators — one Python, one Node, sharing no code — must agree on every policy case, and
+  a seeded deterministic differential runs them against each other beyond the fixed corpus.
+</p>
+<p>
+  Separately, the family encoding profile's
+  <!--gen:family-vector-cases-->111<!--/gen:family-vector-cases--> cases across
+  <!--gen:family-vector-files-->83<!--/gen:family-vector-files--> files are re-derived by two
+  more independent programs. <a href="../encoding/#rederivers">That corpus and its
+  rederivers →</a>
+</p>
+<p>
+  The runner also has a live mode: it spawns a real daemon and replays the request vectors
+  against it over the real sockets. That checks the daemon against the wire and against
+  hand-written expectations — not against the models.
+</p>
+
+<h2 id="uncovered">What none of this covers</h2>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Not covered</th><th>Why, and what does cover it</th></tr></thead>
+  <tbody>
+    <tr><td>Cryptographic soundness</td><td>Signatures, digests and witnesses are modeled as perfect. The models say nothing about the primitives.</td></tr>
+    <tr><td>Byte-level envelope acceptance</td><td>Out of model scope; covered by the family vectors and the runner's acceptance cases instead.</td></tr>
+    <tr><td>The counterparty's internals</td><td>Kovee's attention and placement logic is not modeled — only its committed outcomes appear as inputs.</td></tr>
+    <tr><td>Timing and side channels</td><td>Not modeled at all.</td></tr>
+    <tr><td>Whether the model matches the design</td><td>That remains human review. Conformance can only guarantee that code cannot silently diverge from a transcribed relation — and here, as stated above, even that binding does not exist yet.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="run">Running it yourself</h2>
+
+<p>
+  Everything above runs locally, on demand. The commands below are the ones the repository
+  actually runs.
+</p>
+
+<div class="cmd">
+  <div class="cmd-head">
+    <span class="who">the individual gates</span>
+    <span class="path">from the repository root</span>
+    <button class="copy" type="button">Copy</button>
+  </div>
+<pre><code>python3 conformance/run.py            <span class="c"># schemas, vectors, registry, walks, MCP</span>
+python3 proof/check-descriptors.py    <span class="c"># descriptors ↔ models, both directions</span>
+python3 proof/negative-checks.py      <span class="c"># the mutation suite (TLC needs java)</span>
+python3 family-vectors/xcheck.py      <span class="c"># the profile corpus, re-derived</span>
+node    family-vectors/tscheck/check.mjs
+make -C proof                         <span class="c"># TLC over every model</span></code></pre>
+</div>
+
+<div class="cmd">
+  <div class="cmd-head">
+    <span class="who">everything, in order</span>
+    <span class="path">./run-checks.sh</span>
+    <button class="copy" type="button">Copy</button>
+  </div>
+<pre><code>./run-checks.sh</code></pre>
+</div>
+
+<div class="note limit">
+  <span class="tag">That run ends at exit 2, deliberately</span>
+  <p>
+    Every suite is green and the last stage — the governed-loop gate — reports a skip for
+    its two real-harness cells and <strong>refuses to score a skip as a pass</strong>. So
+    the script stops before printing its success line. Exit <code>0</code> requires the real
+    harnesses; exit <code>1</code> is a genuine failure.
+    <a href="../security/#i1">What that gate does and does not exercise →</a>
+  </p>
+</div>
+
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../governed-work/"><span class="k">Previous</span>Governed work</a>
+  <a class="next" href="../security/"><span class="k">Next</span>Security &amp; limits</a>
+</nav>
+
+<footer>
+  <p>
+    Normative source:
+    <a href="https://github.com/zarbafian/byom/blob/main/proof/PROPERTIES.md">proof/PROPERTIES.md</a>,
+    which carries the per-model projection, refinement boundary, fairness and coverage
+    statements in full, and
+    <a href="https://github.com/zarbafian/byom/blob/main/spec/adr/0003-model-checking.md">ADR-0003</a>
+    with its erratum. The model table on this page is generated from the first of those.
+  </p>
+</footer>
+
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

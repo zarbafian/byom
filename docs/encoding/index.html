@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Encoding profile — byom</title>
+<meta name="description" content="The C1 family encoding profile: strict I-JSON acceptance, RFC 8785 canonical bytes and $domain tagging, RFC 9457 problems, the six digest classes, the A8 cross-boundary rule, and the privacy access chain.">
+<link rel="canonical" href="https://byom.cc/encoding/">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">the shared substrate</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#profile">One profile, three projects</a>
+  <a href="#ijson">Strict I-JSON acceptance</a>
+  <a href="#jcs">Canonical bytes and $domain</a>
+  <a href="#problems">RFC 9457 problems</a>
+  <a href="#classes">The six digest classes</a>
+  <a href="#crossboundary">The A8 cross-boundary rule</a>
+  <a href="#idempotency">Idempotency domains</a>
+  <a href="#privacy">The privacy access chain</a>
+  <a href="#rederivers">Two independent rederivers</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/">Concepts</a>
+  <a href="../protocol/">Protocol</a>
+  <a href="../encoding/" class="here">Encoding</a>
+  <a href="../governed-work/">Governed work</a>
+  <a href="../proofs/">Proofs</a>
+  <a href="../security/">Security &amp; limits</a>
+  <a href="../reference/">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">The C1 family encoding profile</p>
+  <h1>The bytes all three projects must agree on.</h1>
+  <p class="lede">
+    Akson, kovee and byom are separate systems with separate stores and separate operators,
+    and they still have to accept, canonicalize and digest the same bytes identically. The
+    profile is the one place that is decided. Byom hosts it; the other two bind to
+    <em>this</em> text through a lock manifest rather than to a copy, so there is exactly
+    one source and no second copy to drift.
+  </p>
+  <div class="pills">
+    <span class="pill"><!--gen:family-vector-files-->83<!--/gen:family-vector-files--> vector files</span>
+    <span class="pill"><!--gen:family-vector-cases-->111<!--/gen:family-vector-cases--> cases</span>
+    <span class="pill">two rederivers</span>
+    <span class="pill">RFC 8785 · RFC 9457 · RFC 7493</span>
+  </div>
+</header>
+
+<h2 id="profile" class="chapter-start">One profile, three projects</h2>
+
+<p>
+  The profile pins six families of behaviour, one directory of vectors each. A vector is a
+  JSON file naming its input and its expected output — canonical bytes, a digest, an error
+  class — and it is frozen once merged.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Family</th><th class="num">Cases</th><th>What it pins</th></tr></thead>
+  <tbody><!--gen:family-vector-family-rows-->
+  <tr><td><code>digest-class/</code></td><td class="num">58</td><td>The six classes, their wire shape, and the complete ordered substitution matrix.</td></tr>
+  <tr><td><code>idempotency/</code></td><td class="num">9</td><td>The idempotency-domain derivations, byom's and kovee's side by side, pinned as distinct.</td></tr>
+  <tr><td><code>ijson/</code></td><td class="num">20</td><td>Strict I-JSON acceptance: the ordered check list, its error classes, and the caps.</td></tr>
+  <tr><td><code>jcs/</code></td><td class="num">7</td><td>RFC 8785 canonical bytes, including UTF-16 key sorting and ECMAScript number form.</td></tr>
+  <tr><td><code>privacy/</code></td><td class="num">4</td><td>The <code>PrivacyAccessRecord</code> preimage and the chain link, including genesis absence.</td></tr>
+  <tr><td><code>problem/</code></td><td class="num">13</td><td>The RFC 9457 problem shape, its closed kind enum, and the exact <code>type</code> prefix.</td></tr>
+<!--/gen:family-vector-family-rows--></tbody>
+</table>
+</div>
+
+<p>A complete vector — <code>jcs/basic-ordering</code>:</p>
+
+<div class="file">
+  <div class="cmd-head"><span class="path">family-vectors/jcs/basic-ordering.json</span></div>
+<pre><code>{
+  "name": "jcs/basic-ordering",
+  "description": "object keys serialize in sorted order regardless of input order",
+  "input": { "value": { "b": 2, "a": 1, "c": [3, "x"] } },
+  "expected": {
+    "canonical": "{\"a\":1,\"b\":2,\"c\":[3,\"x\"]}",
+    "sha256_hex": "7f26f35fd8404944dd9a2441528c810b6c55fb2ae7b569b0438d309d81806acf"
+  }
+}</code></pre>
+</div>
+
+<h2 id="ijson">Strict I-JSON acceptance</h2>
+
+<p>
+  A request body is a single UTF-8 I-JSON text within hard caps, checked in this order. The
+  first failure names the error class, and the order-3 classes surface in <em>token</em>
+  order during one parse — an early duplicate key beats a later unsafe number.
+</p>
+
+<div class="tw">
+<table class="narrow-first">
+  <thead><tr><th class="num">Order</th><th>Check</th><th>Error class</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>at most <!--gen:limit-request-bytes-->262,144<!--/gen:limit-request-bytes--> bytes (the 256 KiB request cap)</td><td><code>oversize</code></td></tr>
+    <tr><td class="num">2</td><td>valid UTF-8</td><td><code>invalid-utf8</code></td></tr>
+    <tr><td class="num">3</td><td>parses as exactly one JSON text</td><td><code>syntax</code>, <code>trailing-data</code></td></tr>
+    <tr><td class="num">3</td><td>no duplicate member names, at any depth (RFC 7493)</td><td><code>duplicate</code></td></tr>
+    <tr><td class="num">3</td><td>no <code>$domain</code> member name, at any depth</td><td><code>reserved-domain-collision</code></td></tr>
+    <tr><td class="num">3</td><td>integers within ±(2<sup>53</sup> − 1)</td><td><code>unsafe-integer</code></td></tr>
+    <tr><td class="num">3</td><td>no <code>NaN</code> / <code>Infinity</code> literals</td><td><code>non-finite</code></td></tr>
+    <tr><td class="num">3</td><td>floats finite; integer-valued floats within the safe range</td><td><code>unsafe-number</code></td></tr>
+    <tr><td class="num">4</td><td>no unpaired surrogates after escape decoding</td><td><code>unpaired-surrogate</code></td></tr>
+    <tr><td class="num">5</td><td>container nesting depth at most <!--gen:limit-depth-->64<!--/gen:limit-depth--></td><td><code>over-depth</code></td></tr>
+    <tr><td class="num">6</td><td>at most <!--gen:limit-nodes-->65,536<!--/gen:limit-nodes--> JSON values per document</td><td><code>over-nodes</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Within a single member-name token, the reserved-name check precedes the duplicate check.
+  Implementations must process tokens <em>iteratively</em>: input nested thousands of levels
+  deep — bounded only by the size cap — may never crash a rederiver, and the depth cap is
+  enforced after the scan rather than by running out of stack. A vector pins exactly that
+  pathological case. Responses follow the same rules under the
+  <!--gen:limit-response-bytes-->1,048,576<!--/gen:limit-response-bytes-->-byte cap, and a
+  vector opts into that context explicitly.
+</p>
+
+<h2 id="jcs">Canonical bytes, and the <code>$domain</code> tag</h2>
+
+<p>
+  Canonical bytes are RFC 8785 JCS over exactly the value space the acceptance rules admit:
+  object keys sorted by UTF-16 code units, numbers in ECMAScript minimal form, short escapes
+  plus <code>\u00xx</code> for the remaining C0 controls, everything else literal UTF-8.
+  Key sorting by UTF-16 code units is not the same as UTF-8 byte order — an astral key
+  sorts as its surrogate pair — and a vector pins that difference rather than leaving it to
+  be discovered.
+</p>
+<p>
+  Type-tagged bytes inject a reserved top-level member and then canonicalize:
+</p>
+
+<div class="file">
+  <div class="cmd-head"><span class="path">the type tag construction</span></div>
+<pre><code>tagged(tag, obj) = JCS(obj ∪ {"$domain": tag})   <span class="c"># obj must not carry $domain</span></code></pre>
+</div>
+
+<p>
+  <code>$domain</code> (0x24) sorts before every letter, so the tag always leads the
+  canonical bytes. It is reserved at <em>every depth</em> of wire bodies and fails closed on
+  collision, which is why it can never be smuggled in as data. This mirrors kovee's own
+  <code>$domain</code> envelope member so the tag namespace is shared while the byte layouts
+  stay distinct.
+</p>
+
+<h2 id="problems">RFC 9457 problems, and deliberate non-substitutability</h2>
+
+<p>
+  Byom's problem object requires <code>type</code>, <code>title</code> and
+  <code>kind</code>; <code>type</code> is exactly
+  <code>https://byom.dev/problems/</code> + <code>kind</code>. Extension members are allowed
+  only under reverse-domain names, and they carry no authority.
+</p>
+<p>
+  Byom and kovee both emit RFC 9457 problems and their conventions diverge on purpose. A
+  validator that accepts the other project's spelling or namespace fails these vectors'
+  intent.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th></th><th>byom (BPP)</th><th>kovee (KCP)</th></tr></thead>
+  <tbody>
+    <tr><td>kind casing</td><td>snake_case — <code>stale_revision</code></td><td>kebab-case — <code>stale-revision</code></td></tr>
+    <tr><td>where the kind lives</td><td>a separate required <code>kind</code> member <em>and</em> the <code>type</code> suffix</td><td>only inside the <code>type</code> URN</td></tr>
+    <tr><td><code>type</code></td><td><code>https://byom.dev/problems/&lt;kind&gt;</code></td><td><code>urn:kovee:error:&lt;kind&gt;</code></td></tr>
+    <tr><td><code>status</code></td><td>optional; a JSON integer in 400–599 when present</td><td>a per-kind table value</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  There is no translation table, and no value from one convention ever satisfies a field of
+  the other, even for semantically matching errors.
+</p>
+
+<h2 id="classes">The <!--gen:digest-class-count-->six<!--/gen:digest-class-count--> digest classes</h2>
+
+<p>
+  Every digest field on the wire is a typed <code>DigestRef</code> with a closed member set,
+  never an unlabelled hash:
+</p>
+
+<div class="file">
+  <div class="cmd-head"><span class="path">the DigestRef wire shape</span></div>
+<pre><code>{ "class": "local_erasure_safe", "algorithm": "hmac-sha-256",
+  "key_ref": "society-key:soc-garden/object:engram-42", "value_hex": "…" }</code></pre>
+</div>
+
+<p>
+  Exactly <code>class</code>, <code>algorithm</code>, <code>value_hex</code>, plus
+  <code>key_ref</code> — and nothing else. Class and algorithm pairing is closed;
+  <code>key_ref</code> is required exactly for the keyed classes and forbidden for the
+  public ones; <code>value_hex</code> is exactly 64 lowercase hex characters. Raw keys,
+  per-object secrets and salts are never part of a ref, and a member whose name looks like
+  key material fails closed.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Class</th><th>Algorithm</th><th><code>key_ref</code></th><th>What it is for</th></tr></thead>
+  <tbody><!--gen:digest-class-rows-->
+  <tr><td><code>structural_public</code></td><td><code>sha-256</code></td><td>forbidden</td><td>Knowingly non-sensitive, non-erasable protocol or schema bytes only.</td></tr>
+  <tr><td><code>portable_public</code></td><td><code>sha-256</code></td><td>forbidden</td><td>Content whose owner explicitly accepted a durable, publicly dictionary-testable identifier — and the class the A8 rule demands of any digest one protocol asks the other for.</td></tr>
+  <tr><td><code>disclosed_party</code></td><td><code>sha-256</code></td><td>forbidden</td><td>Bytes already disclosed to named recipients, always carrying the external-copy obligation.</td></tr>
+  <tr><td><code>ciphertext_public</code></td><td><code>sha-256</code></td><td>forbidden</td><td>Sealed blob bytes only — never a commitment to low-entropy plaintext.</td></tr>
+  <tr><td><code>local_erasure_safe</code></td><td><code>hmac-sha-256</code></td><td>required</td><td>Ordinary erasable local content and every authority subject, under a random <strong>per-object</strong> secret.</td></tr>
+  <tr><td><code>scope_erasure_safe</code></td><td><code>hmac-sha-256</code></td><td>required</td><td>Shared-key index and chain constructions, under a <strong>per-scope</strong> key.</td></tr>
+<!--/gen:digest-class-rows--></tbody>
+</table>
+</div>
+
+<p>
+  The classes are never interchangeable. A well-constructed digest of the wrong class is
+  <code>digest_class_mismatch</code> even when the 32-byte value spaces coincide, and the
+  vectors pin the complete ordered substitution matrix with values that are
+  <em>arithmetically correct</em> under the class they are offered as — so every rejection
+  is proven to be a typing decision rather than a wrong-bytes accident.
+</p>
+<p>
+  The two keyed classes are mutually non-substitutable for a concrete reason. Erasing one
+  object must destroy exactly that object's verifiability, so an authority subject takes a
+  per-object secret. Verifying an index or a chain must survive the erasure of one member,
+  so the index takes a per-scope key. Swapping them silently changes what "delete this"
+  means.
+</p>
+
+<div class="note">
+  <span class="tag">Acceptance is ordered, and the order is the point</span>
+  <p>
+    A digest offered where a schema requires class <em>R</em> is checked in ten steps: typed
+    at all, carries no key material, no unknown member, known class, class/algorithm pairing,
+    <code>key_ref</code> presence, 64-hex value, per-class construction rule, class equals
+    <em>R</em>, and finally value re-derivation where the verifier holds the content and key.
+    Wire-shape failures are reported before construction failures, and construction failures
+    before the generic mismatch — so an error message names the actual defect. A verifier
+    without the key accepts a keyed ref as well-typed but <strong>unverified</strong>; that
+    is the honest limit of keyed digests, and it is written into the rule rather than
+    glossed.
+  </p>
+</div>
+
+<h2 id="crossboundary">The A8 cross-boundary rule</h2>
+
+<p>
+  This is the profile's newest rule and the only one found by running code rather than by
+  review. Wiring kovee's episode pipeline to a real byomd found that byom was demanding four
+  keyed digests from kovee — values kovee could only echo as opaque blobs, one of which was
+  obtainable in practice only by reading byom's database — and that a fifth digest byom
+  required at placement was published nowhere at all.
+</p>
+
+<div class="note">
+  <span class="tag">The rule, both halves</span>
+  <p>
+    A digest one protocol <strong>demands from the other</strong> MUST be
+    <code>portable_public</code>, taken over a <em>frozen cross-boundary fragment</em> whose
+    members both sides hold. Crossing the boundary <em>is</em> the durable-identifier
+    disclosure that class requires, and because the fragment is never the owner's whole
+    erasable record, the ban on public hashes over erasable content is untouched.
+  </p>
+  <p>
+    The converse is equally normative: a digest the owner <strong>recomputes from its own
+    state</strong> keeps <code>local_erasure_safe</code> and is therefore
+    <strong>never a request member at all</strong>. Asking a counterparty to echo a value
+    you compute yourself proves only that your own value equals itself, while costing the
+    counterparty per-object erasure storage for nothing.
+  </p>
+</div>
+
+<p>
+  A <code>portable_public</code> field does not mean "trust what the peer sent". The
+  receiving side rebuilds the frozen fragment from its own committed state and refuses a
+  value that does not re-derive. A digest that is merely <em>stored</em> because a caller
+  sent it is asserted, not verified — even when its class is right.
+</p>
+<p>
+  Byom's applied instances each name a <code>$domain</code> tag and an exact, closed member
+  list; widening or narrowing that list changes the digest and is a wire change on both
+  sides.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Frozen fragment</th><th>Who derives it, and why it has to be portable</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>bpp-resource-allocation-binding-v0</code></td>
+      <td>The allocation's cross-boundary identity. Kovee asserts which allocation revision it placed, so it must stay a request member — and byom now publishes a second, fragment-scoped digest on the <code>episode_request</code> result so the value can actually be derived. Mutable members and byom-minted internal ids are deliberately out: the pin names an identity that does not change under it.</td>
+    </tr>
+    <tr>
+      <td><code>bpp-mandate-use-binding-v0</code></td>
+      <td>On the consumption receipt. The consumer never supplied a mandate use and holds no per-object secret, so byom's keyed record commitment could only ever be echoed. That commitment is unchanged, stays keyed, and is now demanded from nobody.</td>
+    </tr>
+    <tr>
+      <td><code>bpp-execution-consumption-receipt-binding-v0</code></td>
+      <td>The receipt's own binding digest — the one value a broker relies on, derived by the consumer from the receipt it just received. Byom keeps no keyed twin, because nothing inside byom compares this value; it exists to cross the boundary.</td>
+    </tr>
+    <tr>
+      <td><code>bpp-parent-budget-fragment-v0</code></td>
+      <td>The parent budget worst case a subordinate reservation must stay under, pinned by a cross-repo vector so the check goes red on whichever side moves.</td>
+    </tr>
+    <tr>
+      <td><code>bpp-provider-context-source-v0</code></td>
+      <td>The provider-context source fields byom composes for kovee's context manifest.</td>
+    </tr>
+    <tr>
+      <td><code>kovee-host-effect-binding-v1</code></td>
+      <td><strong>Kovee's</strong> tag, not byom's: a nine-member host effect fragment byom rebuilds from its own committed act and refuses if it does not re-derive. Byom's expectation is pinned against kovee's own recorded vector rather than against byom's code, so the cross-repo pin goes red on whichever side moves its domain tag.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note limit">
+  <span class="tag">Recorded, not silently changed</span>
+  <p>
+    Two further optional pairs on the claim path — kovee's context-assembly digest and its
+    provider-context-manifest digest — name kovee objects byom cannot recompute, so the
+    rule would move them too. They fell outside the ratified decision and are recorded for
+    the family-contract owner rather than re-classed unilaterally. This is what the rule
+    looks like when it is being followed rather than announced.
+  </p>
+</div>
+
+<h2 id="idempotency">Idempotency domains</h2>
+
+<p>
+  Byom's idempotency domain is
+  <code>{actor_binding_digest, operation, endpoint_incarnation, society_id,
+  society_recovery_epoch, idempotency_key}</code>, digested as
+  <code>HMAC-SHA-256(per-society index key, tagged("bpp-idempotency-domain-v1", domain))</code>
+  and emitted as a <code>scope_erasure_safe</code> ref.
+</p>
+<p>
+  It is <em>keyed</em> because the domain embeds an actor binding and a caller-chosen key —
+  erasable, low-entropy material that must never carry a public hash. It is
+  <em>scope</em>-keyed rather than object-keyed because the index key is one key across
+  every entry: destroying it erases offline verifiability of the whole index, never a
+  single entry. Saying so is the whole point of having six classes instead of one.
+</p>
+<p>
+  Kovee's command idempotency digest, by contrast, is a public structural SHA-256 over
+  non-sensitive command material, and akson separates domains by DSSE payload type in the
+  pre-authentication encoding rather than in JSON at all. All three are correct for their
+  store, and a vector pins that no value from one ever satisfies a field of another — even
+  byte-equal.
+</p>
+
+<h2 id="privacy">The privacy access chain</h2>
+
+<p>
+  Allowed <em>and denied</em> sensitive reads both append to a hash-chained access record.
+  The preimage members are exact and all required — society, access sequence, event id,
+  endpoint incarnation, recovery epoch, actor binding, operation, purpose, query or scope
+  digest, result object count, result bytes, outcome, dependency digest, occurred-at —
+  plus the chain link, which at genesis is <strong>wholly absent</strong>: no member, never
+  a null-valued pseudo-ref.
+</p>
+<p>
+  The record's own self-referential digest is excluded from its preimage, and a record that
+  offers it inside the preimage fails closed. Both the record digest and the chain link are
+  <code>scope_erasure_safe</code> under the chain key.
+</p>
+<p>
+  The release rule has two failure arms and neither of them serves bytes: an outcome other
+  than <em>allowed</em> releases nothing and still chains a record; a failed journal commit
+  releases nothing at all. Records carry cardinality and byte counts, never result
+  plaintext.
+</p>
+
+<h2 id="rederivers">Two independent rederivers</h2>
+
+<p>
+  Every expected value in the corpus is re-derived from scratch by two programs that share
+  no code and no dependencies — one Python stdlib only, one Node builtins only. Both go
+  nonzero on any mismatch <em>and</em> on an empty vector tree, so a deleted corpus is a
+  failure rather than a pass.
+</p>
+
+<div class="cmd">
+  <div class="cmd-head">
+    <span class="who">re-derive everything</span>
+    <span class="path">from the repository root</span>
+    <button class="copy" type="button">Copy</button>
+  </div>
+<pre><code>python3 family-vectors/xcheck.py           <span class="c"># exit 0 = every `expected` re-derived</span>
+node    family-vectors/tscheck/check.mjs   <span class="c"># the same, in a second language</span></code></pre>
+</div>
+
+<p>
+  Kovee and akson consume this directory through the family lock: their CI checks out the
+  byom commit the manifest pins, asserts that the checked-out commit <em>is</em> that
+  commit, and runs <code>xcheck.py</code> from that tree. A local copy alone is never
+  provenance.
+</p>
+
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../protocol/"><span class="k">Previous</span>Protocol</a>
+  <a class="next" href="../governed-work/"><span class="k">Next</span>Governed work</a>
+</nav>
+
+<footer>
+  <p>
+    Normative source:
+    <a href="https://github.com/zarbafian/byom/blob/main/family-vectors/PROFILE.md">family-vectors/PROFILE.md</a>,
+    which is the text kovee and akson bind to. This page is a conforming summary, not a
+    second source; where they differ, the profile wins.
+  </p>
+</footer>
+
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

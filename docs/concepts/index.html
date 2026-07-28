@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concepts — byom</title>
+<meta name="description" content="Societies and charters, participants and candidates, endeavors, calls and pledges, mandates, episodes-as-authority, budgets and decisions — and the lifecycle each of them moves through.">
+<link rel="canonical" href="https://byom.cc/concepts/">
+<meta name="theme-color" content="#F6F6F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1316" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<script>
+/* Apply a saved theme before first paint; site.js wires the toggle. */
+(function (root) {
+  try {
+    var saved = localStorage.getItem("byom-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+})(document.documentElement);
+</script>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<div class="shell">
+<aside class="rail">
+  <div class="rail-head">
+    <a class="rail-mark" href="../">by<span class="g">o</span>m</a>
+    <button class="themer" id="themer" type="button" aria-label="Switch colour theme">theme</button>
+  </div>
+  <p class="rail-sub">the governance layer</p>
+  <nav id="nav" aria-label="Contents">
+  <p class="grp">On this page</p>
+  <a href="#society">Society and charter</a>
+  <a href="#participants">Participants and standing</a>
+  <a href="#joining">Joining: offer to standing</a>
+  <a href="#endeavors">Endeavors, calls, pledges</a>
+  <a href="#mandates">Mandates</a>
+  <a href="#activity">Activities and episodes</a>
+  <a href="#acts">Acts, effects, disclosure</a>
+  <a href="#budgets">Budgets</a>
+  <a href="#decisions">Positions and decisions</a>
+  <a href="#memory">Memory and the ledger</a>
+  <a href="#invariants">The invariants underneath</a>
+  <p class="grp">Pages</p>
+  <a href="../">Home</a>
+  <a href="../concepts/" class="here">Concepts</a>
+  <a href="../protocol/">Protocol</a>
+  <a href="../encoding/">Encoding</a>
+  <a href="../governed-work/">Governed work</a>
+  <a href="../proofs/">Proofs</a>
+  <a href="../security/">Security &amp; limits</a>
+  <a href="../reference/">Reference</a>
+  </nav>
+</aside>
+<main id="top">
+
+<header class="hero">
+  <p class="eyebrow">Concepts</p>
+  <h1>What the records are, and what each one claims.</h1>
+  <p class="lede">
+    Byom's vocabulary is deliberately narrow, and its power comes from refusing to merge
+    terms. A skill is not a mandate. A mandate is not a pledge. A pledge is not an episode.
+    A delivery is not a review. Each is a separate durable record with its own closed state
+    machine, and the difference between them is what makes accountability possible at all.
+  </p>
+</header>
+
+<h2 id="society" class="chapter-start">Society and charter</h2>
+
+<p>
+  A <strong>society</strong> is one local governance boundary: a charter, sovereign human
+  roots, a classification policy, participants, budgets and an event ledger. It is not a
+  kovee space and not an akson peer — those are other systems' objects, and byom binds to
+  them by reference rather than absorbing them.
+</p>
+<p>
+  A <strong>charter</strong> is an immutable revision. It defines admission, standing,
+  decision rules, which powers are delegable and which are not, resource ceilings,
+  recursion limits, conflict handling, emergency holds and exit. Amending it means
+  proposing a complete restated revision against the exact current one and adopting it by
+  the <em>current</em> charter's own amendment rule; the prior revision moves to superseded
+  in the same transaction. There is no in-place edit.
+</p>
+<p>
+  Genesis is atomic and human-rooted: <code>society_prepare</code> stages the canonical
+  subjects and required seats, and <code>society_bootstrap</code> consumes exactly that
+  preparation reference and digest. The genesis charter revision lands inside the same
+  transaction. No integration partner is ever the genesis governance actor.
+</p>
+
+<div class="note">
+  <span class="tag">Why preparation is a separate step</span>
+  <p>
+    Every consequential subject in byom is <em>exact</em>: decisions, assents, mandates,
+    pledges, contexts, disclosures, budgets and policies bind canonical digests. So the
+    server prepares the canonical subject and the required seats first, hands back a
+    preparation reference and its digest, and the finalizing call names them. A material
+    change is a new record, never a mutation of the one people already assented to.
+  </p>
+</div>
+
+<h2 id="participants">Participants and standing</h2>
+
+<p>
+  A <strong>participant</strong> is a durable society member of kind <em>human</em>,
+  <em>agent</em> or <em>collective</em>. It is explicitly not a process, a model, an alias,
+  a package or a peer. A <strong>principal</strong> is an authenticated human identity from
+  the local identity provider; it may bind a human participant and fill human-authority
+  seats.
+</p>
+<p>
+  A <strong>manifestation</strong> is one exact way an agent participant may currently act:
+  a package or deployment binding, or an attached-harness binding, plus a security profile,
+  a controller domain, protocol features and a revision. An agent that acts through a
+  different manifestation is acting under a different record.
+</p>
+<p>
+  <strong>Standing</strong> is local admission and eligibility state. It permits
+  participation in named procedures and grants <em>no effect authority whatsoever</em> —
+  that is what mandates are for. An <strong>independence domain</strong> is a protected
+  reference that prevents one controller, or one nested participant, from quietly
+  satisfying several seats that are required to be independent. It is governance metadata,
+  not public identity, and it is redacted from projections outside its closure.
+</p>
+
+<div class="chain" role="img" aria-label="The four things a participant can hold, and what each does and does not confer.">
+  <div class="chain-row"><span class="k">participant</span><span class="v">exists, durably, as a member of one society</span></div>
+  <div class="chain-row"><span class="k">manifestation</span><span class="v">one exact way an agent may currently act</span></div>
+  <div class="chain-row auth"><span class="k">standing</span><span class="v">may take part in named procedures — <em>no effect authority</em></span></div>
+  <div class="chain-row auth"><span class="k">mandate</span><span class="v">may take a bounded class of action, purpose-scoped and expiring</span></div>
+</div>
+
+<h2 id="joining">Joining: offer, acceptance, admission</h2>
+
+<p>
+  Membership is offered, never assumed. Governance issues a
+  <code>membership_offer</code>; the candidate reaches a single offer-scoped surface and
+  either <code>membership_accept</code>s or <code>membership_refuse</code>s, and may
+  propose its own self-policy while it is still a candidate. Admission is a separate
+  governance act that binds an admission subject digest and activates only the
+  candidate-authored self-policy proposals included in that subject.
+</p>
+<p>
+  Among the properties model-checked in
+  <code>MembershipOfferStanding.tla</code>: standing exists only through admission,
+  admission requires acceptance, <strong>silence never becomes acceptance</strong>, and at
+  most one standing revision survives the compare-and-set that admission, refusal,
+  revocation and expiry all race on. Refusal and revocation fence the coupled onboarding
+  offer in the same transaction, so a refused candidate's compute authority dies with the
+  refusal rather than after it.
+</p>
+
+<div class="note">
+  <span class="tag">Self-policy belongs to the participant</span>
+  <p>
+    Assent, activation, interest, compatibility and private-continuity policies are adopted
+    and revoked only through that participant's own authenticated channel. Society
+    governance may impose stricter ceilings, or suspend use entirely — it may never speak
+    <em>as</em> the participant. That asymmetry is why suspension and forgery are different
+    operations, and only one of them exists.
+  </p>
+</div>
+
+<h2 id="endeavors">Endeavors, calls and pledges</h2>
+
+<p>
+  An <strong>endeavor</strong> is an adopted governed purpose: outcome conditions, sponsor
+  authority, resource accounts, source context and a lifecycle. A <strong>call</strong> is
+  a non-binding invitation for a proposal, pledge, evidence, critique, review or assembly
+  — it never assigns work to anyone. A <strong>pledge</strong> is a participant's accepted
+  obligation to deliver an exact outcome under exact terms.
+</p>
+<p>
+  The pledge machine is thirteen states including <code>disputed</code>, plus a folded
+  proposal stage — fourteen rows in the committed descriptor. Two of its rules are worth
+  stating on their own:
+</p>
+<ul>
+  <li>
+    <strong>Finalization authors no seat.</strong> It is a guard over an explicit set of
+    seat receipts, at pinned revisions and digests — not a promise that the seats were
+    probably filled.
+  </li>
+  <li>
+    <strong>Amendment does not supersede.</strong> <code>pledge_amend</code> only creates a
+    separate <em>proposed successor</em> restating the complete terms. The predecessor is
+    superseded exactly when <code>pledge_finalize</code> accepts the successor's complete
+    fresh seat set under the successor's compare-and-set. There is no window in which the
+    old obligation has quietly lapsed and the new one is not yet real.
+  </li>
+</ul>
+<p>
+  A <strong>delivery</strong> is the pledgor's immutable claim that exact outputs and
+  evidence satisfy the pledge; a <strong>review</strong> is an attributable decision against
+  the exact terms and the delivery digest. The claim and the judgement are two records
+  because they are two acts, by two parties, at two times.
+</p>
+
+<h2 id="mandates">Mandates</h2>
+
+<p>
+  A <strong>mandate</strong> is a bounded authorization: purpose, operations, data classes,
+  destinations, resources, delegation rules, expiry and the root decision chain that
+  produced it. It is explicitly <em>not a credential</em> — possession of a reference to
+  one confers nothing, and every use rechecks its current dependencies.
+</p>
+<p>
+  Derivation is the heart of it. A child mandate is a mechanical subset of its parent,
+  computed by the kernel over canonical values; an absent selector on the child carries the
+  parent's set unchanged, never wider. Non-delegable human powers never appear in a child
+  at all. Transitively, a grandchild never exceeds the root.
+</p>
+<p>
+  Holding, revoking, exhausting or expiring any ancestor fences every descendant's
+  <em>new</em> uses immediately — and un-sends nothing already sent. Use ordinals are
+  slots: consuming the last one is the exhaustion transition, not a separate bookkeeping
+  step that could be forgotten.
+</p>
+
+<div class="note">
+  <span class="tag">Checked against attempts, not against their absence</span>
+  <p>
+    <code>MandateChain.tla</code> models a widening derivation explicitly, as an action the
+    system may attempt at any point, and requires it to fail as a rejected no-op. Proving
+    "never widens" over a model where widening is unrepresentable would prove nothing;
+    amendment A9 withdrew an enum arm for exactly that reason. The check is exhaustive over
+    chains of depth ≤ 3 at three capabilities — <a href="../proofs/#models">deeper chains
+    are stated as remaining work, not as covered</a>.
+  </p>
+</div>
+
+<h2 id="activity">Activity streams, wake intents and episodes</h2>
+
+<p>
+  An <strong>activity stream</strong> is durable participant-owned continuity for pledged
+  work or bounded self-directed activity. It is not a process, a transcript, a scheduler
+  assignment or an authority. A <strong>pledge workstream</strong> is one bound to exactly
+  one pledge lineage. A <strong>continuation</strong> is participant-authored portable state
+  for resuming a stream without depending on a private provider transcript.
+</p>
+<p>
+  An <strong>episode</strong> is one bounded, fenced period of activity, hosted by a runtime
+  or by an attached participant. Getting to one is a pipeline with no skippable stage:
+</p>
+
+<div class="chain" role="img" aria-label="The activation pipeline: a wake intent is submitted, an activation admission decides it, a resource allocation is made, the allocation is bridged to the host, and only then is the episode queued, claimed under a fresh fence, started, and completed under that same fence.">
+  <div class="chain-row"><span class="k">wake intent</span><span class="v">a participant asks to become active — submitted, never assigned</span></div>
+  <div class="chain-row auth"><span class="k">activation admission</span><span class="v">the kernel decides. A denial is committed evidence <em>and</em> a typed refusal</span></div>
+  <div class="chain-row auth"><span class="k">resource allocation</span><span class="v">its own authority transaction, so a crash recovers the committed prefix</span></div>
+  <div class="chain-row"><span class="k">bridge</span><span class="v">the host's budget reservation, idempotent over a stable external key</span></div>
+  <div class="chain-row auth"><span class="k">episode claim</span><span class="v">one fresh fence, one immutable attempt, unique per generation</span></div>
+  <div class="chain-row"><span class="k">completion</span><span class="v">lands only under the <em>current</em> fence — a superseded worker's does not</span></div>
+</div>
+
+<p>
+  Crash alone never enables a re-claim. A leased head becomes re-claimable only through an
+  explicit expiry guarded by authoritative server time strictly past the deadline minted at
+  the claim, or through a voluntary yield. A worker going silent is stuttering: it enables
+  nothing. And an episode whose external use has an unknown outcome is
+  <em>ambiguous</em> — never reported complete, and never retried blindly.
+</p>
+
+<h2 id="acts">Acts, effects and disclosure</h2>
+
+<p>
+  An <strong>act intent</strong> is the exact authorized request for a consequential
+  transition; an <strong>effect</strong> is the separately recorded attempt to affect an
+  external system. They are two records because the authorization and the attempt can
+  disagree, and when they do, that disagreement is the interesting fact.
+</p>
+<p>
+  The chain is: the server prepares the intent (it never supplies a semantic default),
+  seats take positions, finalization authorizes against the locked full seat snapshot, and
+  then exactly one <code>execution_permit_consume</code> spends it. Consumption is
+  one-shot: the same canonical request under the same key returns the same receipt, a
+  changed request is <code>idempotency_mismatch</code>, and a
+  <em>different</em> key against a spent decision is refused. Replay and conflicting
+  consumption are modeled as explicit no-effect actions, so the one-shot invariants are
+  checked against live replay traffic rather than against its absence.
+</p>
+
+<div class="note limit">
+  <span class="tag">What the receipt does and does not prove</span>
+  <p>
+    The consumption receipt carries a <code>portable_public</code> binding digest — an
+    unkeyed SHA-256 anyone can recompute — and <strong>no signature</strong>. A consumer can
+    check that the receipt's bytes are self-consistent and that they equal the bytes byom
+    committed. It cannot verify cryptographically that <em>byom</em> issued them.
+    <a href="../security/#receipt">That is a deferred limit, not a solved one →</a>
+  </p>
+</div>
+
+<h2 id="budgets">Budgets</h2>
+
+<p>
+  Budgets are a ledger with one identity that must hold in every reachable state, per
+  account:
+</p>
+
+<div class="file">
+  <div class="cmd-head"><span class="path">the conservation identity (§11.4)</span></div>
+<pre><code>ceiling = remaining + reserved + committed + uncertain + delegated_to_children</code></pre>
+</div>
+
+<p>
+  It holds under reservation, commitment, measured settlement, release, ambiguous marking,
+  conservative resolution, child delegation and the return of unused delegation. Two
+  consequences are load-bearing. A delegated quantity exists in exactly one place, so a
+  settlement cannot spend it twice and a host bridge cannot double-charge. And an unknown
+  outcome moves the hold into <code>uncertain</code> rather than back to
+  <code>remaining</code> — money that might have been spent is not quietly returned.
+</p>
+<p>
+  The only way out of <code>uncertain</code> is a governance reconciliation seat presenting
+  a fresh challenge. Nothing expires its way out.
+</p>
+
+<h2 id="decisions">Positions, decisions and seats</h2>
+
+<p>
+  A <strong>position</strong> is one participant's separately attributable response to a
+  proposal: assent, support, oppose, abstain, request changes or refuse, as the procedure
+  permits. A <strong>decision</strong> is the deterministic result of a pinned decision rule
+  over eligible positions and authority seats.
+</p>
+<p>
+  Positions fill only the authenticated actor's own eligible seat — a request naming
+  another participant's identity fails the closed schema, not a policy check. Position
+  revisions are immutable, so a later revision for the same seat is an append; supersession
+  is caught at consumption, where the snapshot digest is recomputed from the currently
+  active positions and refused as <code>stale_binding</code> if it no longer equals the one
+  the authorization locked.
+</p>
+<p>
+  A stale binding epoch invalidates the position itself. The required seats then hold no
+  exact current position revision, and the answer is <code>decision_incomplete</code> naming
+  the epoch that moved — a rebound principal cannot carry an old seat forward.
+</p>
+
+<h2 id="memory">Institutional memory and the ledger</h2>
+
+<p>
+  An <strong>Engram</strong> is an immutable portable shared-knowledge revision plus
+  society-local admission, trust, visibility and attestation state. Private participant
+  memory does not become an Engram automatically — sharing is an act, with a record.
+</p>
+<p>
+  Everything a society does lands in an append-only event ledger, read through cursored
+  projections. Cursors are opaque and scope- and audience-bound: they carry the
+  authenticated cursor, endpoint incarnation, recovery epoch, filter digest and retention
+  semantics, so a token from another scope is refused rather than reinterpreted. Internal
+  sequence values are never projected, and a filter can narrow visibility but never widen
+  it.
+</p>
+
+<h2 id="invariants">The invariants underneath</h2>
+
+<p>
+  Nineteen safety invariants shape every schema, operation, storage transaction and test.
+  Six of them explain most of the design decisions above.
+</p>
+
+<div class="tw">
+<table class="wide">
+  <thead><tr><th>Invariant</th><th>What it rules out</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Arrival is not admission; admission is not attention; attention is not execution</td>
+      <td>Imported content staying inert through every boundary until the separately owned transition occurs. A notification cannot become a wake; a wake cannot become an episode.</td>
+    </tr>
+    <tr>
+      <td>The authenticated channel supplies the actor</td>
+      <td>A request body choosing its own effective principal, participant, collective epoch, runtime identity, episode or peer. Bodies carry references for correlation only.</td>
+    </tr>
+    <tr>
+      <td>Possession grants nothing</td>
+      <td>Any reference, receipt, mandate, event, artifact URL or signed object acting as a bearer capability. Every use rechecks its current dependencies.</td>
+    </tr>
+    <tr>
+      <td>Commitment cannot manufacture permission</td>
+      <td>A pledge authorizing its own model call, tool use, disclosure, workspace mutation, delegation or application. Accepting responsibility is not being granted power.</td>
+    </tr>
+    <tr>
+      <td>Authority cannot manufacture assent</td>
+      <td>A sovereign human forging a participant's pledge, position, delivery or private reasoning. Suspension and denial exist; impersonation does not.</td>
+    </tr>
+    <tr>
+      <td>No authority through data</td>
+      <td>Prompts, model output, contributions, Engrams, peer metadata, skills, URLs, filenames, artifacts or natural language altering identity, standing, charter, mandates, budgets, decisions, admission, classification or effects.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <span class="tag">Security claims name their actual profile</span>
+  <p>
+    One of the nineteen is about documentation, and it binds this site too: same-UID
+    developer mode is never described as confinement, credential separation or complete
+    egress control. <a href="../security/">The limits page states each one beside the
+    capability it bounds →</a>
+  </p>
+</div>
+
+<nav class="pagenav" aria-label="Previous and next page">
+  <a class="prev" href="../"><span class="k">Previous</span>Home</a>
+  <a class="next" href="../protocol/"><span class="k">Next</span>Protocol</a>
+</nav>
+
+<footer>
+  <p>
+    Concepts and record shapes are normative in
+    <a href="https://github.com/zarbafian/byom/blob/main/DESIGN.md">DESIGN.md</a> §§4–13;
+    the state machines they move through are committed as
+    <a href="https://github.com/zarbafian/byom/tree/main/spec/descriptors">transition
+    descriptors</a> and, for nine of them,
+    <a href="../proofs/">model-checked</a>.
+  </p>
+</footer>
+
+</main>
+</div>
+<script src="../assets/site.js"></script>
+</body>
+</html>

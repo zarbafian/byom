@@ -84,6 +84,17 @@ jobs:
       # mutation must be caught — a vacuous harness fails here.
       - run: python3 proof/negative-checks.py
 
+  docs:
+    # The byom.cc site is generated from spec/, proof/ and the daemon sources;
+    # this gate fails when a published claim, count or link stops matching them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 docs-tools/check_docs.py
+
   descriptor-parity:
     # Fast standalone parity gate (also inside model-checking's `full`):
     # descriptors <-> models, including the v2 structured columns (RT-09).
