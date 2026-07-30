@@ -17,6 +17,7 @@
 //!     .create(true).read(true).write(true).truncate(false).open(&path).unwrap();
 //! let guard = FileLock::exclusive(file).unwrap();   // held until dropped
 //! drop(guard);
+//! std::fs::remove_file(&path).unwrap();
 //! ```
 
 use std::fs::File;
@@ -91,5 +92,6 @@ mod tests {
         assert!(second.is_err(), "a second description must not take it");
         drop(held);
         FileLock::try_exclusive(open_lock_file(&path).unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
     }
 }

@@ -45,6 +45,8 @@
 //! let replay = store.authority_mutation(&scope, 0, CrashHooks::NONE,
 //!     |_, _| unreachable!("a replay never re-executes")).unwrap();
 //! assert_eq!(bytes, replay);
+//! drop(store);
+//! std::fs::remove_dir_all(&dir).unwrap();
 //! ```
 
 pub mod audit;
@@ -1778,14 +1780,46 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
-    fn temp_store(name: &str) -> Store {
-        let dir = std::env::temp_dir().join(format!(
-            "byom-store-{}-{name}-{}",
-            std::process::id(),
-            bpp_core::time::unix_now()
-        ));
+    /// A Store on a throwaway directory, removed when the guard drops
+    /// (on unwind too) unless BYOM_KEEP_FIXTURES is set — the leak that
+    /// once filled /tmp came from fixtures like this one never cleaning
+    /// up. `env::temp_dir()` because unit tests have no
+    /// CARGO_TARGET_TMPDIR; a stale same-name dir from a killed run is
+    /// wiped at open.
+    struct TempStore {
+        dir: std::path::PathBuf,
+        store: Option<Store>,
+    }
+
+    impl std::ops::Deref for TempStore {
+        type Target = Store;
+        fn deref(&self) -> &Store {
+            self.store.as_ref().unwrap()
+        }
+    }
+
+    impl std::ops::DerefMut for TempStore {
+        fn deref_mut(&mut self) -> &mut Store {
+            self.store.as_mut().unwrap()
+        }
+    }
+
+    impl Drop for TempStore {
+        fn drop(&mut self) {
+            drop(self.store.take());
+            if std::env::var_os("BYOM_KEEP_FIXTURES").is_none() {
+                let _ = std::fs::remove_dir_all(&self.dir);
+            }
+        }
+    }
+
+    fn temp_store(name: &str) -> TempStore {
+        let dir = std::env::temp_dir().join(format!("byom-store-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        Store::open(&dir).unwrap()
+        TempStore {
+            store: Some(Store::open(&dir).unwrap()),
+            dir,
+        }
     }
 
     fn scope(store: &Store, op: &str, key: &str) -> MutationScope {

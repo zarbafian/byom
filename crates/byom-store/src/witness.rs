@@ -33,6 +33,7 @@
 //!                       WitnessFault::None).unwrap();
 //! assert!(matches!(out, CasOutcome::Witnessed(e) if e.generation == 1));
 //! assert!(witness.query("txn-1").unwrap().is_some());
+//! std::fs::remove_dir_all(&dir).unwrap();
 //! ```
 
 use std::io::{Read as _, Write as _};
@@ -368,13 +369,39 @@ fn unsigned_value(entry: &JournalEntry) -> Result<Value, WitnessError> {
 mod tests {
     use super::*;
 
-    fn temp_witness(name: &str) -> Witness {
+    /// A Witness on a throwaway directory, removed when the guard drops
+    /// (on unwind too) unless BYOM_KEEP_FIXTURES is set. `env::temp_dir()`
+    /// because unit tests have no CARGO_TARGET_TMPDIR; a stale same-name
+    /// dir from a killed run is wiped at open.
+    struct TempWitness {
+        dir: PathBuf,
+        witness: Option<Witness>,
+    }
+
+    impl std::ops::Deref for TempWitness {
+        type Target = Witness;
+        fn deref(&self) -> &Witness {
+            self.witness.as_ref().unwrap()
+        }
+    }
+
+    impl Drop for TempWitness {
+        fn drop(&mut self) {
+            drop(self.witness.take());
+            if std::env::var_os("BYOM_KEEP_FIXTURES").is_none() {
+                let _ = std::fs::remove_dir_all(&self.dir);
+            }
+        }
+    }
+
+    fn temp_witness(name: &str) -> TempWitness {
         let dir = std::env::temp_dir().join(format!("byom-wit-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("authority-witness.jsonl");
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(dir.join("authority-witness.jsonl.key"));
-        Witness::open(&path).unwrap()
+        TempWitness {
+            witness: Some(Witness::open(&dir.join("authority-witness.jsonl")).unwrap()),
+            dir,
+        }
     }
 
     fn cas(

@@ -21,6 +21,7 @@
 //! cps.append(&w, 1, ChainHead { seq: 3, hash_hex: "aa".into() },
 //!                    ChainHead { seq: 0, hash_hex: String::new() }).unwrap();
 //! assert_eq!(cps.latest(&w).unwrap().unwrap().audit.seq, 3);
+//! std::fs::remove_dir_all(&dir).unwrap();
 //! ```
 
 use std::io::Write as _;

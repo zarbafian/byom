@@ -21,6 +21,12 @@ pub struct TestDaemon {
     child: Option<Child>,
     pub data_dir: PathBuf,
     pub run_dir: PathBuf,
+    /// RAII guards for the dirs THIS daemon created: they remove the
+    /// fixtures after `Drop` has killed the child — on unwind too, which
+    /// is how a failing suite no longer strands its dirs (the leak that
+    /// once filled /tmp with ~16,000 of them). `start_at` against
+    /// existing dirs holds none; whoever created them cleans them.
+    dir_guards: Option<[FixtureDir; 2]>,
     /// The peer-bound proof keys this PROCESS claimed, per credential
     /// (BY-C1). A real client claims once while its channel is open and
     /// keeps the key — which is what lets the exact refusal still replay
@@ -28,32 +34,66 @@ pub struct TestDaemon {
     claimed: std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>,
 }
 
-fn fresh_dir(tag: &str, which: &str) -> PathBuf {
+/// Fixtures are KEPT for debugging instead of removed on drop when
+/// BYOM_KEEP_FIXTURES is set (any value).
+fn keep_fixtures() -> bool {
+    std::env::var_os("BYOM_KEEP_FIXTURES").is_some()
+}
+
+/// A fresh directory under the system temp root, wiping anything a
+/// killed earlier run left under the same name. The root stays
+/// `env::temp_dir()` and the suffix a short counter, not a timestamp:
+/// run dirs carry unix sockets, and the whole socket path must stay
+/// under the ~108-byte SUN_LEN cap (see b1_crash_matrix).
+fn fresh_dir(name: &str) -> PathBuf {
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "byomd-{tag}-{which}-{}-{}",
+        "byomd-{name}-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// One throwaway fixture directory, removed when dropped (unless
+/// BYOM_KEEP_FIXTURES is set) — including on a failing test's unwind.
+pub struct FixtureDir {
+    pub path: PathBuf,
+}
+
+impl FixtureDir {
+    pub fn new(name: &str) -> FixtureDir {
+        FixtureDir {
+            path: fresh_dir(name),
+        }
+    }
+}
+
+impl Drop for FixtureDir {
+    fn drop(&mut self) {
+        if !keep_fixtures() {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
 }
 
 impl TestDaemon {
     /// Fresh dirs, no fault injection.
     pub fn start(tag: &str) -> TestDaemon {
-        let data_dir = fresh_dir(tag, "data");
-        let run_dir = fresh_dir(tag, "run");
-        TestDaemon::start_at(data_dir, run_dir, &[])
+        TestDaemon::start_with_env(tag, &[])
     }
 
-    /// Fresh dirs with extra environment (e.g. BYOMD_ABORT).
+    /// Fresh dirs with extra environment (e.g. BYOMD_ABORT). The guards
+    /// stay locals until the daemon is up, so even a "sockets never came
+    /// up" panic removes the dirs.
     pub fn start_with_env(tag: &str, env: &[(&str, &str)]) -> TestDaemon {
-        let data_dir = fresh_dir(tag, "data");
-        let run_dir = fresh_dir(tag, "run");
-        TestDaemon::start_at(data_dir, run_dir, env)
+        let data = FixtureDir::new(&format!("{tag}-data"));
+        let run = FixtureDir::new(&format!("{tag}-run"));
+        let mut daemon = TestDaemon::start_at(data.path.clone(), run.path.clone(), env);
+        daemon.dir_guards = Some([data, run]);
+        daemon
     }
 
     /// (Re)start against existing dirs.
@@ -76,6 +116,7 @@ impl TestDaemon {
             child: Some(child),
             data_dir,
             run_dir,
+            dir_guards: None,
             claimed: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
         daemon.wait_sockets();
@@ -299,6 +340,8 @@ impl TestDaemon {
 
 impl Drop for TestDaemon {
     fn drop(&mut self) {
+        // Kill the child first; the `dir_guards` fields drop after this
+        // body and remove the fixture dirs it was running against.
         self.stop();
     }
 }

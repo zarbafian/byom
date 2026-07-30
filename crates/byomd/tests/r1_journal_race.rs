@@ -22,7 +22,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use byom_store::witness::{CasOutcome, Witness, WitnessFault};
-use common::TestDaemon;
+use common::{FixtureDir, TestDaemon};
 
 /// The child half of the competing-CAS test: a SEPARATE process that
 /// CASes the same journal at the same prior generation. It is a no-op
@@ -72,12 +72,10 @@ fn witness_race_child() {
 
 #[test]
 fn two_processes_racing_one_journal_produce_exactly_one_winner() {
-    let dir = std::env::temp_dir().join(format!(
-        "byom-witness-race-{}-{}",
-        std::process::id(),
-        bpp_core::time::unix_now()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    // A guard, not a bare path: a failed assertion below must still
+    // remove the dir on unwind.
+    let dir = FixtureDir::new("witness-race");
+    let dir = &dir.path;
     Witness::open(&dir.join("authority-witness.jsonl")).unwrap();
 
     // A deterministic contention window INSIDE the critical section: the
@@ -90,7 +88,7 @@ fn two_processes_racing_one_journal_produce_exactly_one_winner() {
         children.push(
             Command::new(&exe)
                 .args(["--exact", "witness_race_child", "--nocapture"])
-                .env("BYOM_WITNESS_RACE_DIR", &dir)
+                .env("BYOM_WITNESS_RACE_DIR", dir)
                 .env("BYOM_WITNESS_RACE_TXN", txn)
                 .env("BYOM_WITNESS_CAS_DELAY_MS", "400")
                 .stdout(std::process::Stdio::piped())
@@ -148,22 +146,16 @@ fn two_processes_racing_one_journal_produce_exactly_one_winner() {
         witness.query(loser).unwrap().is_none(),
         "the loser has no receipt and therefore cannot finalize"
     );
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_second_daemon_cannot_own_the_same_data_directory() {
     // The first daemon owns the directory for its whole life.
     let daemon = TestDaemon::start("r1-owner");
-    let second_run = std::env::temp_dir().join(format!(
-        "byomd-r1-owner-run2-{}-{}",
-        std::process::id(),
-        bpp_core::time::unix_now()
-    ));
-    std::fs::create_dir_all(&second_run).unwrap();
+    let second_run = FixtureDir::new("r1-owner-run2");
     let second = Command::new(env!("CARGO_BIN_EXE_byomd"))
         .env("BYOM_DATA_DIR", &daemon.data_dir)
-        .env("BYOM_RUNTIME_DIR", &second_run)
+        .env("BYOM_RUNTIME_DIR", &second_run.path)
         .env_remove("BYOMD_ABORT")
         .output()
         .expect("spawn the second daemon");
@@ -182,5 +174,4 @@ fn a_second_daemon_cannot_own_the_same_data_directory() {
         matches!(opened, Err(byom_store::StoreError::DataDirLocked(_))),
         "a second Store must not share the data directory"
     );
-    let _ = std::fs::remove_dir_all(&second_run);
 }

@@ -260,9 +260,11 @@ fn database_rollback_seals_every_non_diagnostic_surface() {
     let mut daemon = TestDaemon::start("jrnl-rollback");
     let (society_id, _cursor, incarnation) = bootstrap_society(&daemon, "js");
 
-    // The rollback adversary takes its backup...
+    // The rollback adversary takes its backup... (inside the data dir,
+    // so the daemon's fixture cleanup removes it too; snapshot_db only
+    // copies byom.db* files, so the subdir never enters a snapshot)
     daemon.stop();
-    let snapshot = daemon.data_dir.join("../rollback-snapshot");
+    let snapshot = daemon.data_dir.join("rollback-snapshot");
     daemon.snapshot_db(&snapshot);
 
     // ...authority advances (a witnessed offer)...
